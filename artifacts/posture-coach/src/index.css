@@ -766,6 +766,15 @@
   color: #ff9b93;
 }
 
+.diagnostic-value--warning {
+  color: #ffd88a;
+}
+
+.diagnostic-value--accent {
+  color: #b5ffc5;
+  font-weight: 700;
+}
+
 .diagnostic-confidence {
   display: grid;
   gap: 0.12rem;
@@ -775,6 +784,26 @@
 .diagnostic-confidence small {
   color: rgba(184, 201, 219, 0.58);
   font-size: 0.55rem;
+}
+
+.diagnostic-angle-points,
+.diagnostic-angle-history {
+  display: grid;
+  gap: 0.12rem;
+  color: rgba(232, 240, 248, 0.88);
+}
+
+.diagnostic-angle-history {
+  display: block;
+  color: #b5ffc5;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.6;
+}
+
+.diagnostic-row--points,
+.diagnostic-row--history {
+  align-items: start;
 }
 
 .stop-action,

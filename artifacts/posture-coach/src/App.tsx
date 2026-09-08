@@ -56,6 +56,15 @@ type DiagnosticPoint = {
   score: number | null;
   side: 'izq.' | 'der.' | '—';
 };
+type AngleDiagnosticPoint = {
+  label: string;
+  x: number | null;
+  y: number | null;
+};
+type DominantSideResult = {
+  side: PoseSide;
+  average: number;
+};
 type VideoResolution = {
   width: number;
   height: number;
@@ -172,7 +181,7 @@ const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'h
   right: { shoulder: 6, elbow: 8, wrist: 10, hip: 12, knee: 14, ankle: 16 },
 };
 
-function getDominantSide(keypoints: PosePoint[] | undefined): PoseSide | null {
+function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult | null {
   if (!keypoints) return null;
   const sides: PoseSide[] = ['left', 'right'];
   const scores = sides.map((side) => {
@@ -187,7 +196,7 @@ function getDominantSide(keypoints: PosePoint[] | undefined): PoseSide | null {
     };
   });
   const best = scores.sort((first, second) => second.average - first.average)[0];
-  return best.count ? best.side : null;
+  return best.count ? { side: best.side, average: best.average } : null;
 }
 
 function calculateAngle(
@@ -221,6 +230,40 @@ function calculateExerciseAngle(
   return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.ankle]);
 }
 
+function getAngleDiagnosticPoints(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): AngleDiagnosticPoint[] {
+  const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
+    fondos: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    sentadillas: [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    plancha: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+  };
+  const indexes = side ? sideKeypoints[side] : null;
+
+  return labels[exercise].map(({ label, joint }) => {
+    const point = indexes && keypoints?.[indexes[joint]];
+    return {
+      label,
+      x: point?.x ?? null,
+      y: point?.y ?? null,
+    };
+  });
+}
+
 function getExercise(exerciseId: ExerciseId | null) {
   return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
 }
@@ -250,8 +293,15 @@ function Home() {
   const [errorCount, setErrorCount] = useState(0);
   const [angle, setAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
+  const [sideConfidence, setSideConfidence] = useState<number | null>(null);
+  const [sideSwitches, setSideSwitches] = useState(0);
+  const [sideChangeNotice, setSideChangeNotice] = useState('Sin cambios');
+  const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
+  const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
+  const previousSideRef = useRef<PoseSide | null>(null);
+  const sideSwitchesRef = useRef(0);
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -326,15 +376,34 @@ function Home() {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
       const pose = poses[0];
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
-      const nextDominantSide = getDominantSide(pose?.keypoints);
+      const nextDominantSideResult = getDominantSide(pose?.keypoints);
+      const nextDominantSide = nextDominantSideResult?.side ?? null;
+      const nextAngle = calculateExerciseAngle(
+        selectedExerciseRef.current ?? 'fondos',
+        pose?.keypoints,
+        nextDominantSide,
+      );
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
       setDominantSide(nextDominantSide);
-      setAngle(calculateExerciseAngle(
+      setSideConfidence(nextDominantSideResult?.average ?? null);
+      setAngle(nextAngle);
+      setAnglePoints(getAngleDiagnosticPoints(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
         nextDominantSide,
       ));
+      if (nextAngle !== null) {
+        setAngleHistory((history) => [...history, nextAngle].slice(-5));
+      }
+      if (nextDominantSide && previousSideRef.current && nextDominantSide !== previousSideRef.current) {
+        sideSwitchesRef.current += 1;
+        setSideSwitches(sideSwitchesRef.current);
+        setSideChangeNotice(
+          `${previousSideRef.current === 'left' ? 'Izquierdo' : 'Derecho'} → ${nextDominantSide === 'left' ? 'izquierdo' : 'derecho'}`,
+        );
+      }
+      previousSideRef.current = nextDominantSide;
       setConfidencePoints([
         selectMostConfident(pose?.keypoints, 'Hombro', 5, 6),
         selectMostConfident(pose?.keypoints, 'Cadera', 11, 12),
@@ -390,6 +459,13 @@ function Home() {
     setErrorCount(0);
     setAngle(null);
     setDominantSide(null);
+    setSideConfidence(null);
+    setSideSwitches(0);
+    setSideChangeNotice('Sin cambios');
+    setAnglePoints([]);
+    setAngleHistory([]);
+    previousSideRef.current = null;
+    sideSwitchesRef.current = 0;
     setPhase('requesting');
 
     try {
@@ -445,6 +521,13 @@ function Home() {
     setErrorMessage('');
     setAngle(null);
     setDominantSide(null);
+    setSideConfidence(null);
+    setSideSwitches(0);
+    setSideChangeNotice('Sin cambios');
+    setAnglePoints([]);
+    setAngleHistory([]);
+    previousSideRef.current = null;
+    sideSwitchesRef.current = 0;
     setPhase('exercise-select');
   }, [stopResources]);
 
@@ -462,6 +545,15 @@ function Home() {
     ? `${videoResolution.width} × ${videoResolution.height}`
     : '— × —';
   const formatScore = (score: number | null) => score === null ? '—' : score.toFixed(2);
+  const sideLabel = dominantSide === 'left' ? 'Izquierdo' : dominantSide === 'right' ? 'Derecho' : '—';
+  const sideLabelWithScore = dominantSide && sideConfidence !== null
+    ? `${sideLabel} · ${sideConfidence.toFixed(2)}`
+    : `${sideLabel} · —`;
+  const angleLabel = angle === null ? '—' : `${angle}°`;
+  const angleHistoryLabel = angleHistory.length
+    ? angleHistory.map((value) => `${value}°`).join(' · ')
+    : '—';
+  const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
 
   return (
     <div className="posture-app">
@@ -597,6 +689,42 @@ function Home() {
                   <div className="diagnostic-row">
                     <dt>Modelo</dt>
                     <dd className={modelStatusClass}>{modelStatus}</dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Ejercicio</dt>
+                    <dd className="diagnostic-value">{activeExercise?.name ?? '—'}</dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Lado / score</dt>
+                    <dd className={`diagnostic-value ${sideSwitches > 0 ? 'diagnostic-value--warning' : ''}`}>
+                      {sideLabelWithScore}
+                    </dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Cambio de lado</dt>
+                    <dd className={`diagnostic-value ${sideSwitches > 0 ? 'diagnostic-value--warning' : ''}`}>
+                      {sideChangeNotice}{sideSwitches > 0 ? ` (${sideSwitches})` : ''}
+                    </dd>
+                  </div>
+                  <div className="diagnostic-row diagnostic-row--points">
+                    <dt>Puntos ángulo</dt>
+                    <dd className="diagnostic-angle-points">
+                      {anglePoints.length
+                        ? anglePoints.map((point) => (
+                          <span key={point.label}>
+                            {point.label} ({formatCoordinate(point.x)}, {formatCoordinate(point.y)})
+                          </span>
+                        ))
+                        : '—'}
+                    </dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Ángulo actual</dt>
+                    <dd className="diagnostic-value diagnostic-value--accent">{angleLabel}</dd>
+                  </div>
+                  <div className="diagnostic-row diagnostic-row--history">
+                    <dt>Historial (5)</dt>
+                    <dd className="diagnostic-angle-history">{angleHistoryLabel}</dd>
                   </div>
                   <div className="diagnostic-row">
                     <dt>Video</dt>
