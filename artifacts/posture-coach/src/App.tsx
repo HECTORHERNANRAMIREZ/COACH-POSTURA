@@ -166,11 +166,17 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
   if (nextTracker.phase === 'arriba' && smoothedAngle < SQUAT_TOP_THRESHOLD) {
     nextTracker.phase = 'bajando';
     nextTracker.minimumAngle = smoothedAngle;
+    nextTracker.descentStartAngle = smoothedAngle;
+    nextTracker.hasMeaningfulDescent = false;
     nextTracker.currentRepCounted = false;
   } else if (nextTracker.phase === 'bajando') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
       ? rawAngle
       : Math.min(nextTracker.minimumAngle, rawAngle);
+    if (nextTracker.descentStartAngle !== null
+      && nextTracker.descentStartAngle - smoothedAngle >= SQUAT_MEANINGFUL_DESCENT) {
+      nextTracker.hasMeaningfulDescent = true;
+    }
     if (rawAngle <= SQUAT_VALID_MAX_ANGLE || smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
       nextTracker.phase = 'abajo';
       nextTracker.currentRepCounted = true;
@@ -182,7 +188,7 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
         nextTracker.goodRepetitions += 1;
       }
       nextTracker.repetitions += 1;
-    } else if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
+    } else if (nextTracker.hasMeaningfulDescent && smoothedAngle > SQUAT_RISE_THRESHOLD) {
       completedMinimumAngle = nextTracker.minimumAngle;
       nextTracker.phase = 'arriba';
       nextTracker.currentRepCounted = true;
@@ -197,6 +203,8 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
     if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
       nextTracker.phase = 'arriba';
       nextTracker.currentRepCounted = true;
+      nextTracker.descentStartAngle = null;
+      nextTracker.hasMeaningfulDescent = false;
     }
   }
 
@@ -465,7 +473,9 @@ function calculateSquatAngle(keypoints: PosePoint[] | undefined) {
       const confidence = confidencePoints.reduce((sum, score) => sum + score, 0) / confidencePoints.length;
       return { angle, confidence };
     })
-    .filter((candidate): candidate is { angle: number; confidence: number } => candidate.angle !== null)
+    .filter((candidate): candidate is { angle: number; confidence: number } => (
+      candidate.angle !== null && candidate.confidence >= 0.45
+    ))
     .sort((first, second) => second.confidence - first.confidence);
 
   if (!candidates.length) return null;
@@ -971,12 +981,12 @@ function Home() {
               {selectedExercise === 'sentadillas' && (
                 <div className="squat-summary" aria-label="Resumen de sentadillas">
                   <div className="squat-summary-stat">
-                    <span>Repeticiones</span>
-                    <strong>{squatRepetitions}</strong>
-                  </div>
-                  <div className="squat-summary-stat">
                     <span>Correctas</span>
                     <strong>{squatGoodRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Total evaluadas</span>
+                    <strong>{squatRepetitions}</strong>
                   </div>
                   <div className="squat-summary-stat">
                     <span>Fase</span>
@@ -1082,12 +1092,18 @@ function Home() {
                   {selectedExercise === 'sentadillas' && (
                     <>
                       <div className="diagnostic-row">
-                        <dt>Repeticiones</dt>
+                        <dt>Correctas</dt>
+                        <dd className="diagnostic-value diagnostic-value--success">{squatGoodRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Total evaluadas</dt>
                         <dd className="diagnostic-value diagnostic-value--accent">{squatRepetitions}</dd>
                       </div>
                       <div className="diagnostic-row">
-                        <dt>Correctas</dt>
-                        <dd className="diagnostic-value diagnostic-value--success">{squatGoodRepetitions}</dd>
+                        <dt>Incorrectas</dt>
+                        <dd className="diagnostic-value diagnostic-value--warning">
+                          {Math.max(0, squatRepetitions - squatGoodRepetitions)}
+                        </dd>
                       </div>
                       <div className="diagnostic-row">
                         <dt>Evaluación</dt>
