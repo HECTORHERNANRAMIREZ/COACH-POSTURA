@@ -68,9 +68,11 @@ type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
 type SquatTracker = {
   phase: SquatPhase;
   repetitions: number;
+  goodRepetitions: number;
   minimumAngle: number | null;
   samples: number[];
   event: SquatRepEvent;
+  currentRepCounted: boolean;
 };
 type AngleDiagnosticPoint = {
   label: string;
@@ -123,9 +125,11 @@ function createSquatTracker(): SquatTracker {
   return {
     phase: 'arriba',
     repetitions: 0,
+    goodRepetitions: 0,
     minimumAngle: null,
     samples: [],
     event: null,
+    currentRepCounted: false,
   };
 }
 
@@ -157,12 +161,28 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
   if (nextTracker.phase === 'arriba' && smoothedAngle < SQUAT_TOP_THRESHOLD) {
     nextTracker.phase = 'bajando';
     nextTracker.minimumAngle = smoothedAngle;
+    nextTracker.currentRepCounted = false;
   } else if (nextTracker.phase === 'bajando') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
       ? rawAngle
       : Math.min(nextTracker.minimumAngle, rawAngle);
     if (rawAngle <= SQUAT_VALID_MAX_ANGLE || smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
       nextTracker.phase = 'abajo';
+      nextTracker.currentRepCounted = true;
+      completedMinimumAngle = nextTracker.minimumAngle;
+      if (rawAngle < SQUAT_VALID_MIN_ANGLE) {
+        nextTracker.event = 'too-deep';
+      } else {
+        nextTracker.event = 'valid';
+        nextTracker.goodRepetitions += 1;
+      }
+      nextTracker.repetitions += 1;
+    } else if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
+      completedMinimumAngle = nextTracker.minimumAngle;
+      nextTracker.phase = 'arriba';
+      nextTracker.currentRepCounted = true;
+      nextTracker.event = 'too-shallow';
+      nextTracker.repetitions += 1;
     }
   } else if (nextTracker.phase === 'abajo') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
@@ -170,17 +190,8 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
       : Math.min(nextTracker.minimumAngle, rawAngle);
 
     if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
-      completedMinimumAngle = nextTracker.minimumAngle;
-      if (completedMinimumAngle !== null) {
-        nextTracker.event = completedMinimumAngle < SQUAT_VALID_MIN_ANGLE
-          ? 'too-deep'
-          : completedMinimumAngle <= SQUAT_VALID_MAX_ANGLE
-            ? 'valid'
-            : 'too-shallow';
-        if (nextTracker.event === 'valid') nextTracker.repetitions += 1;
-      }
       nextTracker.phase = 'arriba';
-      nextTracker.minimumAngle = null;
+      nextTracker.currentRepCounted = true;
     }
   }
 
@@ -537,6 +548,7 @@ function Home() {
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [squatRepetitions, setSquatRepetitions] = useState(0);
+  const [squatGoodRepetitions, setSquatGoodRepetitions] = useState(0);
   const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
   const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
@@ -635,25 +647,26 @@ function Home() {
         squatTrackerRef.current = squatUpdate.tracker;
         nextAngle = squatUpdate.smoothedAngle;
         setSquatRepetitions(squatUpdate.tracker.repetitions);
+        setSquatGoodRepetitions(squatUpdate.tracker.goodRepetitions);
         setSquatPhase(squatUpdate.tracker.phase);
         setSquatMinimumAngle(squatUpdate.tracker.minimumAngle ?? squatUpdate.completedMinimumAngle);
         if (squatUpdate.tracker.event === 'valid') {
           setSquatFeedback({
             tone: 'success',
-            message: 'Repetición registrada ✓',
-            detail: `Profundidad válida: ${squatUpdate.completedMinimumAngle}° dentro del rango 83–90°.`,
+            message: `Repetición ${squatUpdate.tracker.repetitions}: BIEN ✓`,
+            detail: `Ángulo mínimo ${squatUpdate.completedMinimumAngle}° dentro del rango 83–90°.`,
           });
         } else if (squatUpdate.tracker.event === 'too-deep') {
           setSquatFeedback({
             tone: 'warning',
-            message: 'Repetición no registrada',
-            detail: `El ángulo mínimo fue ${squatUpdate.completedMinimumAngle}°. El rango válido es 83–90°.`,
+            message: `Repetición ${squatUpdate.tracker.repetitions}: MAL · muy abajo`,
+            detail: `Ángulo mínimo ${squatUpdate.completedMinimumAngle}°. El rango válido es 83–90°.`,
           });
         } else if (squatUpdate.tracker.event === 'too-shallow') {
           setSquatFeedback({
             tone: 'warning',
-            message: 'Baja un poco más',
-            detail: `El ángulo mínimo fue ${squatUpdate.completedMinimumAngle}°. Busca el rango 83–90°.`,
+            message: `Repetición ${squatUpdate.tracker.repetitions}: MAL · muy arriba`,
+            detail: `Solo llegó a ${squatUpdate.completedMinimumAngle}°. Baja hasta 83–90°.`,
           });
         } else if (squatUpdate.smoothedAngle >= SQUAT_VALID_MIN_ANGLE
           && squatUpdate.smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
@@ -753,6 +766,7 @@ function Home() {
     setTechniqueFeedback(defaultTechniqueFeedback);
     squatTrackerRef.current = createSquatTracker();
     setSquatRepetitions(0);
+    setSquatGoodRepetitions(0);
     setSquatPhase('arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
@@ -821,6 +835,7 @@ function Home() {
     setTechniqueFeedback(defaultTechniqueFeedback);
     squatTrackerRef.current = createSquatTracker();
     setSquatRepetitions(0);
+    setSquatGoodRepetitions(0);
     setSquatPhase('arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
@@ -951,8 +966,12 @@ function Home() {
               {selectedExercise === 'sentadillas' && (
                 <div className="squat-summary" aria-label="Resumen de sentadillas">
                   <div className="squat-summary-stat">
-                    <span>Repeticiones válidas</span>
+                    <span>Repeticiones</span>
                     <strong>{squatRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Correctas</span>
+                    <strong>{squatGoodRepetitions}</strong>
                   </div>
                   <div className="squat-summary-stat">
                     <span>Fase</span>
@@ -1055,6 +1074,24 @@ function Home() {
                     <dt>Ejercicio</dt>
                     <dd className="diagnostic-value">{activeExercise?.name ?? '—'}</dd>
                   </div>
+                  {selectedExercise === 'sentadillas' && (
+                    <>
+                      <div className="diagnostic-row">
+                        <dt>Repeticiones</dt>
+                        <dd className="diagnostic-value diagnostic-value--accent">{squatRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Correctas</dt>
+                        <dd className="diagnostic-value diagnostic-value--success">{squatGoodRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Evaluación</dt>
+                        <dd className={`diagnostic-value ${squatFeedback.tone === 'success' ? 'diagnostic-value--success' : squatFeedback.tone === 'warning' ? 'diagnostic-value--warning' : ''}`}>
+                          {squatFeedback.message}
+                        </dd>
+                      </div>
+                    </>
+                  )}
                   <div className="diagnostic-row">
                     <dt>Lado / score</dt>
                     <dd className={`diagnostic-value ${sideSwitches > 0 ? 'diagnostic-value--warning' : ''}`}>
