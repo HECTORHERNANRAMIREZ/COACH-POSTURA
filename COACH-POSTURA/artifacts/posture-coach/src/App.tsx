@@ -9,6 +9,8 @@ import {
   Camera,
   ShieldCheck,
   Square,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -101,6 +103,10 @@ const MOVEMENT_THRESHOLDS = {
   idealMin: 80,
   idealMax: 100,
 };
+const SQUAT_THRESHOLDS = {
+  ...MOVEMENT_THRESHOLDS,
+  idealMin: 85,
+};
 const MISSING_POSE_FRAME_LIMIT = 4;
 const SIDE_STABILITY_FRAME_LIMIT = 3;
 
@@ -161,7 +167,17 @@ function getRepFeedback(result: RepResult): TechniqueFeedback {
   };
 }
 
-function updateMovementTechnique(state: TechniqueState, nextAngle: number): TechniqueState {
+function getRepVoiceMessage(result: RepResult): string {
+  if (result === 'muy profunda') return 'Muy bajo';
+  if (result === 'muy superficial') return 'Muy alto';
+  return 'Perfecto';
+}
+
+function updateMovementTechnique(
+  state: TechniqueState,
+  nextAngle: number,
+  thresholds = MOVEMENT_THRESHOLDS,
+): TechniqueState {
   const activeState = clearExpiredFeedback(state);
   const isDescending = activeState.previousAngle !== null && nextAngle < activeState.previousAngle - 1;
   const next: TechniqueState = {
@@ -185,14 +201,14 @@ function updateMovementTechnique(state: TechniqueState, nextAngle: number): Tech
       ? nextAngle
       : Math.max(next.currentMax, nextAngle);
 
-    if (isDescending && nextAngle < MOVEMENT_THRESHOLDS.idealMin) {
+    if (isDescending && nextAngle < thresholds.idealMin) {
       next.feedback = getRepFeedback('muy profunda');
     }
 
     if (nextAngle >= MOVEMENT_THRESHOLDS.up && next.currentMin !== null) {
-      const result: RepResult = next.currentMin < MOVEMENT_THRESHOLDS.idealMin
+      const result: RepResult = next.currentMin < thresholds.idealMin
         ? 'muy profunda'
-        : next.currentMin > MOVEMENT_THRESHOLDS.idealMax
+        : next.currentMin > thresholds.idealMax
           ? 'muy superficial'
           : 'correcta';
       next.repCount += 1;
@@ -555,12 +571,14 @@ function Home() {
   const [techniqueState, setTechniqueState] = useState<TechniqueState>(() => createTechniqueState());
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const techniqueStateRef = useRef<TechniqueState>(createTechniqueState());
   const sideStabilityRef = useRef<SideStabilityState>(createSideStabilityState());
+  const voiceEnabledRef = useRef(true);
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -632,6 +650,32 @@ function Home() {
     setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
   }, []);
 
+  const speakRepFeedback = useCallback((result: RepResult) => {
+    if (
+      !voiceEnabledRef.current
+      || !('speechSynthesis' in window)
+      || typeof SpeechSynthesisUtterance === 'undefined'
+    ) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(getRepVoiceMessage(result));
+    utterance.lang = 'es-MX';
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 0.9;
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const toggleVoice = useCallback(() => {
+    setVoiceEnabled((enabled) => {
+      const nextEnabled = !enabled;
+      voiceEnabledRef.current = nextEnabled;
+      if (!nextEnabled && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      return nextEnabled;
+    });
+  }, []);
+
   const processFrame = useCallback(async () => {
     const video = videoRef.current;
     const detector = detectorRef.current;
@@ -689,8 +733,17 @@ function Home() {
           nextTechniqueState = { ...activeState, missingFrames };
         }
       } else {
-        nextTechniqueState = updateMovementTechnique(previousTechniqueState, nextAngle);
+        nextTechniqueState = updateMovementTechnique(
+          previousTechniqueState,
+          nextAngle,
+          currentExercise === 'sentadillas' ? SQUAT_THRESHOLDS : MOVEMENT_THRESHOLDS,
+        );
       }
+      const completedRepResult = currentExercise !== 'plancha'
+        && nextTechniqueState.repCount > previousTechniqueState.repCount
+        ? nextTechniqueState.results[nextTechniqueState.results.length - 1]
+        : null;
+      if (completedRepResult) speakRepFeedback(completedRepResult);
       techniqueStateRef.current = nextTechniqueState;
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
@@ -730,7 +783,7 @@ function Home() {
     if (activeRef.current) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     }
-  }, [incrementErrorCount]);
+  }, [incrementErrorCount, speakRepFeedback]);
 
   const loadDetector = useCallback(async () => {
     await loadScript(SCRIPT_URLS.tensorflow, 'posture-tfjs');
@@ -1013,6 +1066,18 @@ function Home() {
                 >
                   <Activity size={13} strokeWidth={2} aria-hidden="true" />
                   <span>Diagnóstico</span>
+                </button>
+                <button
+                  type="button"
+                  className={`voice-toggle ${voiceEnabled ? 'is-enabled' : 'is-muted'}`}
+                  aria-pressed={voiceEnabled}
+                  aria-label={voiceEnabled ? 'Silenciar retroalimentación por voz' : 'Activar retroalimentación por voz'}
+                  onClick={toggleVoice}
+                  data-testid="button-toggle-voice"
+                >
+                  {voiceEnabled
+                    ? <Volume2 size={15} strokeWidth={2} aria-hidden="true" />
+                    : <VolumeX size={15} strokeWidth={2} aria-hidden="true" />}
                 </button>
                 <div className="angle-hud" aria-live="polite">
                   <span className="angle-hud-label">
