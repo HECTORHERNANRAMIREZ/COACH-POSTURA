@@ -835,6 +835,77 @@
   color: #ffe0a0;
 }
 
+.calibration-overlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(7, 16, 29, 0.48);
+  backdrop-filter: blur(7px);
+}
+
+.calibration-card {
+  display: grid;
+  width: min(19rem, 100%);
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid rgba(57, 255, 106, 0.3);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(8, 18, 32, 0.82);
+  box-shadow:
+    0 0.8rem 2rem rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  text-align: center;
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+.calibration-kicker {
+  color: #8bffa5;
+  font-size: 0.57rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.calibration-card strong {
+  color: #f0f5fb;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+.calibration-card p {
+  margin: 0;
+  color: rgba(205, 220, 235, 0.76);
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
+.calibration-progress {
+  height: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.calibration-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #39ff6a;
+  box-shadow: 0 0 0.75rem rgba(57, 255, 106, 0.55);
+  transition: width 120ms ease;
+}
+
+.calibration-card small {
+  color: rgba(184, 201, 219, 0.66);
+  font-size: 0.59rem;
+}
+
 .camera-loading {
   position: absolute;
   z-index: 3;

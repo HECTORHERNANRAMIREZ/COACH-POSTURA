@@ -46,7 +46,7 @@ type ExerciseDefinition = {
   angleLabel: string;
 };
 type PoseSide = 'left' | 'right';
-type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
+type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'calibrating' | 'tracking' | 'error';
 type PosePoint = { x: number; y: number; score?: number };
 type Pose = { keypoints?: PosePoint[] };
 type PoseDetector = {
@@ -109,6 +109,9 @@ const SQUAT_THRESHOLDS = {
 };
 const MISSING_POSE_FRAME_LIMIT = 4;
 const SIDE_STABILITY_FRAME_LIMIT = 3;
+const CALIBRATION_SAMPLE_TARGET = 18;
+const CALIBRATION_REFERENCE_ANGLE = 90;
+const CALIBRATION_MAX_CORRECTION = 30;
 
 const DEFAULT_FEEDBACK: TechniqueFeedback = {
   tone: 'neutral',
@@ -287,6 +290,18 @@ function formatDuration(seconds: number) {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
   const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
   return `${minutes}:${remainingSeconds}`;
+}
+
+function getMedian(values: number[]) {
+  const sorted = [...values].sort((first, second) => first - second);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 const exercises: ExerciseDefinition[] = [
@@ -572,6 +587,8 @@ function Home() {
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [angleCorrection, setAngleCorrection] = useState(0);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -579,6 +596,9 @@ function Home() {
   const techniqueStateRef = useRef<TechniqueState>(createTechniqueState());
   const sideStabilityRef = useRef<SideStabilityState>(createSideStabilityState());
   const voiceEnabledRef = useRef(true);
+  const calibrationSamplesRef = useRef<number[]>([]);
+  const calibrationActiveRef = useRef(false);
+  const angleCorrectionRef = useRef(0);
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -625,6 +645,8 @@ function Home() {
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
+    calibrationActiveRef.current = false;
+    calibrationSamplesRef.current = [];
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -676,6 +698,23 @@ function Home() {
     });
   }, []);
 
+  const completeCalibration = useCallback(() => {
+    const samples = calibrationSamplesRef.current;
+    if (!samples.length) return;
+    const observedReference = getMedian(samples);
+    const correction = Math.round(clamp(
+      CALIBRATION_REFERENCE_ANGLE - observedReference,
+      -CALIBRATION_MAX_CORRECTION,
+      CALIBRATION_MAX_CORRECTION,
+    ));
+    angleCorrectionRef.current = correction;
+    setAngleCorrection(correction);
+    setCalibrationProgress(CALIBRATION_SAMPLE_TARGET);
+    calibrationSamplesRef.current = [];
+    calibrationActiveRef.current = false;
+    setPhase('tracking');
+  }, []);
+
   const processFrame = useCallback(async () => {
     const video = videoRef.current;
     const detector = detectorRef.current;
@@ -694,12 +733,20 @@ function Home() {
         sideStabilityRef.current,
       );
       const nextDominantSide = nextDominantSideResult?.side ?? null;
-      const nextAngle = calculateExerciseAngle(
+      const rawAngle = calculateExerciseAngle(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
         nextDominantSide,
       );
       const currentExercise = selectedExerciseRef.current ?? 'fondos';
+      const isCalibrating = calibrationActiveRef.current;
+      const nextAngle = rawAngle === null
+        ? null
+        : Math.round(clamp(
+          rawAngle + (isCalibrating ? 0 : angleCorrectionRef.current),
+          0,
+          180,
+        ));
       const nextHipDeviation = currentExercise === 'plancha'
         ? calculateHipDeviation(pose?.keypoints, nextDominantSide)
         : null;
@@ -711,7 +758,21 @@ function Home() {
         && nextDominantSide !== previousSideRef.current;
       let nextTechniqueState: TechniqueState;
 
-      if (currentExercise === 'plancha') {
+      if (isCalibrating) {
+        if (rawAngle !== null && nextDominantSide !== null && visiblePoints >= 5) {
+          const samples = calibrationSamplesRef.current;
+          const previousSample = samples[samples.length - 1];
+          if (previousSample !== undefined && Math.abs(rawAngle - previousSample) > 12) {
+            calibrationSamplesRef.current = [];
+            setCalibrationProgress(0);
+          } else {
+            samples.push(rawAngle);
+            setCalibrationProgress(Math.min(samples.length, CALIBRATION_SAMPLE_TARGET));
+            if (samples.length >= CALIBRATION_SAMPLE_TARGET) completeCalibration();
+          }
+        }
+        nextTechniqueState = previousTechniqueState;
+      } else if (currentExercise === 'plancha') {
         nextTechniqueState = updatePlankTechnique(previousTechniqueState, nextHipDeviation);
       } else if (sideChangedDuringRep) {
         nextTechniqueState = invalidateMovement(
@@ -756,7 +817,7 @@ function Home() {
         pose?.keypoints,
         nextDominantSide,
       ));
-      if (nextAngle !== null) {
+      if (!isCalibrating && nextAngle !== null) {
         setAngleHistory((history) => [...history, nextAngle].slice(-5));
       }
       if (nextDominantSide && previousSideRef.current && nextDominantSide !== previousSideRef.current) {
@@ -783,7 +844,7 @@ function Home() {
     if (activeRef.current) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     }
-  }, [incrementErrorCount, speakRepFeedback]);
+  }, [completeCalibration, incrementErrorCount, speakRepFeedback]);
 
   const loadDetector = useCallback(async () => {
     await loadScript(SCRIPT_URLS.tensorflow, 'posture-tfjs');
@@ -832,6 +893,10 @@ function Home() {
     setTechniqueState(initialTechniqueState);
     setSessionSeconds(0);
     setDiagnosticOpen(false);
+    angleCorrectionRef.current = 0;
+    setAngleCorrection(0);
+    calibrationSamplesRef.current = [];
+    setCalibrationProgress(0);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     sideStabilityRef.current = createSideStabilityState();
@@ -861,7 +926,12 @@ function Home() {
       detectorRef.current = detector;
       setModelStatus('Modelo cargado ✓');
       activeRef.current = true;
-      setPhase('tracking');
+      if (activeExercise === 'plancha') {
+        setPhase('tracking');
+      } else {
+        calibrationActiveRef.current = true;
+        setPhase('calibrating');
+      }
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     } catch (error) {
       stopResources();
@@ -900,6 +970,10 @@ function Home() {
     setTechniqueState(initialTechniqueState);
     setSessionSeconds(0);
     setDiagnosticOpen(false);
+    angleCorrectionRef.current = 0;
+    setAngleCorrection(0);
+    calibrationSamplesRef.current = [];
+    setCalibrationProgress(0);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     sideStabilityRef.current = createSideStabilityState();
@@ -908,9 +982,16 @@ function Home() {
 
   useEffect(() => () => stopResources(), [stopResources]);
 
-  const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
+  const isActive = phase === 'requesting'
+    || phase === 'loading-model'
+    || phase === 'calibrating'
+    || phase === 'tracking';
   const activeExercise = getExercise(selectedExercise);
   const statusMessage = poseDetected ? 'Cuerpo detectado ✓' : 'Buscando tu cuerpo...';
+  const calibrationPercent = Math.round((calibrationProgress / CALIBRATION_SAMPLE_TARGET) * 100);
+  const calibrationMessage = poseDetected
+    ? 'Mantén la posición ideal unos instantes'
+    : 'Colócate para que se vea tu cuerpo completo';
   const modelStatusClass = modelStatus.includes('✓')
     ? 'diagnostic-value diagnostic-value--success'
     : modelStatus === 'Cargando modelo...'
@@ -1079,6 +1160,23 @@ function Home() {
                     ? <Volume2 size={15} strokeWidth={2} aria-hidden="true" />
                     : <VolumeX size={15} strokeWidth={2} aria-hidden="true" />}
                 </button>
+                {phase === 'calibrating' && (
+                  <div className="calibration-overlay" role="status" aria-live="polite">
+                    <div className="calibration-card">
+                      <span className="calibration-kicker">Ajuste automático de cámara</span>
+                      <strong>Adopta tu posición ideal</strong>
+                      <p>
+                        {activeExercise?.id === 'sentadillas'
+                          ? 'Baja a tu profundidad ideal, cerca de 90°'
+                          : 'Baja a tu ángulo ideal, cerca de 90°'}
+                      </p>
+                      <div className="calibration-progress" aria-hidden="true">
+                        <span style={{ width: `${calibrationPercent}%` }} />
+                      </div>
+                      <small>{calibrationMessage} · {calibrationPercent}%</small>
+                    </div>
+                  </div>
+                )}
                 <div className="angle-hud" aria-live="polite">
                   <span className="angle-hud-label">
                     {activeExercise?.id === 'plancha' ? 'Desvío cadera' : 'Ángulo'}
@@ -1103,7 +1201,7 @@ function Home() {
                   <span className="technique-alert-dot" aria-hidden="true" />
                   <span>{techniqueState.feedback.message}</span>
                 </div>
-                {phase !== 'tracking' && (
+                {phase !== 'tracking' && phase !== 'calibrating' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
                       <span className="loading-mark" aria-hidden="true" />
@@ -1179,6 +1277,18 @@ function Home() {
                     <dt>Ángulo actual</dt>
                     <dd className="diagnostic-value diagnostic-value--accent">{angleLabel}</dd>
                   </div>
+                   <div className="diagnostic-row">
+                     <dt>Ajuste cámara</dt>
+                     <dd className={`diagnostic-value ${angleCorrection !== 0 ? 'diagnostic-value--accent' : ''}`}>
+                       {activeExercise?.id === 'plancha'
+                         ? 'No aplica'
+                         : phase === 'calibrating'
+                           ? `${calibrationPercent}%`
+                           : angleCorrection === 0
+                             ? 'Sin ajuste'
+                             : `${angleCorrection > 0 ? '+' : ''}${angleCorrection}°`}
+                     </dd>
+                   </div>
                    <div className="diagnostic-row">
                      <dt>Fase movimiento</dt>
                      <dd className={`diagnostic-value ${activeExercise?.id === 'plancha' ? 'diagnostic-value--accent' : ''}`}>
