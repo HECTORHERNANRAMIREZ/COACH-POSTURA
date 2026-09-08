@@ -677,7 +677,7 @@ function Home() {
                   onClick={returnToWelcome}
                 >
                   <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
-                  <span>Volver</span>
+                    <span>Elegir otro ejercicio</span>
                 </button>
               </div>
               <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
