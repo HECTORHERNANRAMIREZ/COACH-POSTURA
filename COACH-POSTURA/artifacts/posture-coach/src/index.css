@@ -1278,6 +1278,33 @@
   }
 }
 
+@media (max-height: 800px) {
+  .exercise-panel {
+    padding-top: 1.8rem;
+    padding-bottom: 1rem;
+  }
+
+  .exercise-list {
+    gap: 0.5rem;
+    margin-top: 1.15rem;
+  }
+
+  .exercise-card {
+    min-height: 3.85rem;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .exercise-card-icon {
+    width: 2.4rem;
+    height: 2.4rem;
+  }
+
+  .privacy-note {
+    margin-top: 0.8rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

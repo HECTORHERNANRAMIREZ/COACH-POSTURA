@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  Dumbbell,
   ShieldCheck,
   Square,
   Volume2,
@@ -38,7 +39,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'sentadillas' | 'flexiones' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -318,6 +319,12 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Cadera · rodilla · tobillo',
   },
   {
+    id: 'flexiones',
+    name: 'Flexiones de pecho',
+    description: 'Observa el ángulo de tus brazos al bajar.',
+    angleLabel: 'Hombro · codo · muñeca',
+  },
+  {
     id: 'plancha',
     name: 'Plancha',
     description: 'Comprueba la línea de tu cuerpo en el apoyo.',
@@ -506,7 +513,7 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'fondos') {
+  if (exercise === 'fondos' || exercise === 'flexiones') {
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
   }
   if (exercise === 'sentadillas') {
@@ -522,6 +529,11 @@ function getAngleDiagnosticPoints(
 ): AngleDiagnosticPoint[] {
   const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
     fondos: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    flexiones: [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -1066,7 +1078,9 @@ function Home() {
                     ? Activity
                     : exercise.id === 'sentadillas'
                       ? ArrowDown
-                      : Square;
+                      : exercise.id === 'flexiones'
+                        ? Dumbbell
+                        : Square;
                   return (
                     <button
                       key={exercise.id}
