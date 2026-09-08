@@ -712,6 +712,79 @@
   animation: soft-pulse 1.25s ease-in-out infinite;
 }
 
+.technique-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.72rem;
+  margin-top: 0.65rem;
+  padding: 0.78rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(7, 17, 31, 0.48);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(18px) saturate(130%);
+}
+
+.technique-feedback-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid currentColor;
+  border-radius: 0.58rem;
+}
+
+.technique-feedback-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.technique-feedback-copy strong {
+  color: currentColor;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.technique-feedback-copy small {
+  color: rgba(215, 227, 242, 0.66);
+  font-size: 0.68rem;
+  line-height: 1.42;
+}
+
+.technique-feedback--checking {
+  color: rgba(216, 228, 242, 0.8);
+}
+
+.technique-feedback--success {
+  border-color: rgba(57, 255, 106, 0.34);
+  color: #8bffa5;
+  background:
+    linear-gradient(145deg, rgba(57, 255, 106, 0.11), rgba(255, 255, 255, 0.035)),
+    rgba(7, 26, 20, 0.5);
+}
+
+.technique-feedback--warning {
+  border-color: rgba(255, 216, 138, 0.42);
+  color: #ffd88a;
+  background:
+    linear-gradient(145deg, rgba(255, 216, 138, 0.1), rgba(255, 255, 255, 0.035)),
+    rgba(35, 27, 12, 0.5);
+}
+
+.technique-feedback--danger {
+  border-color: rgba(255, 143, 135, 0.46);
+  color: #ff9b93;
+  background:
+    linear-gradient(145deg, rgba(255, 143, 135, 0.1), rgba(255, 255, 255, 0.035)),
+    rgba(38, 14, 18, 0.5);
+}
+
 .diagnostic-panel {
   position: fixed;
   right: 0.55rem;

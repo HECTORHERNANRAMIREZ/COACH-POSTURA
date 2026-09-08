@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  CheckCircle2,
   ShieldCheck,
   Square,
 } from 'lucide-react';
@@ -56,6 +57,12 @@ type DiagnosticPoint = {
   score: number | null;
   side: 'izq.' | 'der.' | '—';
 };
+type TechniqueFeedbackTone = 'checking' | 'success' | 'warning' | 'danger';
+type TechniqueFeedback = {
+  tone: TechniqueFeedbackTone;
+  message: string;
+  detail: string;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -80,8 +87,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'flexiones',
     name: 'Flexiones de pecho',
-    description: 'Controla la profundidad manteniendo el cuerpo alineado.',
-    angleLabel: 'Hombro · codo · muñeca',
+    description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
+    angleLabel: 'Codo · torso · objetivo 45°',
   },
   {
     id: 'sentadillas',
@@ -220,6 +227,89 @@ function calculateAngle(
   return Math.round(degrees);
 }
 
+const defaultTechniqueFeedback: TechniqueFeedback = {
+  tone: 'checking',
+  message: 'Colócate de lado',
+  detail: 'Necesitamos ver tu hombro, codo, muñeca, cadera y tobillo.',
+};
+
+function getPushupTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const nose = keypoints[0];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowTorsoAngle = calculateAngle(hip, shoulder, elbow);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const neckAngle = calculateAngle(nose, shoulder, hip);
+
+  if (
+    elbowTorsoAngle === null
+    || bodyLineAngle === null
+    || neckAngle === null
+    || !shoulder
+    || !wrist
+    || !hip
+  ) {
+    return defaultTechniqueFeedback;
+  }
+
+  const torsoLength = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+  const wristOffset = torsoLength > 0
+    ? Math.abs(wrist.x - shoulder.x) / torsoLength
+    : 1;
+  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+
+  if (elbowTorsoAngle > 65) {
+    return {
+      tone: 'warning',
+      message: 'Acerca los codos al torso',
+      detail: `Están a ${elbowTorsoAngle}°. Busca aproximadamente 45° y desciende con control.`,
+    };
+  }
+  if (elbowTorsoAngle < 25) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado los codos',
+      detail: `Están a ${elbowTorsoAngle}°. Sepáralos suavemente hasta formar unos 45° con el torso.`,
+    };
+  }
+  if (wristOffset > 0.38) {
+    return {
+      tone: 'warning',
+      message: 'Alinea las muñecas debajo de los hombros',
+      detail: 'Ajusta la posición de las manos antes de continuar.',
+    };
+  }
+  if (bodyLineDeviation > 18) {
+    return {
+      tone: 'danger',
+      message: 'Mantén una línea recta',
+      detail: 'Contrae abdomen y glúteos; evita arquear la espalda baja o elevar la cadera.',
+    };
+  }
+  if (neckAngle < 155) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el cuello neutro',
+      detail: 'Mira hacia el suelo sin estirar el cuello.',
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Postura correcta',
+    detail: `Codos a ${elbowTorsoAngle}°. Baja el pecho de forma controlada y extiende sin bloquear bruscamente.`,
+  };
+}
+
 function calculateExerciseAngle(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -228,6 +318,9 @@ function calculateExerciseAngle(
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
   if (exercise === 'fondos' || exercise === 'flexiones') {
+    if (exercise === 'flexiones') {
+      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    }
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
   }
   if (exercise === 'sentadillas') {
@@ -248,9 +341,9 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     flexiones: [
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
-      { label: 'Muñeca', joint: 'wrist' },
     ],
     sentadillas: [
       { label: 'Cadera', joint: 'hip' },
@@ -309,6 +402,7 @@ function Home() {
   const [sideChangeNotice, setSideChangeNotice] = useState('Sin cambios');
   const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
+  const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -404,6 +498,11 @@ function Home() {
         pose?.keypoints,
         nextDominantSide,
       ));
+      setTechniqueFeedback(
+        selectedExerciseRef.current === 'flexiones'
+          ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : defaultTechniqueFeedback,
+      );
       if (nextAngle !== null) {
         setAngleHistory((history) => [...history, nextAngle].slice(-5));
       }
@@ -475,6 +574,7 @@ function Home() {
     setSideChangeNotice('Sin cambios');
     setAnglePoints([]);
     setAngleHistory([]);
+    setTechniqueFeedback(defaultTechniqueFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('requesting');
@@ -537,6 +637,7 @@ function Home() {
     setSideChangeNotice('Sin cambios');
     setAnglePoints([]);
     setAngleHistory([]);
+    setTechniqueFeedback(defaultTechniqueFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
@@ -647,7 +748,11 @@ function Home() {
                   <h1 id="active-title" className="active-title">{activeExercise?.name ?? 'Alineación en directo'}</h1>
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
-                    <span>Vista frontal · {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}</span>
+                    <span>
+                      {selectedExercise === 'flexiones' ? 'Vista lateral recomendada' : 'Vista frontal'}
+                      {' · '}
+                      {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
+                    </span>
                   </div>
                 </div>
                 <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
@@ -660,7 +765,7 @@ function Home() {
                   playsInline
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
-                  aria-label="Vista previa de la cámara frontal"
+                  aria-label={`Vista previa de la cámara ${selectedExercise === 'flexiones' ? 'lateral' : 'frontal'}`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
                 <div className="video-vignette" aria-hidden="true" />
@@ -694,6 +799,23 @@ function Home() {
                   <span>{statusMessage}</span>
                 </div>
               </div>
+              {selectedExercise === 'flexiones' && (
+                <div
+                  className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="technique-feedback-icon" aria-hidden="true">
+                    {techniqueFeedback.tone === 'success'
+                      ? <CheckCircle2 size={17} strokeWidth={2} />
+                      : <AlertTriangle size={17} strokeWidth={1.8} />}
+                  </span>
+                  <span className="technique-feedback-copy">
+                    <strong>{techniqueFeedback.message}</strong>
+                    <small>{techniqueFeedback.detail}</small>
+                  </span>
+                </div>
+              )}
               <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
                 <div className="diagnostic-heading">
                   <span>Diagnóstico</span>
