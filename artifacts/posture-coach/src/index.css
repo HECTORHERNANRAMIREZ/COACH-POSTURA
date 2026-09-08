@@ -209,6 +209,36 @@
   box-shadow: 0 0 13px rgba(57, 255, 106, 0.65);
 }
 
+.topbar-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-height: 2.25rem;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.78rem;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(226, 235, 246, 0.78);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.69rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(14px) saturate(130%);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.topbar-back svg {
+  color: #8bffa5;
+}
+
+.topbar-back:hover {
+  transform: translateY(-1px);
+  border-color: rgba(57, 255, 106, 0.34);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f0f5fb;
+}
+
 .privacy-chip {
   display: inline-flex;
   align-items: center;

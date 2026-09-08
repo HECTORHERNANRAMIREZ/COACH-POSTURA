@@ -561,10 +561,22 @@ function Home() {
       <div className="ambient-orb ambient-orb--bottom" aria-hidden="true" />
       <main className="coach-layout">
         <header className="topbar">
-          <div className="wordmark">
-            <span className="wordmark-mark" aria-hidden="true" />
-            <span>COACH / POSTURA</span>
-          </div>
+          {isActive ? (
+            <button
+              type="button"
+              className="topbar-back"
+              data-testid="button-stop-camera-top"
+              onClick={returnToWelcome}
+            >
+              <ArrowLeft size={15} strokeWidth={2} aria-hidden="true" />
+              <span>Elegir otro ejercicio</span>
+            </button>
+          ) : (
+            <div className="wordmark">
+              <span className="wordmark-mark" aria-hidden="true" />
+              <span>COACH / POSTURA</span>
+            </div>
+          )}
           <div className="privacy-chip">
             <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
             <span>Privado</span>
@@ -670,15 +682,6 @@ function Home() {
                   <span className="status-dot" aria-hidden="true" />
                   <span>{statusMessage}</span>
                 </div>
-                <button
-                  type="button"
-                  className="stop-action"
-                  data-testid="button-stop-camera"
-                  onClick={returnToWelcome}
-                >
-                  <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
-                    <span>Elegir otro ejercicio</span>
-                </button>
               </div>
               <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
                 <div className="diagnostic-heading">
