@@ -36,7 +36,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'flexiones' | 'sentadillas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -75,6 +75,12 @@ const exercises: ExerciseDefinition[] = [
     id: 'fondos',
     name: 'Fondos en barra',
     description: 'Observa el ángulo de tus brazos al descender.',
+    angleLabel: 'Hombro · codo · muñeca',
+  },
+  {
+    id: 'flexiones',
+    name: 'Flexiones de pecho',
+    description: 'Controla la profundidad manteniendo el cuerpo alineado.',
     angleLabel: 'Hombro · codo · muñeca',
   },
   {
@@ -221,7 +227,7 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'fondos') {
+  if (exercise === 'fondos' || exercise === 'flexiones') {
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
   }
   if (exercise === 'sentadillas') {
@@ -237,6 +243,11 @@ function getAngleDiagnosticPoints(
 ): AngleDiagnosticPoint[] {
   const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
     fondos: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    flexiones: [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -597,7 +608,7 @@ function Home() {
               </p>
               <div className="exercise-list">
                 {exercises.map((exercise) => {
-                  const ExerciseIcon = exercise.id === 'fondos'
+                  const ExerciseIcon = exercise.id === 'fondos' || exercise.id === 'flexiones'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       ? ArrowDown
