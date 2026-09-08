@@ -63,6 +63,15 @@ type TechniqueFeedback = {
   message: string;
   detail: string;
 };
+type SquatPhase = 'arriba' | 'bajando' | 'abajo';
+type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
+type SquatTracker = {
+  phase: SquatPhase;
+  repetitions: number;
+  minimumAngle: number | null;
+  samples: number[];
+  event: SquatRepEvent;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -103,6 +112,80 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Hombro · cadera · tobillo',
   },
 ];
+
+const SQUAT_VALID_MIN_ANGLE = 83;
+const SQUAT_VALID_MAX_ANGLE = 90;
+const SQUAT_TOP_THRESHOLD = 150;
+const SQUAT_RISE_THRESHOLD = 115;
+const SQUAT_SMOOTHING_SAMPLES = 5;
+
+function createSquatTracker(): SquatTracker {
+  return {
+    phase: 'arriba',
+    repetitions: 0,
+    minimumAngle: null,
+    samples: [],
+    event: null,
+  };
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((first, second) => first - second);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+type SquatTrackerUpdate = {
+  tracker: SquatTracker;
+  smoothedAngle: number;
+  completedMinimumAngle: number | null;
+};
+
+function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrackerUpdate {
+  const samples = [...tracker.samples, rawAngle].slice(-SQUAT_SMOOTHING_SAMPLES);
+  const smoothedAngle = median(samples);
+  if (smoothedAngle === null) {
+    return { tracker, smoothedAngle: rawAngle, completedMinimumAngle: null };
+  }
+
+  const nextTracker: SquatTracker = {
+    ...tracker,
+    samples,
+    event: null,
+  };
+  let completedMinimumAngle: number | null = null;
+
+  if (nextTracker.phase === 'arriba' && smoothedAngle < SQUAT_TOP_THRESHOLD) {
+    nextTracker.phase = 'bajando';
+    nextTracker.minimumAngle = smoothedAngle;
+  } else if (nextTracker.phase === 'bajando') {
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+    if (smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
+      nextTracker.phase = 'abajo';
+    }
+  } else if (nextTracker.phase === 'abajo') {
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+
+    if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
+      completedMinimumAngle = nextTracker.minimumAngle;
+      if (completedMinimumAngle !== null) {
+        nextTracker.event = completedMinimumAngle < SQUAT_VALID_MIN_ANGLE
+          ? 'too-deep'
+          : completedMinimumAngle <= SQUAT_VALID_MAX_ANGLE
+            ? 'valid'
+            : 'too-shallow';
+        if (nextTracker.event === 'valid') nextTracker.repetitions += 1;
+      }
+      nextTracker.phase = 'arriba';
+      nextTracker.minimumAngle = null;
+    }
+  }
+
+  return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
+}
 
 type BrowserGlobals = Window & {
   poseDetection?: {
@@ -220,17 +303,38 @@ function calculateAngle(
   if (!first || !vertex || !last) return null;
   if ((first.score ?? 0) < 0.2 || (vertex.score ?? 0) < 0.2 || (last.score ?? 0) < 0.2) return null;
 
-  const firstRadians = Math.atan2(first.y - vertex.y, first.x - vertex.x);
-  const lastRadians = Math.atan2(last.y - vertex.y, last.x - vertex.x);
-  const rawDegrees = Math.abs((lastRadians - firstRadians) * (180 / Math.PI));
-  const degrees = rawDegrees > 180 ? 360 - rawDegrees : rawDegrees;
-  return Math.round(degrees);
+  const firstVector = {
+    x: first.x - vertex.x,
+    y: first.y - vertex.y,
+  };
+  const lastVector = {
+    x: last.x - vertex.x,
+    y: last.y - vertex.y,
+  };
+  const firstLength = Math.hypot(firstVector.x, firstVector.y);
+  const lastLength = Math.hypot(lastVector.x, lastVector.y);
+  if (!firstLength || !lastLength) return null;
+
+  const cosine = Math.max(
+    -1,
+    Math.min(
+      1,
+      (firstVector.x * lastVector.x + firstVector.y * lastVector.y) / (firstLength * lastLength),
+    ),
+  );
+  return Math.round(Math.acos(cosine) * (180 / Math.PI));
 }
 
 const defaultTechniqueFeedback: TechniqueFeedback = {
   tone: 'checking',
   message: 'Colócate de lado',
   detail: 'Necesitamos ver tu hombro, codo, muñeca, cadera y tobillo.',
+};
+
+const defaultSquatFeedback: TechniqueFeedback = {
+  tone: 'checking',
+  message: 'Ángulo normalizado',
+  detail: 'La inclinación, escala y altura de la cámara no cambian la medición.',
 };
 
 function getPushupTechniqueFeedback(
@@ -403,10 +507,15 @@ function Home() {
   const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
+  const [squatRepetitions, setSquatRepetitions] = useState(0);
+  const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
+  const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
+  const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
+  const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -483,11 +592,46 @@ function Home() {
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextDominantSideResult = getDominantSide(pose?.keypoints);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
-      const nextAngle = calculateExerciseAngle(
+      const rawAngle = calculateExerciseAngle(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
         nextDominantSide,
       );
+      let nextAngle = rawAngle;
+      if (selectedExerciseRef.current === 'sentadillas' && rawAngle !== null) {
+        const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
+        squatTrackerRef.current = squatUpdate.tracker;
+        nextAngle = squatUpdate.smoothedAngle;
+        setSquatRepetitions(squatUpdate.tracker.repetitions);
+        setSquatPhase(squatUpdate.tracker.phase);
+        setSquatMinimumAngle(squatUpdate.tracker.minimumAngle ?? squatUpdate.completedMinimumAngle);
+        if (squatUpdate.tracker.event === 'valid') {
+          setSquatFeedback({
+            tone: 'success',
+            message: 'Repetición registrada ✓',
+            detail: `Profundidad válida: ${squatUpdate.completedMinimumAngle}° dentro del rango 83–90°.`,
+          });
+        } else if (squatUpdate.tracker.event === 'too-deep') {
+          setSquatFeedback({
+            tone: 'warning',
+            message: 'Repetición no registrada',
+            detail: `El ángulo mínimo fue ${squatUpdate.completedMinimumAngle}°. El rango válido es 83–90°.`,
+          });
+        } else if (squatUpdate.tracker.event === 'too-shallow') {
+          setSquatFeedback({
+            tone: 'warning',
+            message: 'Baja un poco más',
+            detail: `El ángulo mínimo fue ${squatUpdate.completedMinimumAngle}°. Busca el rango 83–90°.`,
+          });
+        } else if (squatUpdate.smoothedAngle >= SQUAT_VALID_MIN_ANGLE
+          && squatUpdate.smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
+          setSquatFeedback({
+            tone: 'success',
+            message: 'Rango válido',
+            detail: 'Mantén el control y vuelve a subir para completar la repetición.',
+          });
+        }
+      }
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
       setDominantSide(nextDominantSide);
@@ -575,6 +719,11 @@ function Home() {
     setAnglePoints([]);
     setAngleHistory([]);
     setTechniqueFeedback(defaultTechniqueFeedback);
+    squatTrackerRef.current = createSquatTracker();
+    setSquatRepetitions(0);
+    setSquatPhase('arriba');
+    setSquatMinimumAngle(null);
+    setSquatFeedback(defaultSquatFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('requesting');
@@ -638,6 +787,11 @@ function Home() {
     setAnglePoints([]);
     setAngleHistory([]);
     setTechniqueFeedback(defaultTechniqueFeedback);
+    squatTrackerRef.current = createSquatTracker();
+    setSquatRepetitions(0);
+    setSquatPhase('arriba');
+    setSquatMinimumAngle(null);
+    setSquatFeedback(defaultSquatFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
@@ -666,6 +820,11 @@ function Home() {
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
+  const squatPhaseLabel = squatPhase === 'arriba'
+    ? 'Arriba'
+    : squatPhase === 'bajando'
+      ? 'Bajando'
+      : 'Abajo';
 
   return (
     <div className="posture-app">
@@ -757,6 +916,23 @@ function Home() {
                 </div>
                 <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
               </div>
+              {selectedExercise === 'sentadillas' && (
+                <div className="squat-summary" aria-label="Resumen de sentadillas">
+                  <div className="squat-summary-stat">
+                    <span>Repeticiones válidas</span>
+                    <strong>{squatRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Fase</span>
+                    <strong>{squatPhaseLabel}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Último mínimo</span>
+                    <strong>{squatMinimumAngle === null ? '—' : `${squatMinimumAngle}°`}</strong>
+                  </div>
+                  <p>Rango objetivo 83–90° · ángulo compensado para la posición de la cámara.</p>
+                </div>
+              )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
                 <video
                   ref={videoRef}
@@ -813,6 +989,23 @@ function Home() {
                   <span className="technique-feedback-copy">
                     <strong>{techniqueFeedback.message}</strong>
                     <small>{techniqueFeedback.detail}</small>
+                  </span>
+                </div>
+              )}
+              {selectedExercise === 'sentadillas' && (
+                <div
+                  className={`technique-feedback technique-feedback--${squatFeedback.tone}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="technique-feedback-icon" aria-hidden="true">
+                    {squatFeedback.tone === 'success'
+                      ? <CheckCircle2 size={17} strokeWidth={2} />
+                      : <AlertTriangle size={17} strokeWidth={1.8} />}
+                  </span>
+                  <span className="technique-feedback-copy">
+                    <strong>{squatFeedback.message}</strong>
+                    <small>{squatFeedback.detail}</small>
                   </span>
                 </div>
               )}
