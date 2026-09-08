@@ -1,6 +1,15 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, Camera, ShieldCheck } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Camera,
+  ShieldCheck,
+  Square,
+} from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -27,7 +36,15 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type SessionPhase = 'welcome' | 'requesting' | 'loading-model' | 'tracking' | 'error';
+type ExerciseId = 'fondos' | 'sentadillas' | 'plancha';
+type ExerciseDefinition = {
+  id: ExerciseId;
+  name: string;
+  description: string;
+  angleLabel: string;
+};
+type PoseSide = 'left' | 'right';
+type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
 type PosePoint = { x: number; y: number; score?: number };
 type Pose = { keypoints?: PosePoint[] };
 type PoseDetector = {
@@ -43,6 +60,27 @@ type VideoResolution = {
   width: number;
   height: number;
 };
+
+const exercises: ExerciseDefinition[] = [
+  {
+    id: 'fondos',
+    name: 'Fondos en barra',
+    description: 'Observa el ángulo de tus brazos al descender.',
+    angleLabel: 'Hombro · codo · muñeca',
+  },
+  {
+    id: 'sentadillas',
+    name: 'Sentadillas',
+    description: 'Mide la profundidad y el control de tus piernas.',
+    angleLabel: 'Cadera · rodilla · tobillo',
+  },
+  {
+    id: 'plancha',
+    name: 'Plancha',
+    description: 'Comprueba la línea de tu cuerpo en el apoyo.',
+    angleLabel: 'Hombro · cadera · tobillo',
+  },
+];
 
 type BrowserGlobals = Window & {
   poseDetection?: {
@@ -129,6 +167,64 @@ function selectMostConfident(
   return { label, score: left?.score ?? null, side: 'izq.' };
 }
 
+const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle', number>> = {
+  left: { shoulder: 5, elbow: 7, wrist: 9, hip: 11, knee: 13, ankle: 15 },
+  right: { shoulder: 6, elbow: 8, wrist: 10, hip: 12, knee: 14, ankle: 16 },
+};
+
+function getDominantSide(keypoints: PosePoint[] | undefined): PoseSide | null {
+  if (!keypoints) return null;
+  const sides: PoseSide[] = ['left', 'right'];
+  const scores = sides.map((side) => {
+    const indexes = Object.values(sideKeypoints[side]);
+    const visible = indexes
+      .map((index) => keypoints[index]?.score)
+      .filter((score): score is number => typeof score === 'number');
+    return {
+      side,
+      average: visible.length ? visible.reduce((sum, score) => sum + score, 0) / visible.length : 0,
+      count: visible.length,
+    };
+  });
+  const best = scores.sort((first, second) => second.average - first.average)[0];
+  return best.count ? best.side : null;
+}
+
+function calculateAngle(
+  first: PosePoint | undefined,
+  vertex: PosePoint | undefined,
+  last: PosePoint | undefined,
+) {
+  if (!first || !vertex || !last) return null;
+  if ((first.score ?? 0) < 0.2 || (vertex.score ?? 0) < 0.2 || (last.score ?? 0) < 0.2) return null;
+
+  const firstRadians = Math.atan2(first.y - vertex.y, first.x - vertex.x);
+  const lastRadians = Math.atan2(last.y - vertex.y, last.x - vertex.x);
+  const rawDegrees = Math.abs((lastRadians - firstRadians) * (180 / Math.PI));
+  const degrees = rawDegrees > 180 ? 360 - rawDegrees : rawDegrees;
+  return Math.round(degrees);
+}
+
+function calculateExerciseAngle(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return null;
+  const indexes = sideKeypoints[side];
+  if (exercise === 'fondos') {
+    return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
+  }
+  if (exercise === 'sentadillas') {
+    return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
+  }
+  return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.ankle]);
+}
+
+function getExercise(exerciseId: ExerciseId | null) {
+  return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -137,7 +233,9 @@ function Home() {
   const animationFrameRef = useRef<number | null>(null);
   const activeRef = useRef(false);
   const busyRef = useRef(false);
-  const [phase, setPhase] = useState<SessionPhase>('welcome');
+  const [phase, setPhase] = useState<SessionPhase>('exercise-select');
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
+  const selectedExerciseRef = useRef<ExerciseId | null>(null);
   const [poseDetected, setPoseDetected] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
@@ -150,6 +248,8 @@ function Home() {
     { label: 'Rodilla', score: null, side: '—' },
   ]);
   const [errorCount, setErrorCount] = useState(0);
+  const [angle, setAngle] = useState<number | null>(null);
+  const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
 
@@ -226,8 +326,15 @@ function Home() {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
       const pose = poses[0];
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
+      const nextDominantSide = getDominantSide(pose?.keypoints);
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
+      setDominantSide(nextDominantSide);
+      setAngle(calculateExerciseAngle(
+        selectedExerciseRef.current ?? 'fondos',
+        pose?.keypoints,
+        nextDominantSide,
+      ));
       setConfidencePoints([
         selectMostConfident(pose?.keypoints, 'Hombro', 5, 6),
         selectMostConfident(pose?.keypoints, 'Cadera', 11, 12),
@@ -257,9 +364,16 @@ function Home() {
     );
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (exerciseId?: ExerciseId) => {
     if (busyRef.current) return;
     busyRef.current = true;
+    const activeExercise = exerciseId ?? selectedExerciseRef.current;
+    if (!activeExercise) {
+      busyRef.current = false;
+      return;
+    }
+    selectedExerciseRef.current = activeExercise;
+    setSelectedExercise(activeExercise);
     stopResources();
     setPoseDetected(false);
     setErrorMessage('');
@@ -274,6 +388,8 @@ function Home() {
     ]);
     errorCountRef.current = 0;
     setErrorCount(0);
+    setAngle(null);
+    setDominantSide(null);
     setPhase('requesting');
 
     try {
@@ -323,14 +439,19 @@ function Home() {
 
   const returnToWelcome = useCallback(() => {
     stopResources();
+    selectedExerciseRef.current = null;
+    setSelectedExercise(null);
     setPoseDetected(false);
     setErrorMessage('');
-    setPhase('welcome');
+    setAngle(null);
+    setDominantSide(null);
+    setPhase('exercise-select');
   }, [stopResources]);
 
   useEffect(() => () => stopResources(), [stopResources]);
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
+  const activeExercise = getExercise(selectedExercise);
   const statusMessage = poseDetected ? 'Cuerpo detectado ✓' : 'Buscando tu cuerpo...';
   const modelStatusClass = modelStatus.includes('✓')
     ? 'diagnostic-value diagnostic-value--success'
@@ -359,26 +480,44 @@ function Home() {
         </header>
 
         <div className="coach-stage">
-          {phase === 'welcome' && (
-            <section className="glass-panel welcome-panel" aria-labelledby="welcome-title">
+          {phase === 'exercise-select' && (
+            <section className="glass-panel exercise-panel" aria-labelledby="exercise-title">
               <div className="panel-kicker">
                 <span className="kicker-line" aria-hidden="true" />
                 <span>Tu espacio de alineación</span>
                 <span className="kicker-line" aria-hidden="true" />
               </div>
-              <h1 id="welcome-title" className="welcome-title">Coach de postura</h1>
+              <h1 id="exercise-title" className="welcome-title">Elige tu ejercicio</h1>
               <p className="welcome-subtitle">
-                Observa tu alineación en tiempo real y muévete con más confianza.
+                Selecciona un movimiento para empezar a observar tu técnica en tiempo real.
               </p>
-              <button
-                type="button"
-                className="primary-action"
-                data-testid="button-activate-camera"
-                onClick={() => void startCamera()}
-              >
-                <Camera size={18} strokeWidth={2.2} aria-hidden="true" />
-                <span>Activar cámara</span>
-              </button>
+              <div className="exercise-list">
+                {exercises.map((exercise) => {
+                  const ExerciseIcon = exercise.id === 'fondos'
+                    ? Activity
+                    : exercise.id === 'sentadillas'
+                      ? ArrowDown
+                      : Square;
+                  return (
+                    <button
+                      key={exercise.id}
+                      type="button"
+                      className="exercise-card"
+                      data-testid={`exercise-${exercise.id}`}
+                      onClick={() => void startCamera(exercise.id)}
+                    >
+                      <span className="exercise-card-icon" aria-hidden="true">
+                        <ExerciseIcon size={20} strokeWidth={1.8} />
+                      </span>
+                      <span className="exercise-card-copy">
+                        <strong>{exercise.name}</strong>
+                        <small>{exercise.description}</small>
+                      </span>
+                      <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
               <p className="privacy-note">
                 <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
                 <span>La imagen se procesa solo en tu dispositivo.</span>
@@ -390,10 +529,10 @@ function Home() {
             <section className="glass-panel active-panel" aria-labelledby="active-title">
               <div className="active-header">
                 <div>
-                  <h1 id="active-title" className="active-title">Alineación en directo</h1>
+                  <h1 id="active-title" className="active-title">{activeExercise?.name ?? 'Alineación en directo'}</h1>
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
-                    <span>Vista frontal</span>
+                    <span>Vista frontal · {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}</span>
                   </div>
                 </div>
                 <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
@@ -414,6 +553,11 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
+                  <div className="angle-hud" aria-live="polite">
+                    <span className="angle-hud-label">Ángulo</span>
+                    <strong>{angle === null ? '—' : `${angle}°`}</strong>
+                    <small>{activeExercise?.angleLabel ?? 'Esperando puntos'}</small>
+                  </div>
                 {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
@@ -501,7 +645,7 @@ function Home() {
                   type="button"
                   className="secondary-action"
                   data-testid="button-retry-camera"
-                  onClick={() => void startCamera()}
+                  onClick={() => void startCamera(selectedExerciseRef.current ?? undefined)}
                 >
                   <Camera size={16} strokeWidth={2} aria-hidden="true" />
                   <span>Intentar de nuevo</span>

@@ -1,0 +1,14 @@
+Ahora agrega, antes de la pantalla de cámara, una pantalla de selección de ejercicio, manteniendo exactamente el mismo sistema de diseño "Liquid Glass" ya establecido (paneles de vidrio esmerilado, blur, verde neón de acento).
+
+1. Pantalla de selección: tres tarjetas de vidrio (una por ejercicio) en lista vertical: "Fondos en barra", "Sentadillas", "Plancha". Cada tarjeta con un ícono simple (puede ser un emoji o un ícono SVG minimalista) y una descripción corta de una línea. Al tocar una tarjeta, pasa a la pantalla de cámara que ya existe, mostrando el nombre del ejercicio elegido.
+
+2. En la pantalla de cámara/sesión en vivo, agrega el cálculo del ángulo relevante según el ejercicio elegido, usando trigonometría (Math.atan2) entre tres articulaciones detectadas por MoveNet:
+   - Fondos en barra: hombro - codo - muñeca.
+   - Sentadillas: cadera - rodilla - tobillo.
+   - Plancha: hombro - cadera - tobillo.
+
+3. Detecta automáticamente si la persona está de perfil hacia el lado izquierdo o derecho de la cámara, usando el lado (left_ o right_) cuyos keypoints tengan mayor score de confianza promedio, y usa siempre ese lado para el cálculo.
+
+4. Muestra el ángulo calculado en tiempo real como un número grande dentro de un panel de vidrio tipo HUD flotando en la esquina superior de la pantalla de cámara (ej: "142°"), actualizándose en cada frame.
+
+No implementes todavía el contador de repeticiones ni los mensajes de corrección — solo quiero ver el ángulo calculado en pantalla y confirmar que cambia correctamente cuando muevo el cuerpo.

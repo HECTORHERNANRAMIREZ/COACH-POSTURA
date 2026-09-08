@@ -272,6 +272,96 @@
   text-align: center;
 }
 
+.exercise-panel {
+  max-width: 35rem;
+  padding: 2.2rem 1.15rem 1.3rem;
+  text-align: center;
+}
+
+.exercise-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.65rem;
+  text-align: left;
+}
+
+.exercise-card {
+  display: grid;
+  grid-template-columns: 2.7rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 4.35rem;
+  padding: 0.7rem 0.8rem 0.7rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.15rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(14, 27, 45, 0.52);
+  color: rgba(232, 240, 248, 0.9);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.exercise-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(57, 255, 106, 0.42);
+  background:
+    linear-gradient(145deg, rgba(57, 255, 106, 0.1), rgba(255, 255, 255, 0.03)),
+    rgba(14, 27, 45, 0.66);
+  box-shadow: 0 0.75rem 1.8rem rgba(0, 0, 0, 0.16);
+}
+
+.exercise-card:active {
+  transform: translateY(0);
+}
+
+.exercise-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border: 1px solid rgba(57, 255, 106, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(57, 255, 106, 0.07);
+  color: #8bffa5;
+}
+
+.exercise-card-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.exercise-card-copy strong {
+  overflow: hidden;
+  color: #f0f5fb;
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exercise-card-copy small {
+  color: rgba(194, 210, 226, 0.62);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.exercise-card-arrow {
+  color: rgba(210, 225, 239, 0.48);
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.exercise-card:hover .exercise-card-arrow {
+  color: #8bffa5;
+  transform: translateX(2px);
+}
+
 .panel-kicker {
   display: inline-flex;
   align-items: center;
@@ -429,6 +519,53 @@
 
 .video-stage canvas {
   pointer-events: none;
+}
+
+.angle-hud {
+  position: absolute;
+  z-index: 3;
+  top: 0.9rem;
+  right: 0.9rem;
+  display: grid;
+  justify-items: end;
+  min-width: 6.9rem;
+  padding: 0.65rem 0.75rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035)),
+    rgba(8, 18, 32, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0.7rem 1.6rem rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px) saturate(150%);
+  pointer-events: none;
+  text-align: right;
+}
+
+.angle-hud-label {
+  color: rgba(208, 223, 238, 0.62);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.angle-hud strong {
+  margin-top: 0.04rem;
+  color: #f0f5fb;
+  font-size: clamp(1.85rem, 9vw, 2.8rem);
+  font-weight: 650;
+  letter-spacing: -0.08em;
+  line-height: 1;
+}
+
+.angle-hud small {
+  max-width: 8rem;
+  margin-top: 0.25rem;
+  color: rgba(183, 255, 198, 0.64);
+  font-size: 0.51rem;
+  line-height: 1.25;
 }
 
 .video-vignette {
@@ -756,6 +893,10 @@
 
   .welcome-panel {
     padding: 3.2rem 2.5rem 1.75rem;
+  }
+
+  .exercise-panel {
+    padding: 3rem 2.25rem 1.75rem;
   }
 
   .active-panel {
