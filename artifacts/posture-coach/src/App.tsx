@@ -70,6 +70,8 @@ type SquatTracker = {
   repetitions: number;
   goodRepetitions: number;
   minimumAngle: number | null;
+  descentStartAngle: number | null;
+  hasMeaningfulDescent: boolean;
   samples: number[];
   event: SquatRepEvent;
   currentRepCounted: boolean;
@@ -117,8 +119,9 @@ const exercises: ExerciseDefinition[] = [
 
 const SQUAT_VALID_MIN_ANGLE = 83;
 const SQUAT_VALID_MAX_ANGLE = 90;
-const SQUAT_TOP_THRESHOLD = 150;
+const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
+const SQUAT_MEANINGFUL_DESCENT = 22;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 
 function createSquatTracker(): SquatTracker {
@@ -127,6 +130,8 @@ function createSquatTracker(): SquatTracker {
     repetitions: 0,
     goodRepetitions: 0,
     minimumAngle: null,
+    descentStartAngle: null,
+    hasMeaningfulDescent: false,
     samples: [],
     event: null,
     currentRepCounted: false,
