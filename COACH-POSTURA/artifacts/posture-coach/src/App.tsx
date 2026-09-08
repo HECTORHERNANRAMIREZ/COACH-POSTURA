@@ -554,6 +554,7 @@ function Home() {
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [techniqueState, setTechniqueState] = useState<TechniqueState>(() => createTechniqueState());
   const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -777,6 +778,7 @@ function Home() {
     techniqueStateRef.current = initialTechniqueState;
     setTechniqueState(initialTechniqueState);
     setSessionSeconds(0);
+    setDiagnosticOpen(false);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     sideStabilityRef.current = createSideStabilityState();
@@ -844,6 +846,7 @@ function Home() {
     techniqueStateRef.current = initialTechniqueState;
     setTechniqueState(initialTechniqueState);
     setSessionSeconds(0);
+    setDiagnosticOpen(false);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     sideStabilityRef.current = createSideStabilityState();
@@ -999,6 +1002,18 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`diagnostic-toggle ${diagnosticOpen ? 'is-open' : ''}`}
+                  aria-expanded={diagnosticOpen}
+                  aria-controls="diagnostic-panel"
+                  aria-label={diagnosticOpen ? 'Cerrar diagnóstico' : 'Abrir diagnóstico'}
+                  onClick={() => setDiagnosticOpen((open) => !open)}
+                  data-testid="button-toggle-diagnostics"
+                >
+                  <Activity size={13} strokeWidth={2} aria-hidden="true" />
+                  <span>Diagnóstico</span>
+                </button>
                 <div className="angle-hud" aria-live="polite">
                   <span className="angle-hud-label">
                     {activeExercise?.id === 'plancha' ? 'Desvío cadera' : 'Ángulo'}
@@ -1044,10 +1059,23 @@ function Home() {
                   <span>{statusMessage}</span>
                 </div>
               </div>
-              <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
+              <aside
+                id="diagnostic-panel"
+                className={`diagnostic-panel ${diagnosticOpen ? 'is-open' : ''}`}
+                aria-label="Panel de diagnóstico temporal"
+                aria-hidden={!diagnosticOpen}
+              >
                 <div className="diagnostic-heading">
                   <span>Diagnóstico</span>
                   <span className="diagnostic-temporary">Temporal</span>
+                  <button
+                    type="button"
+                    className="diagnostic-close"
+                    aria-label="Cerrar diagnóstico"
+                    onClick={() => setDiagnosticOpen(false)}
+                  >
+                    ×
+                  </button>
                 </div>
                 <dl className="diagnostic-list">
                   <div className="diagnostic-row">
