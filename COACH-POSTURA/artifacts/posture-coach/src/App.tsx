@@ -86,6 +86,13 @@ type TechniqueState = {
   feedback: TechniqueFeedback;
   previousAngle: number | null;
   hipDeviation: number | null;
+  missingFrames: number;
+  feedbackExpiresAt: number | null;
+};
+type SideStabilityState = {
+  confirmedSide: PoseSide | null;
+  candidateSide: PoseSide | null;
+  candidateFrames: number;
 };
 
 const MOVEMENT_THRESHOLDS = {
@@ -94,6 +101,8 @@ const MOVEMENT_THRESHOLDS = {
   idealMin: 80,
   idealMax: 100,
 };
+const MISSING_POSE_FRAME_LIMIT = 4;
+const SIDE_STABILITY_FRAME_LIMIT = 3;
 
 const DEFAULT_FEEDBACK: TechniqueFeedback = {
   tone: 'neutral',
@@ -111,6 +120,25 @@ function createTechniqueState(): TechniqueState {
     feedback: { ...DEFAULT_FEEDBACK },
     previousAngle: null,
     hipDeviation: null,
+    missingFrames: 0,
+    feedbackExpiresAt: null,
+  };
+}
+
+function createSideStabilityState(): SideStabilityState {
+  return {
+    confirmedSide: null,
+    candidateSide: null,
+    candidateFrames: 0,
+  };
+}
+
+function clearExpiredFeedback(state: TechniqueState): TechniqueState {
+  if (state.feedbackExpiresAt === null || Date.now() < state.feedbackExpiresAt) return state;
+  return {
+    ...state,
+    feedback: { ...DEFAULT_FEEDBACK },
+    feedbackExpiresAt: null,
   };
 }
 
@@ -134,14 +162,16 @@ function getRepFeedback(result: RepResult): TechniqueFeedback {
 }
 
 function updateMovementTechnique(state: TechniqueState, nextAngle: number): TechniqueState {
-  const isDescending = state.previousAngle !== null && nextAngle < state.previousAngle - 1;
+  const activeState = clearExpiredFeedback(state);
+  const isDescending = activeState.previousAngle !== null && nextAngle < activeState.previousAngle - 1;
   const next: TechniqueState = {
-    ...state,
-    results: [...state.results],
+    ...activeState,
+    results: [...activeState.results],
     previousAngle: nextAngle,
+    missingFrames: 0,
   };
 
-  if (state.phase === 'arriba' && nextAngle <= MOVEMENT_THRESHOLDS.down) {
+  if (activeState.phase === 'arriba' && nextAngle <= MOVEMENT_THRESHOLDS.down) {
     next.phase = 'abajo';
     next.currentMin = nextAngle;
     next.currentMax = nextAngle;
@@ -178,6 +208,22 @@ function updateMovementTechnique(state: TechniqueState, nextAngle: number): Tech
   return next;
 }
 
+function invalidateMovement(
+  state: TechniqueState,
+  message: string,
+): TechniqueState {
+  return {
+    ...state,
+    phase: 'arriba',
+    currentMin: null,
+    currentMax: null,
+    previousAngle: null,
+    missingFrames: 0,
+    feedback: { tone: 'amber', message },
+    feedbackExpiresAt: Date.now() + 1800,
+  };
+}
+
 function calculateHipDeviation(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -201,12 +247,14 @@ function calculateHipDeviation(
 }
 
 function updatePlankTechnique(state: TechniqueState, hipDeviation: number | null): TechniqueState {
+  const activeState = clearExpiredFeedback(state);
   const next: TechniqueState = {
-    ...state,
+    ...activeState,
     hipDeviation,
     currentMin: null,
     currentMax: null,
     previousAngle: null,
+    missingFrames: 0,
   };
   if (hipDeviation === null) return next;
   if (hipDeviation > 0.08) {
@@ -336,22 +384,73 @@ const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'h
   right: { shoulder: 6, elbow: 8, wrist: 10, hip: 12, knee: 14, ankle: 16 },
 };
 
+function getSideAverage(keypoints: PosePoint[] | undefined, side: PoseSide) {
+  if (!keypoints) return 0;
+  const visible = Object.values(sideKeypoints[side])
+    .map((index) => keypoints[index]?.score)
+    .filter((score): score is number => typeof score === 'number');
+  return visible.length ? visible.reduce((sum, score) => sum + score, 0) / visible.length : 0;
+}
+
 function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult | null {
   if (!keypoints) return null;
   const sides: PoseSide[] = ['left', 'right'];
-  const scores = sides.map((side) => {
-    const indexes = Object.values(sideKeypoints[side]);
-    const visible = indexes
-      .map((index) => keypoints[index]?.score)
-      .filter((score): score is number => typeof score === 'number');
-    return {
-      side,
-      average: visible.length ? visible.reduce((sum, score) => sum + score, 0) / visible.length : 0,
-      count: visible.length,
-    };
-  });
+  const scores = sides.map((side) => ({
+    side,
+    average: getSideAverage(keypoints, side),
+    count: Object.values(sideKeypoints[side])
+      .filter((index) => typeof keypoints[index]?.score === 'number').length,
+  }));
   const best = scores.sort((first, second) => second.average - first.average)[0];
   return best.count ? { side: best.side, average: best.average } : null;
+}
+
+function getStableDominantSide(
+  keypoints: PosePoint[] | undefined,
+  stability: SideStabilityState,
+): DominantSideResult | null {
+  const detected = getDominantSide(keypoints);
+  if (!detected) {
+    stability.candidateSide = null;
+    stability.candidateFrames = 0;
+    return null;
+  }
+
+  if (stability.confirmedSide === null) {
+    if (stability.candidateSide === detected.side) {
+      stability.candidateFrames += 1;
+    } else {
+      stability.candidateSide = detected.side;
+      stability.candidateFrames = 1;
+    }
+    if (stability.candidateFrames >= SIDE_STABILITY_FRAME_LIMIT) {
+      stability.confirmedSide = detected.side;
+      stability.candidateSide = null;
+      stability.candidateFrames = 0;
+    } else {
+      return null;
+    }
+  } else if (detected.side !== stability.confirmedSide) {
+    if (stability.candidateSide === detected.side) {
+      stability.candidateFrames += 1;
+    } else {
+      stability.candidateSide = detected.side;
+      stability.candidateFrames = 1;
+    }
+    if (stability.candidateFrames >= SIDE_STABILITY_FRAME_LIMIT) {
+      stability.confirmedSide = detected.side;
+      stability.candidateSide = null;
+      stability.candidateFrames = 0;
+    }
+  } else {
+    stability.candidateSide = null;
+    stability.candidateFrames = 0;
+  }
+
+  return {
+    side: stability.confirmedSide,
+    average: getSideAverage(keypoints, stability.confirmedSide),
+  };
 }
 
 function calculateAngle(
@@ -460,6 +559,7 @@ function Home() {
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const techniqueStateRef = useRef<TechniqueState>(createTechniqueState());
+  const sideStabilityRef = useRef<SideStabilityState>(createSideStabilityState());
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -544,7 +644,10 @@ function Home() {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
       const pose = poses[0];
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
-      const nextDominantSideResult = getDominantSide(pose?.keypoints);
+      const nextDominantSideResult = getStableDominantSide(
+        pose?.keypoints,
+        sideStabilityRef.current,
+      );
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const nextAngle = calculateExerciseAngle(
         selectedExerciseRef.current ?? 'fondos',
@@ -556,11 +659,37 @@ function Home() {
         ? calculateHipDeviation(pose?.keypoints, nextDominantSide)
         : null;
       const previousTechniqueState = techniqueStateRef.current;
-      const nextTechniqueState = currentExercise === 'plancha'
-        ? updatePlankTechnique(previousTechniqueState, nextHipDeviation)
-        : nextAngle === null
-          ? previousTechniqueState
-          : updateMovementTechnique(previousTechniqueState, nextAngle);
+      const sideChangedDuringRep = currentExercise !== 'plancha'
+        && previousTechniqueState.phase === 'abajo'
+        && previousSideRef.current !== null
+        && nextDominantSide !== null
+        && nextDominantSide !== previousSideRef.current;
+      let nextTechniqueState: TechniqueState;
+
+      if (currentExercise === 'plancha') {
+        nextTechniqueState = updatePlankTechnique(previousTechniqueState, nextHipDeviation);
+      } else if (sideChangedDuringRep) {
+        nextTechniqueState = invalidateMovement(
+          previousTechniqueState,
+          'Repetición no válida — cambio de lado detectado',
+        );
+      } else if (nextAngle === null) {
+        const missingFrames = previousTechniqueState.missingFrames + 1;
+        if (
+          previousTechniqueState.phase === 'abajo'
+          && missingFrames >= MISSING_POSE_FRAME_LIMIT
+        ) {
+          nextTechniqueState = invalidateMovement(
+            previousTechniqueState,
+            'Repetición no válida — te saliste de cuadro',
+          );
+        } else {
+          const activeState = clearExpiredFeedback(previousTechniqueState);
+          nextTechniqueState = { ...activeState, missingFrames };
+        }
+      } else {
+        nextTechniqueState = updateMovementTechnique(previousTechniqueState, nextAngle);
+      }
       techniqueStateRef.current = nextTechniqueState;
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
@@ -650,6 +779,7 @@ function Home() {
     setSessionSeconds(0);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
+    sideStabilityRef.current = createSideStabilityState();
     setPhase('requesting');
 
     try {
@@ -716,6 +846,7 @@ function Home() {
     setSessionSeconds(0);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
+    sideStabilityRef.current = createSideStabilityState();
     setPhase('exercise-select');
   }, [stopResources]);
 
