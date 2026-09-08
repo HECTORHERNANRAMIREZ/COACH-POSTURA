@@ -840,11 +840,57 @@
     rgba(38, 14, 18, 0.5);
 }
 
-.diagnostic-panel {
+.diagnostic-dock {
   position: fixed;
   right: 0.55rem;
   bottom: 0.55rem;
   z-index: 20;
+  display: grid;
+  justify-items: end;
+  gap: 0.38rem;
+  width: min(15rem, calc(100vw - 1rem));
+  pointer-events: none;
+}
+
+.diagnostic-dock > * {
+  pointer-events: auto;
+}
+
+.diagnostic-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  min-height: 1.9rem;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid rgba(57, 255, 106, 0.3);
+  border-radius: 999px;
+  background: rgba(7, 24, 24, 0.9);
+  box-shadow:
+    0 0.55rem 1.4rem rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  color: #a8ffba;
+  cursor: pointer;
+  font-family: var(--app-font-sans);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.diagnostic-toggle:hover {
+  border-color: rgba(57, 255, 106, 0.58);
+  background: rgba(12, 42, 32, 0.96);
+  transform: translateY(-1px);
+}
+
+.diagnostic-toggle:focus-visible {
+  outline: 2px solid #b5ffc5;
+  outline-offset: 3px;
+}
+
+.diagnostic-panel {
   width: min(15rem, calc(100vw - 1rem));
   max-height: min(42vh, 18rem);
   padding: 0.52rem 0.58rem 0.56rem;
@@ -861,7 +907,6 @@
   font-size: 0.54rem;
   line-height: 1.25;
   backdrop-filter: blur(18px) saturate(140%);
-  pointer-events: none;
   overflow-y: auto;
 }
 

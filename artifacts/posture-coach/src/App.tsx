@@ -567,6 +567,7 @@ function Home() {
   const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
   const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
+  const [diagnosticOpen, setDiagnosticOpen] = useState(true);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -1075,12 +1076,24 @@ function Home() {
                   </span>
                 </div>
               )}
-              <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
-                <div className="diagnostic-heading">
-                  <span>Diagnóstico</span>
-                  <span className="diagnostic-temporary">Temporal</span>
-                </div>
-                <dl className="diagnostic-list">
+              <div className="diagnostic-dock">
+                <button
+                  type="button"
+                  className="diagnostic-toggle"
+                  aria-expanded={diagnosticOpen}
+                  aria-controls="diagnostic-panel"
+                  onClick={() => setDiagnosticOpen((isOpen) => !isOpen)}
+                >
+                  <Activity size={14} strokeWidth={2} aria-hidden="true" />
+                  <span>{diagnosticOpen ? 'Ocultar diagnóstico' : 'Mostrar diagnóstico'}</span>
+                </button>
+                {diagnosticOpen && (
+                  <aside id="diagnostic-panel" className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
+                    <div className="diagnostic-heading">
+                      <span>Diagnóstico</span>
+                      <span className="diagnostic-temporary">Temporal</span>
+                    </div>
+                    <dl className="diagnostic-list">
                   <div className="diagnostic-row">
                     <dt>Modelo</dt>
                     <dd className={modelStatusClass}>{modelStatus}</dd>
@@ -1175,8 +1188,10 @@ function Home() {
                       {errorCount}
                     </dd>
                   </div>
-                </dl>
-              </aside>
+                    </dl>
+                  </aside>
+                )}
+              </div>
             </section>
           )}
 
