@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Coach de postura"
+description = "A mobile-first browser app that uses the front camera and TensorFlow.js MoveNet pose detection to show a real-time posture skeleton, entirely on-device."
+version = "1.0.0"
+id = "artifacts/posture-coach"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24009
+
+[services.development]
+run = "pnpm --filter @workspace/posture-coach run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/posture-coach", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/posture-coach/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24009"
+BASE_PATH = "/"

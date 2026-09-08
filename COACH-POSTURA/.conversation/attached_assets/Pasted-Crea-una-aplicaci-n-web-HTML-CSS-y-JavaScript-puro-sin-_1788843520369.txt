@@ -1,0 +1,17 @@
+Crea una aplicación web (HTML, CSS y JavaScript puro, sin frameworks) mobile-first para corregir técnica de ejercicio en tiempo real usando la cámara y detección de pose.
+
+SISTEMA DE DISEÑO — estilo "Liquid Glass" de Apple (el lenguaje visual translúcido tipo cristal esmerilado de iOS):
+- Fondo de la app: degradado oscuro y profundo (tonos azul-grafito muy oscuros, casi negro, con un leve tinte azulado).
+- Todos los paneles, tarjetas, botones y barras superiores deben ser superficies de "vidrio esmerilado": fondo semi-transparente (rgba con opacidad baja, 10-20%), con backdrop-filter: blur(20px) saturate(180%), borde de 1px muy sutil semi-transparente blanco (rgba(255,255,255,0.15)), esquinas muy redondeadas (20-28px), y una sombra suave hacia abajo para dar sensación de profundidad/flotación sobre el fondo.
+- Añade un brillo especular sutil: un gradiente diagonal muy tenue de blanco a transparente en la parte superior de cada panel de vidrio, simulando el reflejo de luz en cristal real.
+- Tipografía: usa system-ui / -apple-system como familia principal, con jerarquía clara (títulos grandes y semi-bold, texto secundario más pequeño y en gris claro translúcido).
+- Color de acento único: verde neón vibrante (#39ff6a), usado solo para el esqueleto de tracking, botones primarios y elementos de éxito — nada más lleva este color, para que resalte.
+- Evita el look "SaaS card kit" genérico: no uses la misma sombra gris plana en todo, varía la intensidad del vidrio según la jerarquía (paneles flotantes tipo HUD más translúcidos, botones principales un poco más opacos).
+
+FUNCIONALIDAD DE ESTE PRIMER PROMPT (solo esto por ahora, sin selección de ejercicio todavía):
+1. Pantalla única con un panel de vidrio centrado que contiene: título "Coach de postura", un subtítulo, y un botón "Activar cámara".
+2. Al tocar el botón, pide permiso de cámara (getUserMedia, cámara frontal), muestra el video en vivo dentro de un panel de vidrio con esquinas redondeadas.
+3. Carga el modelo MoveNet de TensorFlow.js (librería @tensorflow-models/pose-detection, vía CDN de jsdelivr) y dibuja el esqueleto (líneas y puntos verde neón #39ff6a) sobre el video en tiempo real, en un canvas superpuesto perfectamente alineado con el video (cuidado con el espejo: el video debe verse en modo selfie/espejo y el canvas debe coincidir exactamente con las coordenadas del cuerpo).
+4. Un texto de estado en un panel de vidrio pequeño flotando debajo del video, indicando "Buscando tu cuerpo..." o "Cuerpo detectado ✓".
+
+Organiza el código en index.html, style.css y script.js. Todo el procesamiento corre en el navegador del usuario, sin backend.

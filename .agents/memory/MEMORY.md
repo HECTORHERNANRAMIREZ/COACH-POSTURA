@@ -1,0 +1,1 @@
+- [Arranque del preview](preview-startup.md) — el frontend necesita dependencias instaladas y variables de entorno de Vite.
