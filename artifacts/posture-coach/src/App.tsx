@@ -159,15 +159,15 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
     nextTracker.minimumAngle = smoothedAngle;
   } else if (nextTracker.phase === 'bajando') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
-      ? smoothedAngle
-      : Math.min(nextTracker.minimumAngle, smoothedAngle);
-    if (smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
+      ? rawAngle
+      : Math.min(nextTracker.minimumAngle, rawAngle);
+    if (rawAngle <= SQUAT_VALID_MAX_ANGLE || smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
       nextTracker.phase = 'abajo';
     }
   } else if (nextTracker.phase === 'abajo') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
-      ? smoothedAngle
-      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+      ? rawAngle
+      : Math.min(nextTracker.minimumAngle, rawAngle);
 
     if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
       completedMinimumAngle = nextTracker.minimumAngle;
@@ -433,6 +433,35 @@ function calculateExerciseAngle(
   return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.ankle]);
 }
 
+function calculateSquatAngle(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return null;
+
+  const candidates = (['left', 'right'] as PoseSide[])
+    .map((side) => {
+      const indexes = sideKeypoints[side];
+      const angle = calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.knee],
+        keypoints[indexes.ankle],
+      );
+      const confidencePoints = [indexes.hip, indexes.knee, indexes.ankle]
+        .map((index) => keypoints[index]?.score ?? 0);
+      const confidence = confidencePoints.reduce((sum, score) => sum + score, 0) / confidencePoints.length;
+      return { angle, confidence };
+    })
+    .filter((candidate): candidate is { angle: number; confidence: number } => candidate.angle !== null)
+    .sort((first, second) => second.confidence - first.confidence);
+
+  if (!candidates.length) return null;
+  const strongest = candidates[0];
+  const second = candidates[1];
+  if (second && strongest.confidence >= 0.45 && second.confidence >= 0.45
+    && Math.abs(strongest.angle - second.angle) <= 24) {
+    return Math.round((strongest.angle + second.angle) / 2);
+  }
+  return strongest.angle;
+}
+
 function getAngleDiagnosticPoints(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -592,11 +621,14 @@ function Home() {
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextDominantSideResult = getDominantSide(pose?.keypoints);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
-      const rawAngle = calculateExerciseAngle(
-        selectedExerciseRef.current ?? 'fondos',
-        pose?.keypoints,
-        nextDominantSide,
-      );
+      const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
+      const rawAngle = selectedExerciseForFrame === 'sentadillas'
+        ? calculateSquatAngle(pose?.keypoints)
+        : calculateExerciseAngle(
+          selectedExerciseForFrame,
+          pose?.keypoints,
+          nextDominantSide,
+        );
       let nextAngle = rawAngle;
       if (selectedExerciseRef.current === 'sentadillas' && rawAngle !== null) {
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
