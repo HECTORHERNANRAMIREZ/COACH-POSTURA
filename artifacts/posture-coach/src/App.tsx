@@ -567,7 +567,7 @@ function Home() {
   const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
   const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
-  const [diagnosticOpen, setDiagnosticOpen] = useState(true);
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
