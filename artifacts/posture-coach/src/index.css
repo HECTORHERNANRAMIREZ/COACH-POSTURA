@@ -545,6 +545,101 @@
   animation: soft-pulse 1.25s ease-in-out infinite;
 }
 
+.diagnostic-panel {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 20;
+  width: min(18rem, calc(100vw - 1.5rem));
+  padding: 0.72rem 0.8rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(6, 15, 28, 0.88);
+  box-shadow:
+    0 0.7rem 2rem rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: rgba(226, 235, 245, 0.82);
+  font-family: var(--app-font-mono);
+  font-size: 0.62rem;
+  line-height: 1.35;
+  backdrop-filter: blur(18px) saturate(140%);
+  pointer-events: none;
+}
+
+.diagnostic-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.48rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(240, 245, 251, 0.92);
+  font-family: var(--app-font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.diagnostic-temporary {
+  color: rgba(184, 201, 219, 0.56);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.diagnostic-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.55rem 0 0;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: 5.9rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+}
+
+.diagnostic-row dt {
+  color: rgba(184, 201, 219, 0.58);
+}
+
+.diagnostic-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.diagnostic-value {
+  color: rgba(232, 240, 248, 0.9);
+}
+
+.diagnostic-value--loading {
+  color: #d8e4f2;
+}
+
+.diagnostic-value--success {
+  color: #8bffa5;
+}
+
+.diagnostic-value--error {
+  color: #ff9b93;
+}
+
+.diagnostic-confidence {
+  display: grid;
+  gap: 0.12rem;
+  color: rgba(232, 240, 248, 0.88);
+}
+
+.diagnostic-confidence small {
+  color: rgba(184, 201, 219, 0.58);
+  font-size: 0.55rem;
+}
+
 .stop-action,
 .secondary-action {
   display: inline-flex;
@@ -673,6 +768,11 @@
 
   .error-actions {
     flex-direction: row-reverse;
+  }
+
+  .diagnostic-panel {
+    right: 1.25rem;
+    bottom: 1.25rem;
   }
 }
 

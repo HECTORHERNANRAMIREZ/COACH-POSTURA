@@ -34,6 +34,15 @@ type PoseDetector = {
   estimatePoses: (video: HTMLVideoElement, options?: { flipHorizontal?: boolean }) => Promise<Pose[]>;
   dispose?: () => void;
 };
+type DiagnosticPoint = {
+  label: string;
+  score: number | null;
+  side: 'izq.' | 'der.' | '—';
+};
+type VideoResolution = {
+  width: number;
+  height: number;
+};
 
 type BrowserGlobals = Window & {
   poseDetection?: {
@@ -104,6 +113,22 @@ function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, pose?:
   context.shadowBlur = 0;
 }
 
+function selectMostConfident(
+  keypoints: PosePoint[] | undefined,
+  label: string,
+  leftIndex: number,
+  rightIndex: number,
+): DiagnosticPoint {
+  const left = keypoints?.[leftIndex];
+  const right = keypoints?.[rightIndex];
+  const leftScore = left?.score ?? 0;
+  const rightScore = right?.score ?? 0;
+
+  if (!left && !right) return { label, score: null, side: '—' };
+  if (rightScore > leftScore) return { label, score: right?.score ?? null, side: 'der.' };
+  return { label, score: left?.score ?? null, side: 'izq.' };
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -116,6 +141,50 @@ function Home() {
   const [poseDetected, setPoseDetected] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
+  const [modelStatus, setModelStatus] = useState('Modelo sin iniciar');
+  const [videoResolution, setVideoResolution] = useState<VideoResolution>({ width: 0, height: 0 });
+  const [fps, setFps] = useState(0);
+  const [confidencePoints, setConfidencePoints] = useState<DiagnosticPoint[]>([
+    { label: 'Hombro', score: null, side: '—' },
+    { label: 'Cadera', score: null, side: '—' },
+    { label: 'Rodilla', score: null, side: '—' },
+  ]);
+  const [errorCount, setErrorCount] = useState(0);
+  const errorCountRef = useRef(0);
+  const fpsFramesRef = useRef(0);
+
+  const incrementErrorCount = useCallback(() => {
+    errorCountRef.current += 1;
+    setErrorCount(errorCountRef.current);
+  }, []);
+
+  useEffect(() => {
+    const handleWindowError = () => incrementErrorCount();
+    const handleUnhandledRejection = () => incrementErrorCount();
+    const originalConsoleError = console.error.bind(console);
+
+    console.error = (...args: unknown[]) => {
+      incrementErrorCount();
+      originalConsoleError(...args);
+    };
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      console.error = originalConsoleError;
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, [incrementErrorCount]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setFps(fpsFramesRef.current);
+      fpsFramesRef.current = 0;
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
@@ -141,6 +210,7 @@ function Home() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     setVideoRatio(`${video.videoWidth} / ${video.videoHeight}`);
+    setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
   }, []);
 
   const processFrame = useCallback(async () => {
@@ -156,16 +226,25 @@ function Home() {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
       const pose = poses[0];
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
+      fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
+      setConfidencePoints([
+        selectMostConfident(pose?.keypoints, 'Hombro', 5, 6),
+        selectMostConfident(pose?.keypoints, 'Cadera', 11, 12),
+        selectMostConfident(pose?.keypoints, 'Rodilla', 13, 14),
+      ]);
       if (canvasRef.current) drawSkeleton(canvasRef.current, video, pose);
     } catch {
-      if (activeRef.current) setPoseDetected(false);
+      if (activeRef.current) {
+        incrementErrorCount();
+        setPoseDetected(false);
+      }
     }
 
     if (activeRef.current) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     }
-  }, []);
+  }, [incrementErrorCount]);
 
   const loadDetector = useCallback(async () => {
     await loadScript(SCRIPT_URLS.tensorflow, 'posture-tfjs');
@@ -184,6 +263,17 @@ function Home() {
     stopResources();
     setPoseDetected(false);
     setErrorMessage('');
+    setModelStatus('Cargando modelo...');
+    setVideoResolution({ width: 0, height: 0 });
+    setFps(0);
+    fpsFramesRef.current = 0;
+    setConfidencePoints([
+      { label: 'Hombro', score: null, side: '—' },
+      { label: 'Cadera', score: null, side: '—' },
+      { label: 'Rodilla', score: null, side: '—' },
+    ]);
+    errorCountRef.current = 0;
+    setErrorCount(0);
     setPhase('requesting');
 
     try {
@@ -208,6 +298,7 @@ function Home() {
       setPhase('loading-model');
       const detector = await loadDetector();
       detectorRef.current = detector;
+      setModelStatus('Modelo cargado ✓');
       activeRef.current = true;
       setPhase('tracking');
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
@@ -223,6 +314,7 @@ function Home() {
       } else {
         setErrorMessage('No pudimos activar la cámara. Comprueba los permisos e inténtalo de nuevo.');
       }
+      if (error instanceof Error && error.message) setModelStatus(error.message);
       setPhase('error');
     } finally {
       busyRef.current = false;
@@ -240,6 +332,15 @@ function Home() {
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
   const statusMessage = poseDetected ? 'Cuerpo detectado ✓' : 'Buscando tu cuerpo...';
+  const modelStatusClass = modelStatus.includes('✓')
+    ? 'diagnostic-value diagnostic-value--success'
+    : modelStatus === 'Cargando modelo...'
+      ? 'diagnostic-value diagnostic-value--loading'
+      : 'diagnostic-value diagnostic-value--error';
+  const resolutionLabel = videoResolution.width && videoResolution.height
+    ? `${videoResolution.width} × ${videoResolution.height}`
+    : '— × —';
+  const formatScore = (score: number | null) => score === null ? '—' : score.toFixed(2);
 
   return (
     <div className="posture-app">
@@ -343,6 +444,48 @@ function Home() {
                   <span>Volver</span>
                 </button>
               </div>
+              <aside className="diagnostic-panel" aria-label="Panel de diagnóstico temporal">
+                <div className="diagnostic-heading">
+                  <span>Diagnóstico</span>
+                  <span className="diagnostic-temporary">Temporal</span>
+                </div>
+                <dl className="diagnostic-list">
+                  <div className="diagnostic-row">
+                    <dt>Modelo</dt>
+                    <dd className={modelStatusClass}>{modelStatus}</dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Video</dt>
+                    <dd className="diagnostic-value">{resolutionLabel}</dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>FPS detección</dt>
+                    <dd className="diagnostic-value">{fps}</dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Persona</dt>
+                    <dd className={`diagnostic-value ${poseDetected ? 'diagnostic-value--success' : ''}`}>
+                      {poseDetected ? 'Cuerpo detectado ✓' : 'Sin detección'}
+                    </dd>
+                  </div>
+                  <div className="diagnostic-row diagnostic-row--confidence">
+                    <dt>Confianza</dt>
+                    <dd className="diagnostic-confidence">
+                      {confidencePoints.map((point) => (
+                        <span key={point.label}>
+                          {point.label} {formatScore(point.score)} <small>{point.side}</small>
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                  <div className="diagnostic-row">
+                    <dt>Errores JS</dt>
+                    <dd className={`diagnostic-value ${errorCount > 0 ? 'diagnostic-value--error' : ''}`}>
+                      {errorCount}
+                    </dd>
+                  </div>
+                </dl>
+              </aside>
             </section>
           )}
 
