@@ -145,6 +145,8 @@ const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
 const SQUAT_MEANINGFUL_DESCENT = 22;
 const SQUAT_SMOOTHING_SAMPLES = 5;
+const ANGLE_DISPLAY_SAMPLES = 7;
+const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const PULLUP_BOTTOM_MIN_ANGLE = 175;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 170;
@@ -996,6 +998,9 @@ function Home() {
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
+  const angleDisplaySamplesRef = useRef<number[]>([]);
+  const angleDisplayRef = useRef<number | null>(null);
+  const lastAngleDisplayAtRef = useRef(0);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
 
@@ -1155,11 +1160,33 @@ function Home() {
           setPullupFeedback(getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide));
         }
       }
+      let displayAngle = nextAngle;
+      if (nextAngle === null) {
+        angleDisplaySamplesRef.current = [];
+        angleDisplayRef.current = null;
+        lastAngleDisplayAtRef.current = 0;
+      } else {
+        angleDisplaySamplesRef.current = [
+          ...angleDisplaySamplesRef.current,
+          nextAngle,
+        ].slice(-ANGLE_DISPLAY_SAMPLES);
+        const stableAngle = median(angleDisplaySamplesRef.current) ?? nextAngle;
+        const now = performance.now();
+        if (
+          angleDisplayRef.current === null
+          || now - lastAngleDisplayAtRef.current >= ANGLE_DISPLAY_INTERVAL_MS
+        ) {
+          angleDisplayRef.current = stableAngle;
+          lastAngleDisplayAtRef.current = now;
+        }
+        displayAngle = angleDisplayRef.current;
+      }
+
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
       setDominantSide(nextDominantSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
-      setAngle(nextAngle);
+      setAngle(displayAngle);
       setAnglePoints(getAngleDiagnosticPoints(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
@@ -1176,8 +1203,12 @@ function Home() {
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
       );
-      if (nextAngle !== null) {
-        setAngleHistory((history) => [...history, nextAngle].slice(-5));
+      if (displayAngle !== null) {
+        setAngleHistory((history) => (
+          history[history.length - 1] === displayAngle
+            ? history
+            : [...history, displayAngle].slice(-5)
+        ));
       }
       if (nextDominantSide && previousSideRef.current && nextDominantSide !== previousSideRef.current) {
         sideSwitchesRef.current += 1;
@@ -1241,6 +1272,9 @@ function Home() {
     errorCountRef.current = 0;
     setErrorCount(0);
     setAngle(null);
+    angleDisplaySamplesRef.current = [];
+    angleDisplayRef.current = null;
+    lastAngleDisplayAtRef.current = 0;
     setDominantSide(null);
     setSideConfidence(null);
     setSideSwitches(0);
@@ -1316,6 +1350,9 @@ function Home() {
     setPoseDetected(false);
     setErrorMessage('');
     setAngle(null);
+    angleDisplaySamplesRef.current = [];
+    angleDisplayRef.current = null;
+    lastAngleDisplayAtRef.current = 0;
     setDominantSide(null);
     setSideConfidence(null);
     setSideSwitches(0);
@@ -1362,6 +1399,12 @@ function Home() {
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
+  const angleFeedback = selectedExercise === 'sentadillas'
+    ? squatFeedback
+    : selectedExercise === 'dominadas'
+      ? pullupFeedback
+      : techniqueFeedback;
+  const angleIsGood = angleFeedback.tone === 'success';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
   const squatPhaseLabel = squatPhase === 'arriba'
     ? 'Arriba'
@@ -1556,6 +1599,9 @@ function Home() {
                     <span className="angle-hud-label">Ángulo</span>
                     <strong>{angle === null ? '—' : `${angle}°`}</strong>
                     <small>{activeExercise?.angleLabel ?? 'Esperando puntos'}</small>
+                    {angleIsGood && angle !== null && (
+                      <span className="angle-hud-status">¡Lo estás haciendo bien!</span>
+                    )}
                   </div>
                 {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">

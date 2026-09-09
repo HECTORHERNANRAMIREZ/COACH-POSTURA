@@ -662,6 +662,22 @@
   line-height: 1.25;
 }
 
+.angle-hud-status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.38rem;
+  padding: 0.22rem 0.35rem;
+  border: 1px solid rgba(57, 255, 106, 0.34);
+  border-radius: 0.42rem;
+  background: rgba(57, 255, 106, 0.1);
+  color: #8bffa5;
+  font-size: 0.49rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-align: right;
+}
+
 .video-vignette {
   position: absolute;
   z-index: 1;
