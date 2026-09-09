@@ -50,7 +50,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -66,6 +66,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
+  'triceps-polea-alta': '/triceps-polea-alta.svg',
   sentadillas: squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -176,6 +177,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Press militar con mancuernas',
     description: 'Usa un banco a 75–80° y empuja las mancuernas con codos a 45°.',
     angleLabel: 'Banco 75–80° · codos 45°',
+  },
+  {
+    id: 'triceps-polea-alta',
+    name: 'Extensiones de tríceps en polea alta',
+    description: 'Mantén los codos fijos y extiende los brazos con control.',
+    angleLabel: 'Codo · extensión controlada',
   },
   {
     id: 'sentadillas',
@@ -812,6 +819,45 @@ function getMilitaryPressTechniqueFeedback(
   };
 }
 
+function getTricepsPushdownTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+
+  if (elbowAngle === null || bodyLineAngle === null) return defaultTechniqueFeedback;
+
+  if (bodyLineAngle < 160) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el torso estable',
+      detail: `Tu cuerpo está a ${bodyLineAngle}°. Reduce la inclinación y deja que el movimiento salga del codo.`,
+    };
+  }
+  if (elbowAngle < 70) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado el codo',
+      detail: `El codo está a ${elbowAngle}°. Sube un poco la barra y conserva el control sin comprimir la articulación.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Extensión de tríceps controlada',
+    detail: `Codo ${elbowAngle}° · torso estable. Mantén los brazos cerca del cuerpo y extiende sin balancearte.`,
+  };
+}
+
 function getLungeTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -1395,6 +1441,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones-declinadas'
     || exercise === 'flexiones-pica'
     || exercise === 'press-militar'
+    || exercise === 'triceps-polea-alta'
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
   ) {
@@ -1491,6 +1538,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'press-militar': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'triceps-polea-alta': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -1809,6 +1861,8 @@ function Home() {
             ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'press-militar'
             ? getMilitaryPressTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'triceps-polea-alta'
+            ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
              : selectedExerciseRef.current === 'dominadas'
@@ -2100,6 +2154,7 @@ function Home() {
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
+                    || exercise.id === 'triceps-polea-alta'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       || exercise.id === 'zancadas'
@@ -2157,6 +2212,7 @@ function Home() {
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'press-militar'
+                        || selectedExercise === 'triceps-polea-alta'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
@@ -2263,6 +2319,18 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'triceps-polea-alta' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las extensiones de tríceps en polea alta">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Posición:</b> colócate frente a la polea alta con los pies al ancho de los hombros y una ligera inclinación del torso, sin encorvarte.</li>
+                    <li><b>Codos:</b> mantenlos pegados a los costados y fijos; no los lleves hacia delante ni los abras durante la serie.</li>
+                    <li><b>Muñecas:</b> conserva una posición neutra y sujeta la barra o cuerda sin doblarlas hacia atrás.</li>
+                    <li><b>Movimiento:</b> extiende los codos hacia abajo hasta acercarte a la extensión completa, sin bloquearlos bruscamente.</li>
+                    <li><b>Regreso:</b> sube lentamente hasta un ángulo cómodo de 80–100° y repite sin balancear el torso.</li>
+                  </ul>
+                </div>
+              )}
               {selectedExercise === 'dominadas-supinas' && (
                 <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
                   <strong>Cómo hacerlo</strong>
@@ -2308,6 +2376,7 @@ function Home() {
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'press-militar'
+                        || selectedExercise === 'triceps-polea-alta'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'

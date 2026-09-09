@@ -384,8 +384,12 @@
   animation-delay: 1690ms;
 }
 
+.exercise-panel .exercise-card:nth-child(13) {
+  animation-delay: 1780ms;
+}
+
 .exercise-panel .privacy-note {
-  animation: enter-from-left 420ms 1810ms backwards cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: enter-from-left 420ms 1900ms backwards cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .exercise-list {
