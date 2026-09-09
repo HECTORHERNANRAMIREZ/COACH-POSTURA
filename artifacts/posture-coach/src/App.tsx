@@ -147,7 +147,7 @@ const exercises: ExerciseDefinition[] = [
     id: 'flexiones-pica',
     name: 'Flexiones en pica',
     description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
-    angleLabel: 'Codo · objetivo 80–100°',
+    angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
   },
   {
     id: 'sentadillas',
@@ -191,8 +191,10 @@ const PULLDOWN_TORSO_MAX_ANGLE = 20;
 const PULLDOWN_TORSO_TOO_FAR_ANGLE = 30;
 const PULLDOWN_ELBOW_MIN_ANGLE = 80;
 const PULLDOWN_ELBOW_MAX_ANGLE = 100;
-const PIKE_ELBOW_MIN_ANGLE = 80;
-const PIKE_ELBOW_MAX_ANGLE = 100;
+const PIKE_ELBOW_BODY_MIN_ANGLE = 45;
+const PIKE_ELBOW_BODY_MAX_ANGLE = 60;
+const PIKE_WRIST_SHOULDER_MIN_ANGLE = 75;
+const PIKE_WRIST_SHOULDER_MAX_ANGLE = 105;
 const PIKE_MIN_HIP_LIFT_RATIO = 0.12;
 const PIKE_MIN_BODY_FOLD_ANGLE = 45;
 const PIKE_MAX_BODY_FOLD_ANGLE = 125;
@@ -617,11 +619,13 @@ function getPikePushupTechniqueFeedback(
   const wrist = keypoints[indexes.wrist];
   const hip = keypoints[indexes.hip];
   const ankle = keypoints[indexes.ankle];
-  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const elbowBodyAngle = calculateAngle(hip, shoulder, elbow);
+  const wristShoulderAngle = calculateAngleToFloor(shoulder, wrist);
   const bodyFoldAngle = calculateAngle(shoulder, hip, ankle);
 
   if (
-    elbowAngle === null
+    elbowBodyAngle === null
+    || wristShoulderAngle === null
     || bodyFoldAngle === null
     || !shoulder
     || !hip
@@ -661,28 +665,36 @@ function getPikePushupTechniqueFeedback(
     return {
       tone: 'warning',
       message: 'Coloca las manos debajo de los hombros',
-      detail: 'Apoya las manos un poco más cerca para que el descenso sea vertical y estable.',
+      detail: `Hombro y muñeca deben formar aproximadamente 90° con el suelo; ahora la separación es demasiado grande.`,
     };
   }
-  if (elbowAngle > PIKE_ELBOW_MAX_ANGLE) {
+  if (wristShoulderAngle < PIKE_WRIST_SHOULDER_MIN_ANGLE
+    || wristShoulderAngle > PIKE_WRIST_SHOULDER_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Alinea muñecas y hombros',
+      detail: `La línea hombro-muñeca está a ${wristShoulderAngle}°. Busca aproximadamente 90° respecto al suelo.`,
+    };
+  }
+  if (elbowBodyAngle > PIKE_ELBOW_BODY_MAX_ANGLE) {
     return {
       tone: 'checking',
-      message: 'Desciende con control',
-      detail: `Tu codo está a ${elbowAngle}°. Lleva la cabeza hacia el suelo hasta acercarte a 90°.`,
+      message: 'Acerca los codos al cuerpo',
+      detail: `El ángulo codo-cuerpo es de ${elbowBodyAngle}°. Busca un rango entre 45° y 60°.`,
     };
   }
-  if (elbowAngle < PIKE_ELBOW_MIN_ANGLE) {
+  if (elbowBodyAngle < PIKE_ELBOW_BODY_MIN_ANGLE) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado los codos',
-      detail: `Tu codo está a ${elbowAngle}°. Sube un poco para proteger el hombro y mantener el control.`,
+      detail: `El ángulo codo-cuerpo es de ${elbowBodyAngle}°. Sepáralos suavemente hasta 45°–60°.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Pica correcta',
-    detail: `Codo a ${elbowAngle}° · cadera elevada. Baja la cabeza entre las manos y empuja el suelo.`,
+    detail: `Codos a ${elbowBodyAngle}° · hombro-muñeca ${wristShoulderAngle}°. Mantén el cuerpo firme durante el movimiento.`,
   };
 }
 
@@ -1043,6 +1055,9 @@ function calculateExerciseAngle(
     || exercise === 'flexiones-pica'
   ) {
     if (exercise === 'flexiones') {
+      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    }
+    if (exercise === 'flexiones-pica') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
@@ -1803,9 +1818,9 @@ function Home() {
                 <div className="pulldown-instructions" aria-label="Indicaciones de las flexiones en pica">
                   <strong>Cómo hacerlo</strong>
                   <ul>
-                    <li><b>Posición:</b> eleva la cadera y forma una V invertida con el cuerpo.</li>
-                    <li><b>Manos:</b> colócalas debajo de los hombros y separa los dedos para tener estabilidad.</li>
-                    <li><b>Descenso:</b> lleva la cabeza entre las manos, con los codos hacia atrás y sin abrirlos demasiado.</li>
+                    <li><b>Codos:</b> mantenlos entre 45° y 60° respecto al cuerpo; evita abrirlos formando una “T”.</li>
+                    <li><b>Muñecas y hombros:</b> coloca las manos debajo de los hombros, formando aproximadamente 90° con el suelo.</li>
+                    <li><b>Cuerpo:</b> mantén cabeza, espalda, cadera y talones en una línea firme durante todo el movimiento.</li>
                   </ul>
                 </div>
               )}
