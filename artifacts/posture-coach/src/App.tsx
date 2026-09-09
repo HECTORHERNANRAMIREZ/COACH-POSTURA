@@ -20,6 +20,7 @@ import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-pre
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
+import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -46,7 +47,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -61,6 +62,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   flexiones: pushupImage,
   'flexiones-pica': pikePushupImage,
   sentadillas: squatImage,
+  zancadas: lungeImage,
   plancha: plankImage,
 };
 type PoseSide = 'left' | 'right';
@@ -162,6 +164,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Sentadillas',
     description: 'Mide la profundidad y el control de tus piernas.',
     angleLabel: 'Cadera · rodilla · tobillo',
+  },
+  {
+    id: 'zancadas',
+    name: 'Zancadas dinámicas o búlgaras',
+    description: 'Trabaja cada pierna con control, equilibrio y estabilidad.',
+    angleLabel: 'Rodilla · cadera · tobillo',
   },
   {
     id: 'plancha',
@@ -1163,12 +1171,16 @@ function calculateExerciseAngle(
     || exercise === 'jalon'
     || exercise === 'flexiones'
     || exercise === 'flexiones-pica'
+    || exercise === 'zancadas'
   ) {
     if (exercise === 'flexiones') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     if (exercise === 'flexiones-pica') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    }
+    if (exercise === 'zancadas') {
+      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
     }
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
   }
@@ -1246,6 +1258,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     sentadillas: [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    zancadas: [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
@@ -1831,7 +1848,7 @@ function Home() {
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-pica'
                     ? Activity
-                    : exercise.id === 'sentadillas'
+                    : exercise.id === 'sentadillas' || exercise.id === 'zancadas'
                       ? ArrowDown
                       : Square;
                   return (
@@ -1887,6 +1904,7 @@ function Home() {
                           || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
+                        || selectedExercise === 'zancadas'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
                         : 'Vista frontal'}
@@ -1987,6 +2005,7 @@ function Home() {
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
+                        || selectedExercise === 'zancadas'
                         || selectedExercise === 'jalon'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
