@@ -47,7 +47,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -63,6 +63,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-pica': pikePushupImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
+  'zancada-banco': lungeImage,
   plancha: plankImage,
 };
 type PoseSide = 'left' | 'right';
@@ -170,6 +171,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Zancadas dinámicas',
     description: 'Baja con control hasta formar 90° en las piernas.',
     angleLabel: 'Rodilla delantera · objetivo 90°',
+  },
+  {
+    id: 'zancada-banco',
+    name: 'Zancada en banco',
+    description: 'Controla la pierna elevada y estabiliza la rodilla delantera.',
+    angleLabel: 'Rodilla · cadera · tobillo',
   },
   {
     id: 'plancha',
@@ -1273,6 +1280,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones'
     || exercise === 'flexiones-pica'
     || exercise === 'zancadas'
+    || exercise === 'zancada-banco'
   ) {
     if (exercise === 'flexiones') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
@@ -1280,7 +1288,7 @@ function calculateExerciseAngle(
     if (exercise === 'flexiones-pica') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
-    if (exercise === 'zancadas') {
+    if (exercise === 'zancadas' || exercise === 'zancada-banco') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
     }
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
@@ -1364,6 +1372,11 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     zancadas: [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'zancada-banco': [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
@@ -1673,6 +1686,8 @@ function Home() {
                 ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancadas'
                 ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : selectedExerciseRef.current === 'zancada-banco'
+                ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
@@ -1951,7 +1966,9 @@ function Home() {
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-pica'
                     ? Activity
-                    : exercise.id === 'sentadillas' || exercise.id === 'zancadas'
+                    : exercise.id === 'sentadillas'
+                      || exercise.id === 'zancadas'
+                      || exercise.id === 'zancada-banco'
                       ? ArrowDown
                       : Square;
                   return (
@@ -2008,6 +2025,7 @@ function Home() {
                         || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
                         || selectedExercise === 'zancadas'
+                        || selectedExercise === 'zancada-banco'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
                         : 'Vista frontal'}
@@ -2119,6 +2137,7 @@ function Home() {
                         || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'zancadas'
+                        || selectedExercise === 'zancada-banco'
                         || selectedExercise === 'jalon'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
