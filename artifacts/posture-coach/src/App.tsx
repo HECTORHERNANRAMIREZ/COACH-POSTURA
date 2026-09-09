@@ -17,6 +17,7 @@ import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_17889282808
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
+import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -56,7 +57,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   dominadas: pullupImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
-  'flexiones-pica': pushupImage,
+  'flexiones-pica': pikePushupImage,
   sentadillas: squatImage,
   plancha: plankImage,
 };
