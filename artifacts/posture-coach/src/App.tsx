@@ -44,7 +44,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'jalon' | 'flexiones' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -56,6 +56,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   dominadas: pullupImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
+  'flexiones-pica': pushupImage,
   sentadillas: squatImage,
   plancha: plankImage,
 };
@@ -142,6 +143,12 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Codo · torso · objetivo 45°',
   },
   {
+    id: 'flexiones-pica',
+    name: 'Flexiones en pica',
+    description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
+    angleLabel: 'Codo · objetivo 80–100°',
+  },
+  {
     id: 'sentadillas',
     name: 'Sentadillas',
     description: 'Mide la profundidad y el control de tus piernas.',
@@ -183,6 +190,11 @@ const PULLDOWN_TORSO_MAX_ANGLE = 20;
 const PULLDOWN_TORSO_TOO_FAR_ANGLE = 30;
 const PULLDOWN_ELBOW_MIN_ANGLE = 80;
 const PULLDOWN_ELBOW_MAX_ANGLE = 100;
+const PIKE_ELBOW_MIN_ANGLE = 80;
+const PIKE_ELBOW_MAX_ANGLE = 100;
+const PIKE_MIN_HIP_LIFT_RATIO = 0.12;
+const PIKE_MIN_BODY_FOLD_ANGLE = 45;
+const PIKE_MAX_BODY_FOLD_ANGLE = 125;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -592,6 +604,87 @@ function getPushupTechniqueFeedback(
   };
 }
 
+function getPikePushupTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const bodyFoldAngle = calculateAngle(shoulder, hip, ankle);
+
+  if (
+    elbowAngle === null
+    || bodyFoldAngle === null
+    || !shoulder
+    || !hip
+    || !wrist
+  ) {
+    return defaultTechniqueFeedback;
+  }
+
+  const torsoLength = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+  const hipLiftRatio = torsoLength > 0 ? (shoulder.y - hip.y) / torsoLength : 0;
+  const wristOffset = torsoLength > 0
+    ? Math.abs(wrist.x - shoulder.x) / torsoLength
+    : 1;
+
+  if (hipLiftRatio < PIKE_MIN_HIP_LIFT_RATIO) {
+    return {
+      tone: 'warning',
+      message: 'Eleva la cadera',
+      detail: 'Forma una V invertida: lleva la cadera hacia arriba antes de bajar la cabeza.',
+    };
+  }
+  if (bodyFoldAngle < PIKE_MIN_BODY_FOLD_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Cierra un poco más la pica',
+      detail: `La cadera está a ${bodyFoldAngle}°. Eleva más la cadera sin perder el control.`,
+    };
+  }
+  if (bodyFoldAngle > PIKE_MAX_BODY_FOLD_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'No pierdas la forma de V',
+      detail: `La cadera está a ${bodyFoldAngle}°. Empuja el suelo y mantén la pica activa.`,
+    };
+  }
+  if (wristOffset > 0.55) {
+    return {
+      tone: 'warning',
+      message: 'Coloca las manos debajo de los hombros',
+      detail: 'Apoya las manos un poco más cerca para que el descenso sea vertical y estable.',
+    };
+  }
+  if (elbowAngle > PIKE_ELBOW_MAX_ANGLE) {
+    return {
+      tone: 'checking',
+      message: 'Desciende con control',
+      detail: `Tu codo está a ${elbowAngle}°. Lleva la cabeza hacia el suelo hasta acercarte a 90°.`,
+    };
+  }
+  if (elbowAngle < PIKE_ELBOW_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado los codos',
+      detail: `Tu codo está a ${elbowAngle}°. Sube un poco para proteger el hombro y mantener el control.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Pica correcta',
+    detail: `Codo a ${elbowAngle}° · cadera elevada. Baja la cabeza entre las manos y empuja el suelo.`,
+  };
+}
+
 function calculateForwardLeanAngle(
   shoulder: PosePoint | undefined,
   hip: PosePoint | undefined,
@@ -946,6 +1039,7 @@ function calculateExerciseAngle(
     || exercise === 'dominadas'
     || exercise === 'jalon'
     || exercise === 'flexiones'
+    || exercise === 'flexiones-pica'
   ) {
     if (exercise === 'flexiones') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
@@ -1014,6 +1108,11 @@ function getAngleDiagnosticPoints(
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
+    ],
+    'flexiones-pica': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
     ],
     sentadillas: [
       { label: 'Cadera', joint: 'hip' },
@@ -1297,6 +1396,8 @@ function Home() {
       setTechniqueFeedback(
         selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'flexiones-pica'
+            ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : selectedExerciseRef.current === 'dominadas'
@@ -1578,6 +1679,7 @@ function Home() {
                     || exercise.id === 'dominadas'
                     || exercise.id === 'jalon'
                     || exercise.id === 'flexiones'
+                    || exercise.id === 'flexiones-pica'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       ? ArrowDown
@@ -1630,6 +1732,7 @@ function Home() {
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
                         {selectedExercise === 'flexiones'
+                        || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
                         || selectedExercise === 'jalon'
@@ -1695,6 +1798,16 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'flexiones-pica' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las flexiones en pica">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Posición:</b> eleva la cadera y forma una V invertida con el cuerpo.</li>
+                    <li><b>Manos:</b> colócalas debajo de los hombros y separa los dedos para tener estabilidad.</li>
+                    <li><b>Descenso:</b> lleva la cabeza entre las manos, con los codos hacia atrás y sin abrirlos demasiado.</li>
+                  </ul>
+                </div>
+              )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
                 <video
                   ref={videoRef}
@@ -1704,7 +1817,8 @@ function Home() {
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
                    aria-label={`Vista previa de la cámara ${
-                      selectedExercise === 'flexiones'
+                       selectedExercise === 'flexiones'
+                        || selectedExercise === 'flexiones-pica'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
                         || selectedExercise === 'jalon'
