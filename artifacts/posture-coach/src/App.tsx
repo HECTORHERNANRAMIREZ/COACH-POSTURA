@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Square,
 } from 'lucide-react';
+import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -1023,7 +1024,9 @@ function Home() {
                       onClick={() => void startCamera(exercise.id)}
                     >
                       <span className="exercise-card-icon" aria-hidden="true">
-                        {exercise.id === 'flexiones' ? (
+                        {exercise.id === 'fondos' ? (
+                          <img className="exercise-card-image" src={dipImage} alt="" />
+                        ) : exercise.id === 'flexiones' ? (
                           <img className="exercise-card-image" src={pushupImage} alt="" />
                         ) : (
                           <ExerciseIcon size={20} strokeWidth={1.8} />
