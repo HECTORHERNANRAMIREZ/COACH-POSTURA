@@ -348,6 +348,10 @@
   transform: translateY(0);
 }
 
+.exercise-card--image {
+  grid-template-columns: 4.2rem minmax(0, 1fr) auto;
+}
+
 .exercise-card-icon {
   display: inline-flex;
   align-items: center;
@@ -360,6 +364,13 @@
   color: #8bffa5;
 }
 
+.exercise-card--image .exercise-card-icon {
+  width: 4.2rem;
+  height: 3.35rem;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
 .exercise-card-image {
   display: block;
   width: 100%;
@@ -367,6 +378,7 @@
   border-radius: 0.75rem;
   object-fit: cover;
   object-position: center;
+  transform: scale(1.18);
 }
 
 .exercise-card-copy {
