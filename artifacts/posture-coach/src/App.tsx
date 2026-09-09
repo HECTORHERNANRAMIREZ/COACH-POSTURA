@@ -12,6 +12,7 @@ import {
   Square,
 } from 'lucide-react';
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
+import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
@@ -1437,6 +1438,8 @@ function Home() {
                       <span className="exercise-card-icon" aria-hidden="true">
                         {exercise.id === 'fondos' ? (
                           <img className="exercise-card-image" src={dipImage} alt="" />
+                        ) : exercise.id === 'dominadas' ? (
+                          <img className="exercise-card-image" src={pullupImage} alt="" />
                         ) : exercise.id === 'flexiones' ? (
                           <img className="exercise-card-image" src={pushupImage} alt="" />
                         ) : exercise.id === 'sentadillas' ? (
