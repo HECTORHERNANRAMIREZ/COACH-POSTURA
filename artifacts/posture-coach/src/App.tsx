@@ -41,7 +41,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'flexiones' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'flexiones' | 'sentadillas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -100,6 +100,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Fondos en barra',
     description: 'Inclina el cuerpo y desciende hasta 90° de codo.',
     angleLabel: 'Codo · objetivo 90°',
+  },
+  {
+    id: 'dominadas',
+    name: 'Dominadas en barra',
+    description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
+    angleLabel: 'Codo · tracción vertical',
   },
   {
     id: 'flexiones',
@@ -524,6 +530,57 @@ function getDipTechniqueFeedback(
   };
 }
 
+function getPullupTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+
+  if (elbowAngle === null || bodyLineAngle === null || !shoulder || !wrist) {
+    return defaultTechniqueFeedback;
+  }
+
+  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+  const wristsAboveShoulders = wrist.y < shoulder.y;
+
+  if (!wristsAboveShoulders) {
+    return {
+      tone: 'warning',
+      message: 'Mantén las manos sobre la cabeza',
+      detail: 'Colócate debajo de la barra y conserva las muñecas por encima de los hombros.',
+    };
+  }
+  if (bodyLineDeviation > 25) {
+    return {
+      tone: 'warning',
+      message: 'Evita balancearte',
+      detail: 'Contrae el abdomen y mantén el cuerpo controlado mientras subes y bajas.',
+    };
+  }
+  if (elbowAngle > 100) {
+    return {
+      tone: 'checking',
+      message: 'Lleva los codos hacia abajo',
+      detail: `Tu codo está a ${elbowAngle}°. Tira de la barra con control y acerca el pecho.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Dominada controlada',
+    detail: `Codo a ${elbowAngle}°. Mantén el abdomen firme y desciende sin soltarte de golpe.`,
+  };
+}
+
 function calculateHipSagRatio(
   shoulder: PosePoint | undefined,
   hip: PosePoint | undefined,
@@ -656,7 +713,7 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'fondos' || exercise === 'flexiones') {
+  if (exercise === 'fondos' || exercise === 'dominadas' || exercise === 'flexiones') {
     if (exercise === 'flexiones') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
@@ -706,6 +763,11 @@ function getAngleDiagnosticPoints(
 ): AngleDiagnosticPoint[] {
   const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
     fondos: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    dominadas: [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -919,8 +981,10 @@ function Home() {
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
-            : selectedExerciseRef.current === 'plancha'
-              ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
+            : selectedExerciseRef.current === 'dominadas'
+              ? getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : selectedExerciseRef.current === 'plancha'
+                ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
       );
       if (nextAngle !== null) {
@@ -1146,7 +1210,9 @@ function Home() {
               </p>
               <div className="exercise-list">
                 {exercises.map((exercise) => {
-                  const ExerciseIcon = exercise.id === 'fondos' || exercise.id === 'flexiones'
+                  const ExerciseIcon = exercise.id === 'fondos'
+                    || exercise.id === 'dominadas'
+                    || exercise.id === 'flexiones'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       ? ArrowDown
@@ -1196,8 +1262,9 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {selectedExercise === 'flexiones'
+                        {selectedExercise === 'flexiones'
                         || selectedExercise === 'fondos'
+                          || selectedExercise === 'dominadas'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
                         : 'Vista frontal'}
@@ -1238,8 +1305,9 @@ function Home() {
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
                    aria-label={`Vista previa de la cámara ${
-                     selectedExercise === 'flexiones'
+                      selectedExercise === 'flexiones'
                        || selectedExercise === 'fondos'
+                        || selectedExercise === 'dominadas'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
                        : 'frontal'
@@ -1279,6 +1347,7 @@ function Home() {
               </div>
               {(selectedExercise === 'flexiones'
                 || selectedExercise === 'fondos'
+                || selectedExercise === 'dominadas'
                 || selectedExercise === 'plancha') && (
                 <div
                   className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
