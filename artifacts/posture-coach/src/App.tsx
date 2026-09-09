@@ -115,8 +115,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'plancha',
     name: 'Plancha',
-    description: 'Comprueba la línea de tu cuerpo en el apoyo.',
-    angleLabel: 'Hombro · cadera · tobillo',
+    description: 'Mantén la cadera alineada y el cuerpo recto.',
+    angleLabel: 'Cuerpo recto · objetivo 180°',
   },
 ];
 
@@ -129,6 +129,9 @@ const SQUAT_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
 const DIP_MIN_FORWARD_LEAN = 8;
+const PLANK_MAX_HIP_SAG_RATIO = 0.08;
+const PLANK_MAX_HIP_RAISE_RATIO = 0.08;
+const PLANK_MIN_BODY_LINE_ANGLE = 162;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -516,6 +519,84 @@ function getDipTechniqueFeedback(
   };
 }
 
+function calculateHipSagRatio(
+  shoulder: PosePoint | undefined,
+  hip: PosePoint | undefined,
+  ankle: PosePoint | undefined,
+) {
+  if (!shoulder || !hip || !ankle) return null;
+  if (
+    (shoulder.score ?? 0) < 0.2
+    || (hip.score ?? 0) < 0.2
+    || (ankle.score ?? 0) < 0.2
+  ) {
+    return null;
+  }
+
+  const bodyVector = {
+    x: ankle.x - shoulder.x,
+    y: ankle.y - shoulder.y,
+  };
+  const bodyLengthSquared = bodyVector.x ** 2 + bodyVector.y ** 2;
+  if (!bodyLengthSquared) return null;
+
+  const hipVector = {
+    x: hip.x - shoulder.x,
+    y: hip.y - shoulder.y,
+  };
+  const projection = (
+    (hipVector.x * bodyVector.x + hipVector.y * bodyVector.y) / bodyLengthSquared
+  );
+  const expectedHipY = shoulder.y + projection * bodyVector.y;
+  return (hip.y - expectedHipY) / Math.sqrt(bodyLengthSquared);
+}
+
+function getPlankTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const hipSagRatio = calculateHipSagRatio(shoulder, hip, ankle);
+
+  if (bodyLineAngle === null || hipSagRatio === null) {
+    return defaultTechniqueFeedback;
+  }
+
+  if (hipSagRatio > PLANK_MAX_HIP_SAG_RATIO) {
+    return {
+      tone: 'danger',
+      message: 'Eleva la cadera',
+      detail: 'La cadera está bajando demasiado. Contrae el abdomen y mantén hombros, cadera y tobillos en línea.',
+    };
+  }
+  if (hipSagRatio < -PLANK_MAX_HIP_RAISE_RATIO) {
+    return {
+      tone: 'warning',
+      message: 'Baja un poco la cadera',
+      detail: 'Evita elevar demasiado la cadera; busca una línea recta desde los hombros hasta los tobillos.',
+    };
+  }
+  if (bodyLineAngle < PLANK_MIN_BODY_LINE_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Alinea todo el cuerpo',
+      detail: `El ángulo corporal es de ${bodyLineAngle}°. Busca aproximadamente 180° sin doblarte desde la cadera.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Plancha alineada',
+    detail: `Cadera estable · ángulo corporal ${bodyLineAngle}°. Mantén el abdomen activo.`,
+  };
+}
+
 function calculateExerciseAngle(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -786,6 +867,8 @@ function Home() {
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
+            : selectedExerciseRef.current === 'plancha'
+              ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
       );
       if (nextAngle !== null) {
@@ -1059,7 +1142,9 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {selectedExercise === 'flexiones' || selectedExercise === 'fondos'
+                      {selectedExercise === 'flexiones'
+                        || selectedExercise === 'fondos'
+                        || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
                         : 'Vista frontal'}
                       {' · '}
@@ -1099,7 +1184,11 @@ function Home() {
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
                    aria-label={`Vista previa de la cámara ${
-                     selectedExercise === 'flexiones' || selectedExercise === 'fondos' ? 'lateral' : 'frontal'
+                     selectedExercise === 'flexiones'
+                       || selectedExercise === 'fondos'
+                       || selectedExercise === 'plancha'
+                       ? 'lateral'
+                       : 'frontal'
                    }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
@@ -1134,7 +1223,9 @@ function Home() {
                   <span>{statusMessage}</span>
                 </div>
               </div>
-              {(selectedExercise === 'flexiones' || selectedExercise === 'fondos') && (
+              {(selectedExercise === 'flexiones'
+                || selectedExercise === 'fondos'
+                || selectedExercise === 'plancha') && (
                 <div
                   className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
                   role="status"
