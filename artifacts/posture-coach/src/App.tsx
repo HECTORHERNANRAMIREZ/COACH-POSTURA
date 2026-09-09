@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Square,
 } from 'lucide-react';
-import pushupImage from '@assets/ChatGPT_Image_8_sept_2026,_22_54_07_1788926086031.png';
+import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
