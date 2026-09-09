@@ -42,7 +42,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'flexiones' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'jalon' | 'flexiones' | 'sentadillas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -118,6 +118,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Dominadas en barra',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
+  },
+  {
+    id: 'jalon',
+    name: 'Jalón al pecho en polea',
+    description: 'Lleva la barra al pecho con los codos hacia abajo y el torso estable.',
+    angleLabel: 'Codo · tirón hacia el pecho',
   },
   {
     id: 'flexiones',
@@ -729,6 +735,51 @@ function getPullupTechniqueFeedback(
   };
 }
 
+function getLatPulldownTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
+
+  if (elbowAngle === null || torsoLean === null) return defaultTechniqueFeedback;
+
+  if (torsoLean > 25) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el torso estable',
+      detail: `Tu inclinación es de ${torsoLean}°. Siéntate erguido y evita impulsarte hacia atrás.`,
+    };
+  }
+  if (elbowAngle > 135) {
+    return {
+      tone: 'checking',
+      message: 'Lleva los codos hacia abajo',
+      detail: `Tu codo está a ${elbowAngle}°. Tira de la barra hacia la parte alta del pecho.`,
+    };
+  }
+  if (elbowAngle < 65) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado los codos',
+      detail: `Tu codo está a ${elbowAngle}°. Sube la barra con control sin comprimir los hombros.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Jalón correcto',
+    detail: `Codo a ${elbowAngle}°. Mantén el pecho abierto y devuelve la barra lentamente.`,
+  };
+}
+
 function calculateHipSagRatio(
   shoulder: PosePoint | undefined,
   hip: PosePoint | undefined,
@@ -861,7 +912,12 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'fondos' || exercise === 'dominadas' || exercise === 'flexiones') {
+  if (
+    exercise === 'fondos'
+    || exercise === 'dominadas'
+    || exercise === 'jalon'
+    || exercise === 'flexiones'
+  ) {
     if (exercise === 'flexiones') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
@@ -916,6 +972,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     dominadas: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    jalon: [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -1199,6 +1260,8 @@ function Home() {
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : selectedExerciseRef.current === 'dominadas'
               ? getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : selectedExerciseRef.current === 'jalon'
+                ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
@@ -1465,6 +1528,7 @@ function Home() {
                 {exercises.map((exercise) => {
                   const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
+                    || exercise.id === 'jalon'
                     || exercise.id === 'flexiones'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -1520,6 +1584,7 @@ function Home() {
                         {selectedExercise === 'flexiones'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
+                        || selectedExercise === 'jalon'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
                         : 'Vista frontal'}
@@ -1584,6 +1649,7 @@ function Home() {
                       selectedExercise === 'flexiones'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
+                        || selectedExercise === 'jalon'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
                        : 'frontal'
@@ -1626,6 +1692,7 @@ function Home() {
               </div>
               {(selectedExercise === 'flexiones'
                 || selectedExercise === 'fondos'
+                || selectedExercise === 'jalon'
                 || selectedExercise === 'plancha') && (
                 <div
                   className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
