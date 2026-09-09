@@ -199,6 +199,7 @@
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.18em;
+  animation: enter-from-left 720ms 120ms both cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .wordmark-mark {
@@ -253,6 +254,7 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   backdrop-filter: blur(14px) saturate(130%);
+  animation: enter-from-right 720ms 320ms both cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .privacy-chip svg {
@@ -1370,6 +1372,28 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes enter-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-2.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes enter-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(2.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
