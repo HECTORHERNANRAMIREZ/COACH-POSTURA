@@ -116,7 +116,7 @@ const exercises: ExerciseDefinition[] = [
     id: 'plancha',
     name: 'Plancha',
     description: 'Mantén la cadera alineada y el cuerpo recto.',
-    angleLabel: 'Cuerpo recto · objetivo 180°',
+    angleLabel: 'Codo · objetivo 90°',
   },
 ];
 
@@ -132,6 +132,10 @@ const DIP_MIN_FORWARD_LEAN = 8;
 const PLANK_MAX_HIP_SAG_RATIO = 0.08;
 const PLANK_MAX_HIP_RAISE_RATIO = 0.08;
 const PLANK_MIN_BODY_LINE_ANGLE = 162;
+const PLANK_ARM_FLOOR_MIN_ANGLE = 80;
+const PLANK_ARM_FLOOR_MAX_ANGLE = 100;
+const PLANK_ELBOW_MIN_ANGLE = 80;
+const PLANK_ELBOW_MAX_ANGLE = 100;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -551,6 +555,20 @@ function calculateHipSagRatio(
   return (hip.y - expectedHipY) / Math.sqrt(bodyLengthSquared);
 }
 
+function calculateAngleToFloor(
+  first: PosePoint | undefined,
+  second: PosePoint | undefined,
+) {
+  if (!first || !second) return null;
+  if ((first.score ?? 0) < 0.2 || (second.score ?? 0) < 0.2) return null;
+
+  const horizontalDistance = Math.abs(first.x - second.x);
+  const verticalDistance = Math.abs(first.y - second.y);
+  if (!horizontalDistance && !verticalDistance) return null;
+
+  return Math.round(Math.atan2(verticalDistance, horizontalDistance) * (180 / Math.PI));
+}
+
 function getPlankTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -559,15 +577,48 @@ function getPlankTechniqueFeedback(
 
   const indexes = sideKeypoints[side];
   const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
   const hip = keypoints[indexes.hip];
   const ankle = keypoints[indexes.ankle];
   const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const armFloorAngle = calculateAngleToFloor(shoulder, elbow);
   const hipSagRatio = calculateHipSagRatio(shoulder, hip, ankle);
 
-  if (bodyLineAngle === null || hipSagRatio === null) {
+  if (
+    bodyLineAngle === null
+    || elbowAngle === null
+    || armFloorAngle === null
+    || hipSagRatio === null
+  ) {
     return defaultTechniqueFeedback;
   }
 
+  if (
+    armFloorAngle < PLANK_ARM_FLOOR_MIN_ANGLE
+    || armFloorAngle > PLANK_ARM_FLOOR_MAX_ANGLE
+  ) {
+    return {
+      tone: 'warning',
+      message: 'Alinea el hombro sobre el codo',
+      detail: `El brazo está a ${armFloorAngle}° respecto al suelo. Busca 90° para apoyar el peso correctamente.`,
+    };
+  }
+  if (elbowAngle > PLANK_ELBOW_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Flexiona el codo hasta 90°',
+      detail: `La flexión del codo está a ${elbowAngle}°. Baja el cuerpo hasta el rango 80–100°.`,
+    };
+  }
+  if (elbowAngle < PLANK_ELBOW_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado el codo',
+      detail: `La flexión del codo está a ${elbowAngle}°. Sube un poco para volver a 90°.`,
+    };
+  }
   if (hipSagRatio > PLANK_MAX_HIP_SAG_RATIO) {
     return {
       tone: 'danger',
@@ -593,7 +644,7 @@ function getPlankTechniqueFeedback(
   return {
     tone: 'success',
     message: 'Plancha alineada',
-    detail: `Cadera estable · ángulo corporal ${bodyLineAngle}°. Mantén el abdomen activo.`,
+    detail: `Brazo al suelo ${armFloorAngle}° · codo ${elbowAngle}° · cadera estable.`,
   };
 }
 
@@ -613,7 +664,7 @@ function calculateExerciseAngle(
   if (exercise === 'sentadillas') {
     return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
   }
-  return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.ankle]);
+  return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
 }
 
 function calculateSquatAngle(keypoints: PosePoint[] | undefined) {
@@ -670,8 +721,8 @@ function getAngleDiagnosticPoints(
     ],
     plancha: [
       { label: 'Hombro', joint: 'shoulder' },
-      { label: 'Cadera', joint: 'hip' },
-      { label: 'Tobillo', joint: 'ankle' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
     ],
   };
   const indexes = side ? sideKeypoints[side] : null;
