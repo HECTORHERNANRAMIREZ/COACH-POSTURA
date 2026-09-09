@@ -1018,7 +1018,7 @@ function Home() {
                     <button
                       key={exercise.id}
                       type="button"
-                      className={`exercise-card ${exercise.id === 'flexiones' ? 'exercise-card--image' : ''}`}
+                      className="exercise-card"
                       data-testid={`exercise-${exercise.id}`}
                       onClick={() => void startCamera(exercise.id)}
                     >
