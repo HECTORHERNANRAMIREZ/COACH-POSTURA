@@ -19,6 +19,7 @@ import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_178892914
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
+import declinePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_02_57_19_p.m._1788984656423.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
@@ -48,7 +49,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -61,6 +62,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'dominadas-supinas': supinePullupImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
+  'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
@@ -154,6 +156,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Flexiones de pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
     angleLabel: 'Codo · torso · objetivo 45°',
+  },
+  {
+    id: 'flexiones-declinadas',
+    name: 'Flexiones declinadas',
+    description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
+    angleLabel: 'Codo 30–60° · cuerpo 162–180°',
   },
   {
     id: 'flexiones-pica',
@@ -590,6 +598,7 @@ const defaultSquatFeedback: TechniqueFeedback = {
 function getPushupTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  variant: 'regular' | 'declined' = 'regular',
 ): TechniqueFeedback {
   if (!keypoints || !side) return defaultTechniqueFeedback;
 
@@ -620,15 +629,17 @@ function getPushupTechniqueFeedback(
     ? Math.abs(wrist.x - shoulder.x) / torsoLength
     : 1;
   const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+  const elbowMinAngle = variant === 'declined' ? 30 : 25;
+  const elbowMaxAngle = variant === 'declined' ? 60 : 65;
 
-  if (elbowTorsoAngle > 65) {
+  if (elbowTorsoAngle > elbowMaxAngle) {
     return {
       tone: 'warning',
       message: 'Acerca los codos al torso',
       detail: `Están a ${elbowTorsoAngle}°. Busca aproximadamente 45° y desciende con control.`,
     };
   }
-  if (elbowTorsoAngle < 25) {
+  if (elbowTorsoAngle < elbowMinAngle) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado los codos',
@@ -659,8 +670,10 @@ function getPushupTechniqueFeedback(
 
   return {
     tone: 'success',
-    message: 'Postura correcta',
-    detail: `Codos a ${elbowTorsoAngle}°. Baja el pecho de forma controlada y extiende sin bloquear bruscamente.`,
+    message: variant === 'declined' ? 'Flexión declinada correcta' : 'Postura correcta',
+    detail: variant === 'declined'
+      ? `Codos a ${elbowTorsoAngle}° · cuerpo ${bodyLineAngle}°. Baja el pecho con control y mantén los pies firmes en el apoyo.`
+      : `Codos a ${elbowTorsoAngle}°. Baja el pecho de forma controlada y extiende sin bloquear bruscamente.`,
   };
 }
 
@@ -1335,11 +1348,12 @@ function calculateExerciseAngle(
     || exercise === 'dominadas-supinas'
     || exercise === 'jalon'
     || exercise === 'flexiones'
+    || exercise === 'flexiones-declinadas'
     || exercise === 'flexiones-pica'
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
   ) {
-    if (exercise === 'flexiones') {
+    if (exercise === 'flexiones' || exercise === 'flexiones-declinadas') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     if (exercise === 'flexiones-pica') {
@@ -1414,6 +1428,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     flexiones: [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+    ],
+    'flexiones-declinadas': [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
@@ -1731,6 +1750,8 @@ function Home() {
       setTechniqueFeedback(
         selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'flexiones-declinadas'
+            ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide, 'declined')
           : selectedExerciseRef.current === 'flexiones-pica'
             ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
@@ -2021,6 +2042,7 @@ function Home() {
                     || exercise.id === 'dominadas-supinas'
                     || exercise.id === 'jalon'
                     || exercise.id === 'flexiones'
+                    || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -2076,6 +2098,7 @@ function Home() {
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
                         {selectedExercise === 'flexiones'
+                        || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
@@ -2159,6 +2182,18 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'flexiones-declinadas' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las flexiones declinadas">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Apoyo:</b> coloca los pies sobre un banco o soporte estable y mantén el cuerpo en una línea firme.</li>
+                    <li><b>Manos:</b> apóyalas debajo de los hombros, con los dedos abiertos y el abdomen activo.</li>
+                    <li><b>Codos:</b> llévalos entre 30° y 60° respecto al torso; busca aproximadamente 45° y evita abrirlos en forma de “T”.</li>
+                    <li><b>Cuerpo:</b> mantén hombros, cadera y tobillos alineados entre 162° y 180°; no dejes caer la cadera.</li>
+                    <li><b>Movimiento:</b> baja el pecho de forma controlada y sube sin bloquear bruscamente los codos.</li>
+                  </ul>
+                </div>
+              )}
               {selectedExercise === 'dominadas-supinas' && (
                 <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
                   <strong>Cómo hacerlo</strong>
@@ -2201,6 +2236,7 @@ function Home() {
                   data-testid="video-camera-preview"
                    aria-label={`Vista previa de la cámara ${
                        selectedExercise === 'flexiones'
+                        || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
