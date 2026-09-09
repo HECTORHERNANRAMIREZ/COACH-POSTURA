@@ -173,8 +173,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-militar',
     name: 'Press militar con mancuernas',
-    description: 'Empuja las mancuernas sobre la cabeza sin arquear la espalda.',
-    angleLabel: 'Cuerpo 165–180° · codo controlado',
+    description: 'Usa un banco a 75–80° y empuja las mancuernas con codos a 45°.',
+    angleLabel: 'Banco 75–80° · codos 45°',
   },
   {
     id: 'sentadillas',
@@ -241,7 +241,6 @@ const PIKE_WRIST_SHOULDER_MAX_ANGLE = 105;
 const PIKE_MIN_HIP_LIFT_RATIO = 0.12;
 const PIKE_MIN_BODY_FOLD_ANGLE = 45;
 const PIKE_MAX_BODY_FOLD_ANGLE = 125;
-const MILITARY_PRESS_MIN_BODY_LINE_ANGLE = 165;
 const LUNGE_KNEE_MIN_ANGLE = 80;
 const LUNGE_KNEE_MAX_ANGLE = 100;
 const LUNGE_HIP_MIN_ANGLE = 80;
@@ -785,26 +784,30 @@ function getMilitaryPressTechniqueFeedback(
   const indexes = sideKeypoints[side];
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
-  const wrist = keypoints[indexes.wrist];
   const hip = keypoints[indexes.hip];
-  const ankle = keypoints[indexes.ankle];
-  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const elbowTorsoAngle = calculateAngle(hip, shoulder, elbow);
 
-  if (elbowAngle === null || bodyLineAngle === null) return defaultTechniqueFeedback;
+  if (elbowTorsoAngle === null) return defaultTechniqueFeedback;
 
-  if (bodyLineAngle < MILITARY_PRESS_MIN_BODY_LINE_ANGLE) {
+  if (elbowTorsoAngle > 60) {
     return {
       tone: 'warning',
-      message: 'Mantén el torso vertical',
-      detail: `Tu cuerpo está a ${bodyLineAngle}°. Activa el abdomen y evita arquear la espalda al empujar.`,
+      message: 'Acerca los codos al plano escapular',
+      detail: `Tus codos están a ${elbowTorsoAngle}° respecto al torso. Llévalos hacia delante hasta aproximadamente 45°; evita abrirlos a 90°.`,
+    };
+  }
+  if (elbowTorsoAngle < 30) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado los codos',
+      detail: `Tus codos están a ${elbowTorsoAngle}° respecto al torso. Sepáralos suavemente hasta el objetivo de 45°.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Press militar controlado',
-    detail: `Codo ${elbowAngle}° · cuerpo ${bodyLineAngle}°. Sube las mancuernas en línea y baja con control.`,
+    detail: `Codos a ${elbowTorsoAngle}° · plano escapular correcto. Mantén el banco entre 75° y 80° y empuja con control.`,
   };
 }
 
@@ -1398,6 +1401,9 @@ function calculateExerciseAngle(
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     if (exercise === 'flexiones-pica') {
+      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    }
+    if (exercise === 'press-militar') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     if (exercise === 'zancadas' || exercise === 'zancada-banco') {
@@ -2248,11 +2254,11 @@ function Home() {
                 <div className="pulldown-instructions" aria-label="Indicaciones del press militar con mancuernas">
                   <strong>Cómo hacerlo</strong>
                   <ul>
-                    <li><b>Posición inicial:</b> coloca los pies al ancho de los hombros y las mancuernas a la altura de los hombros, con los codos debajo de las muñecas.</li>
-                    <li><b>Torso:</b> mantén el cuerpo entre 165° y 180°; activa el abdomen y evita inclinarte o arquear la espalda.</li>
-                    <li><b>Empuje:</b> lleva las mancuernas sobre la cabeza en una trayectoria vertical, sin separarlas demasiado del cuerpo.</li>
-                    <li><b>Hombros:</b> manténlos estables y evita encogerlos hacia las orejas durante la subida.</li>
-                    <li><b>Control:</b> baja las mancuernas lentamente hasta la altura de los hombros y repite sin bloquear bruscamente los codos.</li>
+                    <li><b>Inclinación del banco:</b> ajústalo entre 75° y 80°. Evita dejarlo completamente vertical a 90°; una ligera inclinación ayuda a mantener la curvatura natural de la columna y reduce la presión lumbar.</li>
+                    <li><b>Posición inicial:</b> apoya la espalda en el banco y coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
+                    <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
+                    <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
+                    <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
                   </ul>
                 </div>
               )}
