@@ -122,8 +122,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
-    description: 'Lleva la barra al pecho con los codos hacia abajo y el torso estable.',
-    angleLabel: 'Codo · tirón hacia el pecho',
+    description: 'Inclina el torso 15–20° y lleva los codos hacia abajo y adelante.',
+    angleLabel: 'Torso 15–20° · codo 80–100°',
   },
   {
     id: 'flexiones',
@@ -168,6 +168,11 @@ const PLANK_ARM_FLOOR_MIN_ANGLE = 80;
 const PLANK_ARM_FLOOR_MAX_ANGLE = 100;
 const PLANK_ELBOW_MIN_ANGLE = 80;
 const PLANK_ELBOW_MAX_ANGLE = 100;
+const PULLDOWN_TORSO_MIN_ANGLE = 15;
+const PULLDOWN_TORSO_MAX_ANGLE = 20;
+const PULLDOWN_TORSO_TOO_FAR_ANGLE = 30;
+const PULLDOWN_ELBOW_MIN_ANGLE = 80;
+const PULLDOWN_ELBOW_MAX_ANGLE = 100;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -751,32 +756,46 @@ function getLatPulldownTechniqueFeedback(
 
   if (elbowAngle === null || torsoLean === null) return defaultTechniqueFeedback;
 
-  if (torsoLean > 25) {
+  if (torsoLean > PULLDOWN_TORSO_TOO_FAR_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No te inclines demasiado',
+      detail: `Tu torso está a ${torsoLean}°. No superes 30° hacia atrás para evitar convertir el jalón en un remo.`,
+    };
+  }
+  if (torsoLean < PULLDOWN_TORSO_MIN_ANGLE) {
     return {
       tone: 'warning',
-      message: 'Mantén el torso estable',
-      detail: `Tu inclinación es de ${torsoLean}°. Siéntate erguido y evita impulsarte hacia atrás.`,
+      message: 'Inclina un poco el torso hacia atrás',
+      detail: `La inclinación es de ${torsoLean}°. Busca entre 15° y 20° respecto a la vertical.`,
     };
   }
-  if (elbowAngle > 135) {
+  if (torsoLean > PULLDOWN_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Reduce un poco la inclinación',
+      detail: `La inclinación es de ${torsoLean}°. Mantente entre 15° y 20° hacia atrás.`,
+    };
+  }
+  if (elbowAngle > PULLDOWN_ELBOW_MAX_ANGLE) {
     return {
       tone: 'checking',
-      message: 'Lleva los codos hacia abajo',
-      detail: `Tu codo está a ${elbowAngle}°. Tira de la barra hacia la parte alta del pecho.`,
+      message: 'Lleva los codos hacia abajo y adelante',
+      detail: `Tu codo está a ${elbowAngle}°. Busca una flexión cercana a 90° y una trayectoria de 30–45° hacia delante.`,
     };
   }
-  if (elbowAngle < 65) {
+  if (elbowAngle < PULLDOWN_ELBOW_MIN_ANGLE) {
     return {
       tone: 'warning',
       message: 'No cierres demasiado los codos',
-      detail: `Tu codo está a ${elbowAngle}°. Sube la barra con control sin comprimir los hombros.`,
+      detail: `Tu codo está a ${elbowAngle}°. El final debe quedar cerca de 90°; lleva los codos hacia los bolsillos.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Jalón correcto',
-    detail: `Codo a ${elbowAngle}°. Mantén el pecho abierto y devuelve la barra lentamente.`,
+    detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Pecho abierto, codos 30–45° hacia delante y regreso lento.`,
   };
 }
 
@@ -1635,6 +1654,16 @@ function Home() {
                     <strong>{pullupMinimumAngle === null ? '—' : `${pullupMinimumAngle}°`}</strong>
                   </div>
                   <p>Inicio y final 175–180° · subida menor de 60° · barbilla sobre la barra.</p>
+                </div>
+              )}
+              {selectedExercise === 'jalon' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones del jalón al pecho">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Torso:</b> inclínalo hacia atrás entre 15° y 20°; no superes 30°.</li>
+                    <li><b>Agarre:</b> brazos a 75°–80° respecto al torso y manos a aproximadamente 1,5 veces el ancho de tus hombros.</li>
+                    <li><b>Codos:</b> bájalos 30°–45° hacia delante y termina cerca de 90°, como si quisieras llevarlos hacia los bolsillos.</li>
+                  </ul>
                 </div>
               )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
