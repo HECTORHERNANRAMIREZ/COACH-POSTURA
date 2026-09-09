@@ -21,6 +21,7 @@ import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-
 import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
+import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -63,7 +64,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-pica': pikePushupImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
-  'zancada-banco': lungeImage,
+  'zancada-banco': benchLungeImage,
   plancha: plankImage,
 };
 type PoseSide = 'left' | 'right';
@@ -175,8 +176,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'zancada-banco',
     name: 'Zancada en banco',
-    description: 'Controla la pierna elevada y estabiliza la rodilla delantera.',
-    angleLabel: 'Rodilla · cadera · tobillo',
+    description: 'Eleva el pie trasero y controla la rodilla delantera.',
+    angleLabel: 'Rodilla 80–100° · torso 15–20°',
   },
   {
     id: 'plancha',
@@ -232,6 +233,10 @@ const LUNGE_HIP_MAX_ANGLE = 100;
 const LUNGE_TORSO_MIN_ANGLE = 75;
 const LUNGE_TORSO_MAX_ANGLE = 80;
 const LUNGE_KNEE_ANKLE_MAX_OFFSET = 0.35;
+const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
+const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
+const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
+const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -841,6 +846,58 @@ function getLungeTechniqueFeedback(
     tone: 'success',
     message: 'Zancada correcta',
     detail: `Rodilla delantera ${frontKneeAngle}° · trasera ${rearKneeAngle}° · cadera ${frontHipAngle}°.`,
+  };
+}
+
+function getBenchLungeTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const frontShoulder = keypoints[indexes.shoulder];
+  const frontHip = keypoints[indexes.hip];
+  const frontKnee = keypoints[indexes.knee];
+  const frontAnkle = keypoints[indexes.ankle];
+  const kneeAngle = calculateAngle(frontHip, frontKnee, frontAnkle);
+  const torsoLean = calculateForwardLeanAngle(frontShoulder, frontHip);
+
+  if (kneeAngle === null || torsoLean === null) return defaultTechniqueFeedback;
+
+  if (kneeAngle > BENCH_LUNGE_KNEE_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Baja un poco más',
+      detail: `La rodilla delantera está a ${kneeAngle}°. Busca entre 80° y 100°, idealmente cerca de 90°.`,
+    };
+  }
+  if (kneeAngle < BENCH_LUNGE_KNEE_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado la rodilla',
+      detail: `La rodilla delantera está a ${kneeAngle}°. Sube un poco para evitar una flexión excesiva.`,
+    };
+  }
+  if (torsoLean < BENCH_LUNGE_TORSO_MIN_LEAN) {
+    return {
+      tone: 'warning',
+      message: 'Inclina ligeramente el torso',
+      detail: `La inclinación es de ${torsoLean}°. Inclínate hacia delante entre 15° y 20° con la espalda recta.`,
+    };
+  }
+  if (torsoLean > BENCH_LUNGE_TORSO_MAX_LEAN) {
+    return {
+      tone: 'warning',
+      message: 'No inclines demasiado el torso',
+      detail: `La inclinación es de ${torsoLean}°. Reduce el movimiento hasta un rango de 15°–20°.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Zancada en banco correcta',
+    detail: `Rodilla ${kneeAngle}° · torso ${torsoLean}°. Sube con la pierna elevada y extiende con control sin bloquear la rodilla.`,
   };
 }
 
@@ -1687,7 +1744,7 @@ function Home() {
               : selectedExerciseRef.current === 'zancadas'
                 ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancada-banco'
-                ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
+                 ? getBenchLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
@@ -2119,6 +2176,18 @@ function Home() {
                     <li><b>Rodilla delantera:</b> llega aproximadamente a 90° y mantenla alineada verticalmente con el tobillo.</li>
                     <li><b>Cadera y rodilla trasera:</b> busca 90° en ambas, dejando la rodilla trasera cerca del suelo sin golpearlo.</li>
                     <li><b>Torso:</b> mantén una inclinación leve de 75°–80° respecto al suelo y controla cada transición.</li>
+                  </ul>
+                </div>
+              )}
+              {selectedExercise === 'zancada-banco' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las zancadas en banco">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Altura del banco:</b> debe quedar al nivel de tu rodilla o ligeramente por debajo cuando estés de pie junto a él.</li>
+                    <li><b>Pie trasero:</b> apoya todo el pie activo sobre el banco, incluido el talón; evita dejarlo suspendido.</li>
+                    <li><b>Rodilla delantera:</b> busca entre 80° y 100°, idealmente cerca de 90°. Evita que la rodilla se cierre demasiado.</li>
+                    <li><b>Torso:</b> inclínalo entre 15° y 20° hacia delante manteniendo la espalda recta.</li>
+                    <li><b>Movimiento:</b> sube usando la pierna que está arriba y baja lentamente; extiende cadera y rodilla con control, sin bloquearlas de golpe.</li>
                   </ul>
                 </div>
               )}
