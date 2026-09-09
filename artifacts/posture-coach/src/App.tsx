@@ -23,6 +23,7 @@ import declinePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_02_57_19_p.m.
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
+import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -64,7 +65,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
-  'press-militar': '/press-militar-mancuernas.svg',
+  'press-militar': militaryPressImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
