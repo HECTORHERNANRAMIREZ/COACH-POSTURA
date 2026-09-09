@@ -94,8 +94,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'fondos',
     name: 'Fondos en barra',
-    description: 'Observa el ángulo de tus brazos al descender.',
-    angleLabel: 'Hombro · codo · muñeca',
+    description: 'Inclina el cuerpo y desciende hasta 90° de codo.',
+    angleLabel: 'Codo · objetivo 90°',
   },
   {
     id: 'flexiones',
@@ -123,6 +123,9 @@ const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
 const SQUAT_MEANINGFUL_DESCENT = 22;
 const SQUAT_SMOOTHING_SAMPLES = 5;
+const DIP_VALID_MIN_ANGLE = 80;
+const DIP_VALID_MAX_ANGLE = 100;
+const DIP_MIN_FORWARD_LEAN = 8;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -438,6 +441,78 @@ function getPushupTechniqueFeedback(
   };
 }
 
+function calculateForwardLeanAngle(
+  shoulder: PosePoint | undefined,
+  hip: PosePoint | undefined,
+) {
+  if (!shoulder || !hip) return null;
+  if ((shoulder.score ?? 0) < 0.2 || (hip.score ?? 0) < 0.2) return null;
+
+  const horizontalDistance = Math.abs(shoulder.x - hip.x);
+  const verticalDistance = Math.abs(shoulder.y - hip.y);
+  if (!horizontalDistance && !verticalDistance) return null;
+
+  return Math.round(Math.atan2(horizontalDistance, verticalDistance) * (180 / Math.PI));
+}
+
+function getDipTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const forwardLeanAngle = calculateForwardLeanAngle(shoulder, hip);
+
+  if (elbowAngle === null || bodyLineAngle === null || forwardLeanAngle === null) {
+    return defaultTechniqueFeedback;
+  }
+
+  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+
+  if (elbowAngle > DIP_VALID_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Desciende hasta 90°',
+      detail: `Tu codo está a ${elbowAngle}°. Baja de forma controlada hasta el rango 80–100°.`,
+    };
+  }
+  if (elbowAngle < DIP_VALID_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No bajes demasiado',
+      detail: `Tu codo está a ${elbowAngle}°. Sube un poco; el objetivo es aproximadamente 90°.`,
+    };
+  }
+  if (forwardLeanAngle < DIP_MIN_FORWARD_LEAN) {
+    return {
+      tone: 'warning',
+      message: 'Inclina el cuerpo hacia adelante',
+      detail: `La inclinación detectada es de ${forwardLeanAngle}°. Lleva ligeramente el pecho hacia adelante.`,
+    };
+  }
+  if (bodyLineDeviation > 18) {
+    return {
+      tone: 'danger',
+      message: 'Mantén el cuerpo alineado',
+      detail: 'Inclínate desde todo el cuerpo; evita arquear la espalda o doblarte desde la cadera.',
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Fondo correcto',
+    detail: `Codo a ${elbowAngle}° · inclinación ${forwardLeanAngle}°. Sube con control sin bloquear bruscamente.`,
+  };
+}
+
 function calculateExerciseAngle(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -706,7 +781,9 @@ function Home() {
       setTechniqueFeedback(
         selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
-          : defaultTechniqueFeedback,
+          : selectedExerciseRef.current === 'fondos'
+            ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
+            : defaultTechniqueFeedback,
       );
       if (nextAngle !== null) {
         setAngleHistory((history) => [...history, nextAngle].slice(-5));
@@ -971,7 +1048,9 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {selectedExercise === 'flexiones' ? 'Vista lateral recomendada' : 'Vista frontal'}
+                      {selectedExercise === 'flexiones' || selectedExercise === 'fondos'
+                        ? 'Vista lateral recomendada'
+                        : 'Vista frontal'}
                       {' · '}
                       {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
                     </span>
@@ -1008,7 +1087,9 @@ function Home() {
                   playsInline
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
-                  aria-label={`Vista previa de la cámara ${selectedExercise === 'flexiones' ? 'lateral' : 'frontal'}`}
+                   aria-label={`Vista previa de la cámara ${
+                     selectedExercise === 'flexiones' || selectedExercise === 'fondos' ? 'lateral' : 'frontal'
+                   }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
                 <div className="video-vignette" aria-hidden="true" />
@@ -1042,7 +1123,7 @@ function Home() {
                   <span>{statusMessage}</span>
                 </div>
               </div>
-              {selectedExercise === 'flexiones' && (
+              {(selectedExercise === 'flexiones' || selectedExercise === 'fondos') && (
                 <div
                   className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
                   role="status"
