@@ -360,6 +360,15 @@
   color: #8bffa5;
 }
 
+.exercise-card-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  object-position: center;
+}
+
 .exercise-card-copy {
   display: grid;
   gap: 0.22rem;
