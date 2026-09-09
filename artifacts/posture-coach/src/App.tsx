@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
+import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
@@ -45,7 +46,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-pica' | 'sentadillas' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -55,6 +56,7 @@ type ExerciseDefinition = {
 const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
   dominadas: pullupImage,
+  'dominadas-supinas': supinePullupImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
   'flexiones-pica': pikePushupImage,
@@ -132,6 +134,12 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Codo · tracción vertical',
   },
   {
+    id: 'dominadas-supinas',
+    name: 'Dominadas supinas',
+    description: 'Sube con control, codos cerca del torso y hombros estables.',
+    angleLabel: 'Codo · objetivo 90° · hombro 30–45°',
+  },
+  {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
     description: 'Inclina el torso 15–20° y lleva los codos hacia abajo y adelante.',
@@ -176,6 +184,10 @@ const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 170;
 const PULLUP_TOP_MAX_ANGLE = 60;
 const PULLUP_SMOOTHING_SAMPLES = 5;
+const SUPINE_PULLUP_TOP_MIN_ANGLE = 75;
+const SUPINE_PULLUP_TOP_MAX_ANGLE = 105;
+const SUPINE_PULLUP_SHOULDER_MIN_ANGLE = 30;
+const SUPINE_PULLUP_SHOULDER_MAX_ANGLE = 45;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
 const DIP_MIN_FORWARD_LEAN = 8;
@@ -304,10 +316,26 @@ type PullupTrackerUpdate = {
   completedMinimumAngle: number | null;
 };
 
+type PullupTrackerConfig = {
+  topMinAngle: number;
+  topMaxAngle: number;
+};
+
+const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
+  topMinAngle: 0,
+  topMaxAngle: PULLUP_TOP_MAX_ANGLE,
+};
+
+const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
+  topMinAngle: SUPINE_PULLUP_TOP_MIN_ANGLE,
+  topMaxAngle: SUPINE_PULLUP_TOP_MAX_ANGLE,
+};
+
 function advancePullupTracker(
   tracker: PullupTracker,
   rawAngle: number,
   chinOverBar: boolean,
+  config: PullupTrackerConfig = STANDARD_PULLUP_TRACKER_CONFIG,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
   const smoothedAngle = median(samples);
@@ -324,7 +352,9 @@ function advancePullupTracker(
   const isAtBottom = smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
     && smoothedAngle <= PULLUP_BOTTOM_MAX_ANGLE;
   const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
-  const hasReachedTop = smoothedAngle < PULLUP_TOP_MAX_ANGLE && chinOverBar;
+  const hasReachedTop = smoothedAngle >= config.topMinAngle
+    && smoothedAngle <= config.topMaxAngle
+    && chinOverBar;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
 
@@ -355,7 +385,7 @@ function advancePullupTracker(
       nextTracker.repetitions += 1;
       nextTracker.goodRepetitions += 1;
       completedMinimumAngle = nextTracker.minimumAngle;
-    } else if (smoothedAngle > PULLUP_TOP_MAX_ANGLE) {
+    } else if (smoothedAngle > config.topMaxAngle) {
       nextTracker.phase = 'bajando';
     }
   } else if (nextTracker.phase === 'bajando') {
@@ -856,6 +886,85 @@ function getPullupTechniqueFeedback(
   };
 }
 
+function getSupinePullupTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const shoulderAbductionAngle = calculateAngle(hip, shoulder, elbow);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+
+  if (
+    elbowAngle === null
+    || shoulderAbductionAngle === null
+    || bodyLineAngle === null
+    || !shoulder
+    || !wrist
+  ) {
+    return defaultTechniqueFeedback;
+  }
+
+  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+  const wristsAboveShoulders = wrist.y < shoulder.y;
+
+  if (!wristsAboveShoulders) {
+    return {
+      tone: 'warning',
+      message: 'Mantén las manos sobre la cabeza',
+      detail: 'Colócate debajo de la barra y conserva las muñecas por encima de los hombros.',
+    };
+  }
+  if (bodyLineDeviation > 25) {
+    return {
+      tone: 'warning',
+      message: 'Evita balancearte',
+      detail: 'Contrae el abdomen y mantén cabeza, espalda, cadera y piernas controladas.',
+    };
+  }
+  if (shoulderAbductionAngle > SUPINE_PULLUP_SHOULDER_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Acerca los codos al torso',
+      detail: `La abducción del hombro es de ${shoulderAbductionAngle}°. Busca entre 30° y 45° respecto al torso.`,
+    };
+  }
+  if (shoulderAbductionAngle < SUPINE_PULLUP_SHOULDER_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado los codos',
+      detail: `La abducción del hombro es de ${shoulderAbductionAngle}°. Abre ligeramente hasta 30°–45°.`,
+    };
+  }
+  if (elbowAngle > SUPINE_PULLUP_TOP_MAX_ANGLE) {
+    return {
+      tone: 'checking',
+      message: 'Sigue subiendo',
+      detail: `Tu codo está a ${elbowAngle}°. Acércate a 90° al final de la subida.`,
+    };
+  }
+  if (elbowAngle < SUPINE_PULLUP_TOP_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado el codo',
+      detail: `Tu codo está a ${elbowAngle}°. El objetivo al final de la subida es aproximadamente 90°.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Dominada supina correcta',
+    detail: `Codo a ${elbowAngle}° · hombro ${shoulderAbductionAngle}°. Desciende con control y sin balancearte.`,
+  };
+}
+
 function getLatPulldownTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -1050,6 +1159,7 @@ function calculateExerciseAngle(
   if (
     exercise === 'fondos'
     || exercise === 'dominadas'
+    || exercise === 'dominadas-supinas'
     || exercise === 'jalon'
     || exercise === 'flexiones'
     || exercise === 'flexiones-pica'
@@ -1111,6 +1221,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     dominadas: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'dominadas-supinas': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -1340,11 +1455,19 @@ function Home() {
           });
         }
       }
-      if (selectedExerciseRef.current === 'dominadas' && rawAngle !== null) {
+      if (
+        (selectedExerciseRef.current === 'dominadas'
+          || selectedExerciseRef.current === 'dominadas-supinas')
+        && rawAngle !== null
+      ) {
+        const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
           isChinOverBar(pose?.keypoints, nextDominantSide),
+          isSupinePullup
+            ? SUPINE_PULLUP_TRACKER_CONFIG
+            : STANDARD_PULLUP_TRACKER_CONFIG,
         );
         pullupTrackerRef.current = pullupUpdate.tracker;
         nextAngle = pullupUpdate.smoothedAngle;
@@ -1359,13 +1482,17 @@ function Home() {
           setPullupFeedback({
             tone: 'success',
             message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
-            detail: `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 175–180° · barbilla sobre la barra.`,
+            detail: isSupinePullup
+              ? `Codo final ${pullupUpdate.completedMinimumAngle}° dentro de 75–105° · extensión inicial entre 175–180° · barbilla sobre la barra.`
+              : `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 175–180° · barbilla sobre la barra.`,
           });
         } else if (pullupUpdate.tracker.event === 'no-top') {
           setPullupFeedback({
             tone: 'warning',
             message: 'No rep · subida incompleta',
-            detail: `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta menos de 60° y pasa la barbilla sobre la barra.`,
+            detail: isSupinePullup
+              ? `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta 75–105° y pasa la barbilla sobre la barra.`
+              : `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta menos de 60° y pasa la barbilla sobre la barra.`,
           });
         } else if (pullupUpdate.tracker.event === 'no-lockout') {
           setPullupFeedback({
@@ -1374,7 +1501,11 @@ function Home() {
             detail: `Volviste a subir con ${pullupUpdate.smoothedAngle}°. Extiende primero los brazos entre 175–180°.`,
           });
         } else {
-          setPullupFeedback(getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide));
+          setPullupFeedback(
+            isSupinePullup
+              ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
+          );
         }
       }
       let displayAngle = nextAngle;
@@ -1416,8 +1547,10 @@ function Home() {
             ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
-            : selectedExerciseRef.current === 'dominadas'
-              ? getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+             : selectedExerciseRef.current === 'dominadas'
+               ? getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+               : selectedExerciseRef.current === 'dominadas-supinas'
+                 ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'jalon'
                 ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
@@ -1622,7 +1755,7 @@ function Home() {
     : '—';
   const angleFeedback = selectedExercise === 'sentadillas'
     ? squatFeedback
-    : selectedExercise === 'dominadas'
+    : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
       ? pullupFeedback
       : techniqueFeedback;
   const angleIsGood = angleFeedback.tone === 'success';
@@ -1693,6 +1826,7 @@ function Home() {
                 {exercises.map((exercise) => {
                   const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
+                    || exercise.id === 'dominadas-supinas'
                     || exercise.id === 'jalon'
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-pica'
@@ -1751,6 +1885,7 @@ function Home() {
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
+                        || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
@@ -1783,8 +1918,8 @@ function Home() {
                   <p>Rango objetivo 83–90° · ángulo compensado para la posición de la cámara.</p>
                 </div>
               )}
-              {selectedExercise === 'dominadas' && (
-                <div className="squat-summary" aria-label="Resumen de dominadas">
+              {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') && (
+                <div className="squat-summary" aria-label={`Resumen de ${selectedExercise === 'dominadas-supinas' ? 'dominadas supinas' : 'dominadas'}`}>
                   <div className="squat-summary-stat">
                     <span>Correctas</span>
                     <strong>{pullupGoodRepetitions}</strong>
@@ -1801,7 +1936,11 @@ function Home() {
                     <span>Ángulo mínimo</span>
                     <strong>{pullupMinimumAngle === null ? '—' : `${pullupMinimumAngle}°`}</strong>
                   </div>
-                  <p>Inicio y final 175–180° · subida menor de 60° · barbilla sobre la barra.</p>
+                  <p>
+                    {selectedExercise === 'dominadas-supinas'
+                      ? 'Inicio 175–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
+                      : 'Inicio y final 175–180° · subida menor de 60° · barbilla sobre la barra.'}
+                  </p>
                 </div>
               )}
               {selectedExercise === 'jalon' && (
@@ -1824,6 +1963,16 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'dominadas-supinas' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Codo:</b> termina la subida cerca de 90° y desciende hasta extender los brazos entre 175° y 180°.</li>
+                    <li><b>Hombro:</b> mantén los codos entre 30° y 45° de abducción respecto al torso.</li>
+                    <li><b>Control:</b> pasa la barbilla sobre la barra sin balancearte y baja lentamente.</li>
+                  </ul>
+                </div>
+              )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
                 <video
                   ref={videoRef}
@@ -1837,6 +1986,7 @@ function Home() {
                         || selectedExercise === 'flexiones-pica'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
+                        || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
@@ -1946,7 +2096,7 @@ function Home() {
                       </div>
                     </>
                   )}
-                  {selectedExercise === 'dominadas' && (
+                  {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') && (
                     <>
                       <div className="diagnostic-row">
                         <dt>Correctas</dt>
