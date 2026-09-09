@@ -167,9 +167,9 @@ const exercises: ExerciseDefinition[] = [
   },
   {
     id: 'zancadas',
-    name: 'Zancadas dinámicas o búlgaras',
-    description: 'Trabaja cada pierna con control, equilibrio y estabilidad.',
-    angleLabel: 'Rodilla · cadera · tobillo',
+    name: 'Zancadas dinámicas',
+    description: 'Baja con control hasta formar 90° en las piernas.',
+    angleLabel: 'Rodilla delantera · objetivo 90°',
   },
   {
     id: 'plancha',
@@ -218,6 +218,13 @@ const PIKE_WRIST_SHOULDER_MAX_ANGLE = 105;
 const PIKE_MIN_HIP_LIFT_RATIO = 0.12;
 const PIKE_MIN_BODY_FOLD_ANGLE = 45;
 const PIKE_MAX_BODY_FOLD_ANGLE = 125;
+const LUNGE_KNEE_MIN_ANGLE = 80;
+const LUNGE_KNEE_MAX_ANGLE = 100;
+const LUNGE_HIP_MIN_ANGLE = 80;
+const LUNGE_HIP_MAX_ANGLE = 100;
+const LUNGE_TORSO_MIN_ANGLE = 75;
+const LUNGE_TORSO_MAX_ANGLE = 80;
+const LUNGE_KNEE_ANKLE_MAX_OFFSET = 0.35;
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -733,6 +740,100 @@ function getPikePushupTechniqueFeedback(
     tone: 'success',
     message: 'Pica correcta',
     detail: `Codos a ${elbowBodyAngle}° · hombro-muñeca ${wristShoulderAngle}°. Mantén el cuerpo firme durante el movimiento.`,
+  };
+}
+
+function getLungeTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const frontIndexes = sideKeypoints[side];
+  const rearSide: PoseSide = side === 'left' ? 'right' : 'left';
+  const rearIndexes = sideKeypoints[rearSide];
+  const frontShoulder = keypoints[frontIndexes.shoulder];
+  const frontHip = keypoints[frontIndexes.hip];
+  const frontKnee = keypoints[frontIndexes.knee];
+  const frontAnkle = keypoints[frontIndexes.ankle];
+  const rearHip = keypoints[rearIndexes.hip];
+  const rearKnee = keypoints[rearIndexes.knee];
+  const rearAnkle = keypoints[rearIndexes.ankle];
+  const frontKneeAngle = calculateAngle(frontHip, frontKnee, frontAnkle);
+  const rearKneeAngle = calculateAngle(rearHip, rearKnee, rearAnkle);
+  const frontHipAngle = calculateAngle(frontShoulder, frontHip, frontKnee);
+  const torsoAngle = calculateAngleToFloor(frontShoulder, frontHip);
+
+  if (
+    frontKneeAngle === null
+    || rearKneeAngle === null
+    || frontHipAngle === null
+    || torsoAngle === null
+    || !frontKnee
+    || !frontAnkle
+  ) {
+    return defaultTechniqueFeedback;
+  }
+
+  const shinLength = Math.hypot(frontKnee.x - frontAnkle.x, frontKnee.y - frontAnkle.y);
+  const kneeAnkleOffset = shinLength > 0
+    ? Math.abs(frontKnee.x - frontAnkle.x) / shinLength
+    : 1;
+
+  if (frontKneeAngle > LUNGE_KNEE_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Baja más la rodilla delantera',
+      detail: `La rodilla delantera está a ${frontKneeAngle}°. Busca aproximadamente 90° en la parte más baja.`,
+    };
+  }
+  if (frontKneeAngle < LUNGE_KNEE_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado la rodilla delantera',
+      detail: `La rodilla delantera está a ${frontKneeAngle}°. Sube un poco para proteger la articulación.`,
+    };
+  }
+  if (rearKneeAngle > LUNGE_KNEE_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Acerca la rodilla trasera al suelo',
+      detail: `La rodilla trasera está a ${rearKneeAngle}°. Busca aproximadamente 90° sin golpear el suelo.`,
+    };
+  }
+  if (rearKneeAngle < LUNGE_KNEE_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'Controla la rodilla trasera',
+      detail: `La rodilla trasera está a ${rearKneeAngle}°. Evita cerrarla demasiado al descender.`,
+    };
+  }
+  if (frontHipAngle > LUNGE_HIP_MAX_ANGLE || frontHipAngle < LUNGE_HIP_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Ajusta la cadera delantera',
+      detail: `La cadera delantera está a ${frontHipAngle}°. Busca 90° y deja el muslo paralelo al suelo.`,
+    };
+  }
+  if (torsoAngle < LUNGE_TORSO_MIN_ANGLE || torsoAngle > LUNGE_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Ajusta la inclinación del torso',
+      detail: `Tu torso está a ${torsoAngle}° respecto al suelo. Mantén una inclinación de 75°–80°.`,
+    };
+  }
+  if (kneeAnkleOffset > LUNGE_KNEE_ANKLE_MAX_OFFSET) {
+    return {
+      tone: 'warning',
+      message: 'Alinea la rodilla con el tobillo',
+      detail: 'Evita que la rodilla delantera se desplace demasiado respecto a la punta del pie.',
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Zancada correcta',
+    detail: `Rodilla delantera ${frontKneeAngle}° · trasera ${rearKneeAngle}° · cadera ${frontHipAngle}°.`,
   };
 }
 
@@ -1570,6 +1671,8 @@ function Home() {
                  ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'jalon'
                 ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : selectedExerciseRef.current === 'zancadas'
+                ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
@@ -1988,6 +2091,16 @@ function Home() {
                     <li><b>Codo:</b> termina la subida cerca de 90° y desciende hasta extender los brazos entre 175° y 180°.</li>
                     <li><b>Hombro:</b> mantén los codos entre 30° y 45° de abducción respecto al torso.</li>
                     <li><b>Control:</b> pasa la barbilla sobre la barra sin balancearte y baja lentamente.</li>
+                  </ul>
+                </div>
+              )}
+              {selectedExercise === 'zancadas' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones de las zancadas dinámicas">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Rodilla delantera:</b> llega aproximadamente a 90° y mantenla alineada verticalmente con el tobillo.</li>
+                    <li><b>Cadera y rodilla trasera:</b> busca 90° en ambas, dejando la rodilla trasera cerca del suelo sin golpearlo.</li>
+                    <li><b>Torso:</b> mantén una inclinación leve de 75°–80° respecto al suelo y controla cada transición.</li>
                   </ul>
                 </div>
               )}
