@@ -1,1 +1,2 @@
 - [Arranque del preview](preview-startup.md) — el frontend necesita dependencias instaladas y variables de entorno de Vite.
+- [Entradas escalonadas](animation-entrances.md) — con `animation-fill-mode: backwards`, la opacidad base debe quedar en 1 para que el contenido no permanezca oculto.
