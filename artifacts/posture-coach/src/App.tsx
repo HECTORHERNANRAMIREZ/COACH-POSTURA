@@ -49,7 +49,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -64,6 +64,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
+  'press-militar': '/press-militar-mancuernas.svg',
   sentadillas: squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -170,6 +171,12 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
   },
   {
+    id: 'press-militar',
+    name: 'Press militar con mancuernas',
+    description: 'Empuja las mancuernas sobre la cabeza sin arquear la espalda.',
+    angleLabel: 'Cuerpo 165–180° · codo controlado',
+  },
+  {
     id: 'sentadillas',
     name: 'Sentadillas',
     description: 'Mide la profundidad y el control de tus piernas.',
@@ -234,6 +241,7 @@ const PIKE_WRIST_SHOULDER_MAX_ANGLE = 105;
 const PIKE_MIN_HIP_LIFT_RATIO = 0.12;
 const PIKE_MIN_BODY_FOLD_ANGLE = 45;
 const PIKE_MAX_BODY_FOLD_ANGLE = 125;
+const MILITARY_PRESS_MIN_BODY_LINE_ANGLE = 165;
 const LUNGE_KNEE_MIN_ANGLE = 80;
 const LUNGE_KNEE_MAX_ANGLE = 100;
 const LUNGE_HIP_MIN_ANGLE = 80;
@@ -765,6 +773,38 @@ function getPikePushupTechniqueFeedback(
     tone: 'success',
     message: 'Pica correcta',
     detail: `Codos a ${elbowBodyAngle}° · hombro-muñeca ${wristShoulderAngle}°. Mantén el cuerpo firme durante el movimiento.`,
+  };
+}
+
+function getMilitaryPressTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+
+  if (elbowAngle === null || bodyLineAngle === null) return defaultTechniqueFeedback;
+
+  if (bodyLineAngle < MILITARY_PRESS_MIN_BODY_LINE_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el torso vertical',
+      detail: `Tu cuerpo está a ${bodyLineAngle}°. Activa el abdomen y evita arquear la espalda al empujar.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Press militar controlado',
+    detail: `Codo ${elbowAngle}° · cuerpo ${bodyLineAngle}°. Sube las mancuernas en línea y baja con control.`,
   };
 }
 
@@ -1350,6 +1390,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones'
     || exercise === 'flexiones-declinadas'
     || exercise === 'flexiones-pica'
+    || exercise === 'press-militar'
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
   ) {
@@ -1438,6 +1479,11 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
     ],
     'flexiones-pica': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'press-militar': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -1754,6 +1800,8 @@ function Home() {
             ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide, 'declined')
           : selectedExerciseRef.current === 'flexiones-pica'
             ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'press-militar'
+            ? getMilitaryPressTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
              : selectedExerciseRef.current === 'dominadas'
@@ -2044,6 +2092,7 @@ function Home() {
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
+                    || exercise.id === 'press-militar'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       || exercise.id === 'zancadas'
@@ -2100,6 +2149,7 @@ function Home() {
                         {selectedExercise === 'flexiones'
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
+                        || selectedExercise === 'press-militar'
                         || selectedExercise === 'fondos'
                           || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
@@ -2194,6 +2244,18 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'press-militar' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones del press militar con mancuernas">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Posición inicial:</b> coloca los pies al ancho de los hombros y las mancuernas a la altura de los hombros, con los codos debajo de las muñecas.</li>
+                    <li><b>Torso:</b> mantén el cuerpo entre 165° y 180°; activa el abdomen y evita inclinarte o arquear la espalda.</li>
+                    <li><b>Empuje:</b> lleva las mancuernas sobre la cabeza en una trayectoria vertical, sin separarlas demasiado del cuerpo.</li>
+                    <li><b>Hombros:</b> manténlos estables y evita encogerlos hacia las orejas durante la subida.</li>
+                    <li><b>Control:</b> baja las mancuernas lentamente hasta la altura de los hombros y repite sin bloquear bruscamente los codos.</li>
+                  </ul>
+                </div>
+              )}
               {selectedExercise === 'dominadas-supinas' && (
                 <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
                   <strong>Cómo hacerlo</strong>
@@ -2238,6 +2300,7 @@ function Home() {
                        selectedExercise === 'flexiones'
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
+                        || selectedExercise === 'press-militar'
                        || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
