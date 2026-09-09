@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Camera,
   CheckCircle2,
+  Maximize2,
   ShieldCheck,
   Square,
 } from 'lucide-react';
@@ -49,6 +50,14 @@ type ExerciseDefinition = {
   name: string;
   description: string;
   angleLabel: string;
+};
+const exerciseImages: Record<ExerciseId, string> = {
+  fondos: dipImage,
+  dominadas: pullupImage,
+  jalon: pulldownImage,
+  flexiones: pushupImage,
+  sentadillas: squatImage,
+  plancha: plankImage,
 };
 type PoseSide = 'left' | 'right';
 type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
@@ -1075,6 +1084,7 @@ function Home() {
   const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
   const [pullupFeedback, setPullupFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
+  const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -1117,6 +1127,17 @@ function Home() {
 
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!previewExercise) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewExercise(null);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [previewExercise]);
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
@@ -1488,6 +1509,13 @@ function Home() {
       ? pullupFeedback
       : techniqueFeedback;
   const angleIsGood = angleFeedback.tone === 'success';
+  const diagnosisStatus = angle === null
+    ? 'ESPERANDO'
+    : angleFeedback.tone === 'success'
+      ? 'BIEN'
+      : angleFeedback.tone === 'checking'
+        ? 'EN PROCESO'
+        : 'AJUSTAR';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
   const squatPhaseLabel = squatPhase === 'arriba'
     ? 'Arriba'
@@ -1555,36 +1583,34 @@ function Home() {
                       ? ArrowDown
                       : Square;
                   return (
-                    <button
+                    <div
                       key={exercise.id}
-                      type="button"
                       className="exercise-card"
                       data-testid={`exercise-${exercise.id}`}
-                      onClick={() => void startCamera(exercise.id)}
                     >
-                      <span className="exercise-card-icon" aria-hidden="true">
-                        {exercise.id === 'fondos' ? (
-                          <img className="exercise-card-image" src={dipImage} alt="" />
-                        ) : exercise.id === 'dominadas' ? (
-                          <img className="exercise-card-image" src={pullupImage} alt="" />
-                        ) : exercise.id === 'jalon' ? (
-                          <img className="exercise-card-image" src={pulldownImage} alt="" />
-                        ) : exercise.id === 'flexiones' ? (
-                          <img className="exercise-card-image" src={pushupImage} alt="" />
-                        ) : exercise.id === 'sentadillas' ? (
-                          <img className="exercise-card-image" src={squatImage} alt="" />
-                        ) : exercise.id === 'plancha' ? (
-                          <img className="exercise-card-image" src={plankImage} alt="" />
-                        ) : (
-                          <ExerciseIcon size={20} strokeWidth={1.8} />
-                        )}
-                      </span>
-                      <span className="exercise-card-copy">
-                        <strong>{exercise.name}</strong>
-                        <small>{exercise.description}</small>
-                      </span>
-                      <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
-                    </button>
+                      <button
+                        type="button"
+                        className="exercise-card-icon"
+                        aria-label={`Ampliar imagen de ${exercise.name}`}
+                        onClick={() => setPreviewExercise(exercise)}
+                      >
+                        <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
+                        <span className="exercise-card-zoom-hint" aria-hidden="true">
+                          <Maximize2 size={12} strokeWidth={2} />
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="exercise-card-action"
+                        onClick={() => void startCamera(exercise.id)}
+                      >
+                        <span className="exercise-card-copy">
+                          <strong>{exercise.name}</strong>
+                          <small>{exercise.description}</small>
+                        </span>
+                        <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1722,60 +1748,24 @@ function Home() {
                   <span>{statusMessage}</span>
                 </div>
               </div>
-              {(selectedExercise === 'flexiones'
-                || selectedExercise === 'fondos'
-                || selectedExercise === 'jalon'
-                || selectedExercise === 'plancha') && (
-                <div
-                  className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span className="technique-feedback-icon" aria-hidden="true">
-                    {techniqueFeedback.tone === 'success'
-                      ? <CheckCircle2 size={17} strokeWidth={2} />
-                      : <AlertTriangle size={17} strokeWidth={1.8} />}
-                  </span>
-                  <span className="technique-feedback-copy">
-                    <strong>{techniqueFeedback.message}</strong>
-                    <small>{techniqueFeedback.detail}</small>
-                  </span>
+              <div
+                className={`simple-diagnosis simple-diagnosis--${angleFeedback.tone}`}
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <div className="simple-diagnosis-reading">
+                  <span>Grados realizados</span>
+                  <strong>{angleLabel}</strong>
                 </div>
-              )}
-              {selectedExercise === 'dominadas' && (
-                <div
-                  className={`technique-feedback technique-feedback--${pullupFeedback.tone}`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span className="technique-feedback-icon" aria-hidden="true">
-                    {pullupFeedback.tone === 'success'
-                      ? <CheckCircle2 size={17} strokeWidth={2} />
-                      : <AlertTriangle size={17} strokeWidth={1.8} />}
-                  </span>
-                  <span className="technique-feedback-copy">
-                    <strong>{pullupFeedback.message}</strong>
-                    <small>{pullupFeedback.detail}</small>
-                  </span>
+                <div className="simple-diagnosis-result">
+                  <span>Resultado</span>
+                  <strong>{diagnosisStatus}</strong>
                 </div>
-              )}
-              {selectedExercise === 'sentadillas' && (
-                <div
-                  className={`technique-feedback technique-feedback--${squatFeedback.tone}`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span className="technique-feedback-icon" aria-hidden="true">
-                    {squatFeedback.tone === 'success'
-                      ? <CheckCircle2 size={17} strokeWidth={2} />
-                      : <AlertTriangle size={17} strokeWidth={1.8} />}
-                  </span>
-                  <span className="technique-feedback-copy">
-                    <strong>{squatFeedback.message}</strong>
-                    <small>{squatFeedback.detail}</small>
-                  </span>
-                </div>
-              )}
+                {diagnosisStatus === 'AJUSTAR' && angle !== null && (
+                  <p>{angleFeedback.message}</p>
+                )}
+              </div>
               <div className="diagnostic-dock">
                 <button
                   type="button"
@@ -1949,6 +1939,41 @@ function Home() {
             </section>
           )}
         </div>
+
+        {previewExercise && (
+          <div
+            className="exercise-image-modal"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setPreviewExercise(null);
+            }}
+          >
+            <div
+              className="exercise-image-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="exercise-image-title"
+            >
+              <div className="exercise-image-dialog-header">
+                <h2 id="exercise-image-title">{previewExercise.name}</h2>
+                <button
+                  type="button"
+                  className="exercise-image-close"
+                  aria-label="Cerrar imagen ampliada"
+                  onClick={() => setPreviewExercise(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <img
+                className="exercise-image-expanded"
+                src={exerciseImages[previewExercise.id]}
+                alt={`Ilustración de ${previewExercise.name}`}
+              />
+              <p>Toca fuera de la imagen o presiona Esc para cerrar.</p>
+            </div>
+          </div>
+        )}
 
         <p className="app-footer">Sin grabaciones · Sin cuentas · Solo tú y tu movimiento</p>
       </main>

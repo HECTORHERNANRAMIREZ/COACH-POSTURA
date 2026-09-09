@@ -349,15 +349,25 @@
 }
 
 .exercise-card-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 2.7rem;
   height: 2.7rem;
+  padding: 0;
   border: 1px solid rgba(57, 255, 106, 0.22);
   border-radius: 0.9rem;
   background: rgba(57, 255, 106, 0.07);
   color: #8bffa5;
+  cursor: zoom-in;
+  font: inherit;
+  overflow: hidden;
+}
+
+.exercise-card-icon:hover {
+  border-color: rgba(57, 255, 106, 0.58);
+  background: rgba(57, 255, 106, 0.14);
 }
 
 .exercise-card-image {
@@ -367,6 +377,43 @@
   border-radius: 0.75rem;
   object-fit: cover;
   object-position: center;
+}
+
+.exercise-card-zoom-hint {
+  position: absolute;
+  right: 0.18rem;
+  bottom: 0.18rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid rgba(57, 255, 106, 0.42);
+  border-radius: 0.3rem;
+  background: rgba(4, 16, 21, 0.78);
+  color: #b5ffc5;
+  pointer-events: none;
+}
+
+.exercise-card-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.exercise-card-action:focus-visible {
+  outline: 2px solid #39ff6a;
+  outline-offset: 3px;
+  border-radius: 0.35rem;
 }
 
 .exercise-card-copy {
@@ -812,6 +859,89 @@
   font-size: 0.8rem;
 }
 
+.simple-diagnosis {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.65rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(7, 17, 31, 0.48);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(18px) saturate(130%);
+}
+
+.simple-diagnosis-reading,
+.simple-diagnosis-result {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.simple-diagnosis-reading span,
+.simple-diagnosis-result span {
+  color: rgba(194, 210, 226, 0.62);
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.simple-diagnosis-reading strong {
+  color: #f0f5fb;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.simple-diagnosis-result {
+  justify-items: end;
+  text-align: right;
+}
+
+.simple-diagnosis-result strong {
+  color: rgba(226, 235, 245, 0.86);
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.simple-diagnosis p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: rgba(255, 216, 138, 0.9);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.simple-diagnosis--success {
+  border-color: rgba(57, 255, 106, 0.34);
+  background:
+    linear-gradient(145deg, rgba(57, 255, 106, 0.11), rgba(255, 255, 255, 0.035)),
+    rgba(7, 26, 20, 0.5);
+}
+
+.simple-diagnosis--success .simple-diagnosis-result strong {
+  color: #8bffa5;
+}
+
+.simple-diagnosis--warning,
+.simple-diagnosis--danger {
+  border-color: rgba(255, 216, 138, 0.42);
+  background:
+    linear-gradient(145deg, rgba(255, 216, 138, 0.1), rgba(255, 255, 255, 0.035)),
+    rgba(35, 27, 12, 0.5);
+}
+
+.simple-diagnosis--warning .simple-diagnosis-result strong,
+.simple-diagnosis--danger .simple-diagnosis-result strong {
+  color: #ffd88a;
+}
+
 .status-dot {
   flex: 0 0 auto;
   width: 0.52rem;
@@ -900,6 +1030,7 @@
 }
 
 .diagnostic-dock {
+  display: none;
   position: fixed;
   right: 0.55rem;
   bottom: 0.55rem;
@@ -1135,6 +1266,85 @@
   flex-direction: column;
   gap: 0.65rem;
   margin-top: 1.65rem;
+}
+
+.exercise-image-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(2, 8, 18, 0.82);
+  backdrop-filter: blur(14px);
+}
+
+.exercise-image-dialog {
+  display: grid;
+  gap: 0.85rem;
+  width: min(30rem, 100%);
+  max-height: min(92vh, 42rem);
+  padding: 0.8rem;
+  border: 1px solid rgba(57, 255, 106, 0.3);
+  border-radius: 1.3rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
+    rgba(7, 20, 31, 0.96);
+  box-shadow:
+    0 1.5rem 4rem rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.exercise-image-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.exercise-image-dialog-header h2 {
+  margin: 0;
+  color: #f0f5fb;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.exercise-image-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(226, 235, 245, 0.8);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.exercise-image-close:hover {
+  border-color: rgba(57, 255, 106, 0.48);
+  color: #b5ffc5;
+}
+
+.exercise-image-expanded {
+  display: block;
+  width: 100%;
+  max-height: calc(92vh - 7rem);
+  border-radius: 0.95rem;
+  object-fit: contain;
+}
+
+.exercise-image-dialog p {
+  margin: 0;
+  color: rgba(194, 210, 226, 0.58);
+  font-size: 0.65rem;
+  text-align: center;
 }
 
 .secondary-action {
