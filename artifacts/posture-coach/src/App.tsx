@@ -80,6 +80,17 @@ type SquatTracker = {
   event: SquatRepEvent;
   currentRepCounted: boolean;
 };
+type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
+type PullupRepEvent = 'valid' | 'no-top' | 'no-lockout' | null;
+type PullupTracker = {
+  phase: PullupPhase;
+  repetitions: number;
+  goodRepetitions: number;
+  minimumAngle: number | null;
+  samples: number[];
+  event: PullupRepEvent;
+  lastAngle: number | null;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -133,6 +144,11 @@ const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
 const SQUAT_MEANINGFUL_DESCENT = 22;
 const SQUAT_SMOOTHING_SAMPLES = 5;
+const PULLUP_BOTTOM_MIN_ANGLE = 175;
+const PULLUP_BOTTOM_MAX_ANGLE = 180;
+const PULLUP_NO_LOCKOUT_ANGLE = 170;
+const PULLUP_TOP_MAX_ANGLE = 60;
+const PULLUP_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
 const DIP_MIN_FORWARD_LEAN = 8;
@@ -155,6 +171,18 @@ function createSquatTracker(): SquatTracker {
     samples: [],
     event: null,
     currentRepCounted: false,
+  };
+}
+
+function createPullupTracker(): PullupTracker {
+  return {
+    phase: 'esperando abajo',
+    repetitions: 0,
+    goodRepetitions: 0,
+    minimumAngle: null,
+    samples: [],
+    event: null,
+    lastAngle: null,
   };
 }
 
@@ -225,6 +253,88 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
       nextTracker.currentRepCounted = true;
       nextTracker.descentStartAngle = null;
       nextTracker.hasMeaningfulDescent = false;
+    }
+  }
+
+  return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
+}
+
+type PullupTrackerUpdate = {
+  tracker: PullupTracker;
+  smoothedAngle: number;
+  completedMinimumAngle: number | null;
+};
+
+function advancePullupTracker(
+  tracker: PullupTracker,
+  rawAngle: number,
+  chinOverBar: boolean,
+): PullupTrackerUpdate {
+  const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
+  const smoothedAngle = median(samples);
+  if (smoothedAngle === null) {
+    return { tracker, smoothedAngle: rawAngle, completedMinimumAngle: null };
+  }
+
+  const nextTracker: PullupTracker = {
+    ...tracker,
+    samples,
+    event: null,
+    lastAngle: smoothedAngle,
+  };
+  const isAtBottom = smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
+    && smoothedAngle <= PULLUP_BOTTOM_MAX_ANGLE;
+  const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
+  const hasReachedTop = smoothedAngle < PULLUP_TOP_MAX_ANGLE && chinOverBar;
+  const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
+  let completedMinimumAngle: number | null = null;
+
+  if (nextTracker.phase === 'esperando abajo') {
+    if (isAtBottom) nextTracker.phase = 'abajo';
+  } else if (nextTracker.phase === 'abajo') {
+    if (hasStartedPull) {
+      nextTracker.phase = 'subiendo';
+      nextTracker.minimumAngle = smoothedAngle;
+    }
+  } else if (nextTracker.phase === 'subiendo') {
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+
+    if (hasReachedTop) {
+      nextTracker.phase = 'arriba';
+    } else if (isAtBottom) {
+      nextTracker.phase = 'abajo';
+      nextTracker.event = 'no-top';
+      nextTracker.repetitions += 1;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    }
+  } else if (nextTracker.phase === 'arriba') {
+    if (isAtBottom) {
+      nextTracker.phase = 'abajo';
+      nextTracker.event = 'valid';
+      nextTracker.repetitions += 1;
+      nextTracker.goodRepetitions += 1;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    } else if (smoothedAngle > PULLUP_TOP_MAX_ANGLE) {
+      nextTracker.phase = 'bajando';
+    }
+  } else if (nextTracker.phase === 'bajando') {
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+
+    if (isAtBottom) {
+      nextTracker.phase = 'abajo';
+      nextTracker.event = 'valid';
+      nextTracker.repetitions += 1;
+      nextTracker.goodRepetitions += 1;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    } else if (isRising && smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE) {
+      nextTracker.phase = 'esperando abajo';
+      nextTracker.event = 'no-lockout';
+      nextTracker.repetitions += 1;
+      completedMinimumAngle = nextTracker.minimumAngle;
     }
   }
 
@@ -472,6 +582,18 @@ function calculateForwardLeanAngle(
   return Math.round(Math.atan2(horizontalDistance, verticalDistance) * (180 / Math.PI));
 }
 
+function isChinOverBar(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+  const nose = keypoints[0];
+  const wrist = keypoints[sideKeypoints[side].wrist];
+  if (!nose || !wrist) return false;
+  if ((nose.score ?? 0) < 0.2 || (wrist.score ?? 0) < 0.2) return false;
+  return nose.y < wrist.y;
+}
+
 function getDipTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -486,6 +608,7 @@ function getDipTechniqueFeedback(
   const ankle = keypoints[indexes.ankle];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
   const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const chinOverBar = isChinOverBar(keypoints, side);
   const forwardLeanAngle = calculateForwardLeanAngle(shoulder, hip);
 
   if (elbowAngle === null || bodyLineAngle === null || forwardLeanAngle === null) {
@@ -551,6 +674,7 @@ function getPullupTechniqueFeedback(
 
   const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
   const wristsAboveShoulders = wrist.y < shoulder.y;
+  const chinOverBar = isChinOverBar(keypoints, side);
 
   if (!wristsAboveShoulders) {
     return {
@@ -566,11 +690,32 @@ function getPullupTechniqueFeedback(
       detail: 'Contrae el abdomen y mantén el cuerpo controlado mientras subes y bajas.',
     };
   }
+  if (elbowAngle >= PULLUP_BOTTOM_MIN_ANGLE) {
+    return {
+      tone: 'checking',
+      message: 'Inicio válido',
+      detail: `Brazo a ${elbowAngle}°. Desde aquí inicia la subida manteniendo el cuerpo controlado.`,
+    };
+  }
   if (elbowAngle > 100) {
     return {
       tone: 'checking',
       message: 'Lleva los codos hacia abajo',
       detail: `Tu codo está a ${elbowAngle}°. Tira de la barra con control y acerca el pecho.`,
+    };
+  }
+  if (elbowAngle >= PULLUP_TOP_MAX_ANGLE) {
+    return {
+      tone: 'checking',
+      message: 'Sigue subiendo',
+      detail: `Tu codo está a ${elbowAngle}°. Busca menos de 60° y lleva la barbilla por encima de la barra.`,
+    };
+  }
+  if (!chinOverBar) {
+    return {
+      tone: 'warning',
+      message: 'Pasa la barbilla sobre la barra',
+      detail: 'El ángulo ya es menor de 60°, pero la barbilla todavía no supera la altura de la barra.',
     };
   }
 
@@ -840,12 +985,18 @@ function Home() {
   const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
   const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
+  const [pullupRepetitions, setPullupRepetitions] = useState(0);
+  const [pullupGoodRepetitions, setPullupGoodRepetitions] = useState(0);
+  const [pullupPhase, setPullupPhase] = useState<PullupPhase>('esperando abajo');
+  const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
+  const [pullupFeedback, setPullupFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
+  const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -966,6 +1117,43 @@ function Home() {
           });
         }
       }
+      if (selectedExerciseRef.current === 'dominadas' && rawAngle !== null) {
+        const pullupUpdate = advancePullupTracker(
+          pullupTrackerRef.current,
+          rawAngle,
+          isChinOverBar(pose?.keypoints, nextDominantSide),
+        );
+        pullupTrackerRef.current = pullupUpdate.tracker;
+        nextAngle = pullupUpdate.smoothedAngle;
+        setPullupRepetitions(pullupUpdate.tracker.repetitions);
+        setPullupGoodRepetitions(pullupUpdate.tracker.goodRepetitions);
+        setPullupPhase(pullupUpdate.tracker.phase);
+        setPullupMinimumAngle(
+          pullupUpdate.tracker.minimumAngle ?? pullupUpdate.completedMinimumAngle,
+        );
+
+        if (pullupUpdate.tracker.event === 'valid') {
+          setPullupFeedback({
+            tone: 'success',
+            message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
+            detail: `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 175–180° · barbilla sobre la barra.`,
+          });
+        } else if (pullupUpdate.tracker.event === 'no-top') {
+          setPullupFeedback({
+            tone: 'warning',
+            message: 'No rep · subida incompleta',
+            detail: `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta menos de 60° y pasa la barbilla sobre la barra.`,
+          });
+        } else if (pullupUpdate.tracker.event === 'no-lockout') {
+          setPullupFeedback({
+            tone: 'warning',
+            message: 'No rep · falta extensión',
+            detail: `Volviste a subir con ${pullupUpdate.smoothedAngle}°. Extiende primero los brazos entre 175–180°.`,
+          });
+        } else {
+          setPullupFeedback(getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide));
+        }
+      }
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
       setDominantSide(nextDominantSide);
@@ -1065,6 +1253,12 @@ function Home() {
     setSquatPhase('arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
+    pullupTrackerRef.current = createPullupTracker();
+    setPullupRepetitions(0);
+    setPullupGoodRepetitions(0);
+    setPullupPhase('esperando abajo');
+    setPullupMinimumAngle(null);
+    setPullupFeedback(defaultTechniqueFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('requesting');
@@ -1134,6 +1328,12 @@ function Home() {
     setSquatPhase('arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
+    pullupTrackerRef.current = createPullupTracker();
+    setPullupRepetitions(0);
+    setPullupGoodRepetitions(0);
+    setPullupPhase('esperando abajo');
+    setPullupMinimumAngle(null);
+    setPullupFeedback(defaultTechniqueFeedback);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
@@ -1167,6 +1367,15 @@ function Home() {
     : squatPhase === 'bajando'
       ? 'Bajando'
       : 'Abajo';
+  const pullupPhaseLabel = pullupPhase === 'esperando abajo'
+    ? 'Esperando extensión'
+    : pullupPhase === 'abajo'
+      ? 'Abajo'
+      : pullupPhase === 'subiendo'
+        ? 'Subiendo'
+        : pullupPhase === 'arriba'
+          ? 'Arriba'
+          : 'Bajando';
 
   return (
     <div className="posture-app">
@@ -1296,6 +1505,27 @@ function Home() {
                   <p>Rango objetivo 83–90° · ángulo compensado para la posición de la cámara.</p>
                 </div>
               )}
+              {selectedExercise === 'dominadas' && (
+                <div className="squat-summary" aria-label="Resumen de dominadas">
+                  <div className="squat-summary-stat">
+                    <span>Correctas</span>
+                    <strong>{pullupGoodRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Total evaluadas</span>
+                    <strong>{pullupRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Fase</span>
+                    <strong>{pullupPhaseLabel}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Ángulo mínimo</span>
+                    <strong>{pullupMinimumAngle === null ? '—' : `${pullupMinimumAngle}°`}</strong>
+                  </div>
+                  <p>Inicio y final 175–180° · subida menor de 60° · barbilla sobre la barra.</p>
+                </div>
+              )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
                 <video
                   ref={videoRef}
@@ -1347,7 +1577,6 @@ function Home() {
               </div>
               {(selectedExercise === 'flexiones'
                 || selectedExercise === 'fondos'
-                || selectedExercise === 'dominadas'
                 || selectedExercise === 'plancha') && (
                 <div
                   className={`technique-feedback technique-feedback--${techniqueFeedback.tone}`}
@@ -1362,6 +1591,23 @@ function Home() {
                   <span className="technique-feedback-copy">
                     <strong>{techniqueFeedback.message}</strong>
                     <small>{techniqueFeedback.detail}</small>
+                  </span>
+                </div>
+              )}
+              {selectedExercise === 'dominadas' && (
+                <div
+                  className={`technique-feedback technique-feedback--${pullupFeedback.tone}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="technique-feedback-icon" aria-hidden="true">
+                    {pullupFeedback.tone === 'success'
+                      ? <CheckCircle2 size={17} strokeWidth={2} />
+                      : <AlertTriangle size={17} strokeWidth={1.8} />}
+                  </span>
+                  <span className="technique-feedback-copy">
+                    <strong>{pullupFeedback.message}</strong>
+                    <small>{pullupFeedback.detail}</small>
                   </span>
                 </div>
               )}
@@ -1428,6 +1674,30 @@ function Home() {
                         <dt>Evaluación</dt>
                         <dd className={`diagnostic-value ${squatFeedback.tone === 'success' ? 'diagnostic-value--success' : squatFeedback.tone === 'warning' ? 'diagnostic-value--warning' : ''}`}>
                           {squatFeedback.message}
+                        </dd>
+                      </div>
+                    </>
+                  )}
+                  {selectedExercise === 'dominadas' && (
+                    <>
+                      <div className="diagnostic-row">
+                        <dt>Correctas</dt>
+                        <dd className="diagnostic-value diagnostic-value--success">{pullupGoodRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Total evaluadas</dt>
+                        <dd className="diagnostic-value diagnostic-value--accent">{pullupRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Incorrectas</dt>
+                        <dd className="diagnostic-value diagnostic-value--warning">
+                          {Math.max(0, pullupRepetitions - pullupGoodRepetitions)}
+                        </dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Evaluación</dt>
+                        <dd className={`diagnostic-value ${pullupFeedback.tone === 'success' ? 'diagnostic-value--success' : pullupFeedback.tone === 'warning' ? 'diagnostic-value--warning' : ''}`}>
+                          {pullupFeedback.message}
                         </dd>
                       </div>
                     </>
