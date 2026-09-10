@@ -3388,6 +3388,7 @@ function PaymentReturnPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
   const [timedOut, setTimedOut] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const billing = useGetBillingStatus({
     query: {
       enabled: isLoaded && Boolean(isSignedIn),
@@ -3399,9 +3400,9 @@ function PaymentReturnPage() {
 
   useEffect(() => {
     if (billing.data?.isActive) {
-      setLocation('/');
+      setConfirmed(true);
     }
-  }, [billing.data?.isActive, setLocation]);
+  }, [billing.data?.isActive]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setTimedOut(true), 30_000);
@@ -3414,6 +3415,60 @@ function PaymentReturnPage() {
 
   if (!isSignedIn) {
     return <PublicWelcome />;
+  }
+
+  if (confirmed && billing.data?.isActive) {
+    return (
+      <div className="posture-app">
+        <div className="ambient-orb ambient-orb--top" aria-hidden="true" />
+        <div className="ambient-orb ambient-orb--bottom" aria-hidden="true" />
+        <main className="coach-layout">
+          <header className="topbar">
+            <div className="wordmark">
+              <span className="wordmark-mark" aria-hidden="true" />
+              <span>COACH / POSTURA</span>
+            </div>
+            <UserMenu />
+          </header>
+          <div className="coach-stage">
+            <section className="glass-panel welcome-panel payment-return-panel" aria-labelledby="payment-confirmed-title">
+              <div className="account-mark account-mark--paid" aria-hidden="true">
+                <CheckCircle2 size={22} strokeWidth={1.8} />
+              </div>
+              <h1 id="payment-confirmed-title" className="welcome-title">Pago confirmado.</h1>
+              <p className="welcome-subtitle">
+                Tu plan está activo para esta cuenta de Clerk. Ya puedes abrir tu coach de postura.
+              </p>
+              <div className="account-actions">
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => setLocation('/')}
+                >
+                  Entrar al coach
+                  <ArrowRight size={17} aria-hidden="true" />
+                </button>
+                {billing.data.receiptUrl && (
+                  <a
+                    className="secondary-action"
+                    href={billing.data.receiptUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver comprobante
+                  </a>
+                )}
+              </div>
+              <p className="privacy-note">
+                <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+                <span>La confirmación fue validada por Lemon Squeezy</span>
+              </p>
+            </section>
+          </div>
+          <p className="app-footer">Acceso protegido · Lemon Squeezy · Clerk</p>
+        </main>
+      </div>
+    );
   }
 
   return (

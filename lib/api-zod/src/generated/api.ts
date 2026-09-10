@@ -24,6 +24,7 @@ export const GetBillingStatusResponse = zod.object({
   "isActive": zod.boolean(),
   "status": zod.string(),
   "subscriptionId": zod.string().nullable(),
+  "receiptUrl": zod.string().url().nullable(),
   "renewsAt": zod.coerce.date().nullable(),
   "endsAt": zod.coerce.date().nullable()
 })

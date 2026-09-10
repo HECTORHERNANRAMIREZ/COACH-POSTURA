@@ -94,6 +94,9 @@ components:
           type: string
         subscriptionId:
           type: ["string", "null"]
+        receiptUrl:
+          type: ["string", "null"]
+          format: uri
         renewsAt:
           type: ["string", "null"]
           format: date-time
@@ -104,6 +107,7 @@ components:
         - isActive
         - status
         - subscriptionId
+        - receiptUrl
         - renewsAt
         - endsAt
     CheckoutResponse:

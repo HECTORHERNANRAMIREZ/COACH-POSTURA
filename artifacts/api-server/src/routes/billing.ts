@@ -28,6 +28,18 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function asIdString(value: unknown): string | null {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return String(value);
+  }
+  return asString(value);
+}
+
+function getReceiptUrl(attributes: JsonRecord): string | null {
+  const urls = asRecord(attributes.urls);
+  return asString(urls?.receipt) ?? asString(attributes.receipt_url);
+}
+
 function parseDate(value: unknown): Date | null {
   const raw = asString(value);
   if (!raw) return null;
@@ -160,6 +172,7 @@ router.get("/billing/status", async (req, res): Promise<void> => {
     isActive: subscription?.isActive ?? false,
     status: subscription?.status ?? "none",
     subscriptionId: subscription?.lemonSubscriptionId ?? null,
+    receiptUrl: subscription?.receiptUrl ?? null,
     renewsAt: subscription?.renewsAt?.toISOString() ?? null,
     endsAt: subscription?.endsAt?.toISOString() ?? null,
   });
@@ -222,7 +235,7 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
   const attributes = asRecord(data?.attributes);
   const meta = asRecord(payload.meta);
   const customData = asRecord(meta?.custom_data);
-  const lemonSubscriptionId = asString(data?.id);
+  const lemonSubscriptionId = asIdString(data?.id);
   const resourceType = asString(data?.type);
   if (!attributes || !lemonSubscriptionId) {
     res.status(200).json(ReceiveBillingWebhookResponse.parse({ received: true }));
@@ -245,14 +258,34 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
     return;
   }
 
+  const configuredStoreId = asIdString(process.env.LEMON_SQUEEZY_STORE_ID);
+  const eventStoreId = asIdString(attributes.store_id);
+  if (configuredStoreId && eventStoreId && configuredStoreId !== eventStoreId) {
+    req.log.warn(
+      { configuredStoreId, eventStoreId, lemonSubscriptionId },
+      "Rejected Lemon Squeezy webhook from an unexpected store",
+    );
+    res.status(400).json({ error: "Unexpected Lemon Squeezy store" });
+    return;
+  }
+
   const status = asString(attributes.status) ?? "none";
   const endsAt = parseDate(attributes.ends_at);
   const renewsAt = parseDate(attributes.renews_at);
   const firstOrderItem = asRecord(attributes.first_order_item);
   const productId =
-    asString(attributes.product_id) ?? asString(firstOrderItem?.product_id);
+    asIdString(attributes.product_id) ?? asIdString(firstOrderItem?.product_id);
   const variantId =
-    asString(attributes.variant_id) ?? asString(firstOrderItem?.variant_id);
+    asIdString(attributes.variant_id) ?? asIdString(firstOrderItem?.variant_id);
+  const configuredVariantId = asIdString(process.env.LEMON_SQUEEZY_VARIANT_ID);
+  if (configuredVariantId && variantId && configuredVariantId !== variantId) {
+    req.log.warn(
+      { configuredVariantId, eventVariantId: variantId, lemonSubscriptionId },
+      "Rejected Lemon Squeezy webhook for an unexpected variant",
+    );
+    res.status(400).json({ error: "Unexpected Lemon Squeezy variant" });
+    return;
+  }
   const isOrder = resourceType === "orders";
   const isActive = isOrder
     ? isActiveOrder(status, attributes.refunded === true)
@@ -266,6 +299,7 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
     productId,
     variantId,
     userEmail: asString(attributes.user_email),
+    receiptUrl: getReceiptUrl(attributes) ?? existing[0]?.receiptUrl ?? null,
     status,
     isActive,
     renewsAt,

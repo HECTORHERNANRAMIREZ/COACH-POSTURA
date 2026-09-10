@@ -20,6 +20,7 @@ export const billingSubscriptionsTable = pgTable(
     productId: text("product_id"),
     variantId: text("variant_id"),
     userEmail: text("user_email"),
+    receiptUrl: text("receipt_url"),
     status: text("status").notNull().default("none"),
     isActive: boolean("is_active").notNull().default(false),
     renewsAt: timestamp("renews_at", { withTimezone: true }),

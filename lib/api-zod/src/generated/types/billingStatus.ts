@@ -12,6 +12,8 @@ export interface BillingStatus {
   /** @nullable */
   subscriptionId: string | null;
   /** @nullable */
+  receiptUrl: string | null;
+  /** @nullable */
   renewsAt: Date | null;
   /** @nullable */
   endsAt: Date | null;
