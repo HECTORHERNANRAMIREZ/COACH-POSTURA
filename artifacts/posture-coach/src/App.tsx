@@ -1,6 +1,21 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  ClerkProvider,
+  SignIn,
+  SignUp,
+  useAuth,
+  useClerk,
+  useUser,
+} from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
+import {
+  getGetBillingStatusQueryKey,
+  useCreateBillingCheckout,
+  useGetBillingStatus,
+} from '@workspace/api-client-react';
+import {
   Activity,
   AlertTriangle,
   ArrowDown,
@@ -39,6 +54,65 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
+const clerkPubKey = publishableKeyFromHost(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+if (!clerkPubKey) {
+  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in the environment.');
+}
+
+const clerkAppearance = {
+  theme: shadcn,
+  cssLayerName: 'clerk',
+  options: {
+    logoPlacement: 'inside' as const,
+    logoLinkUrl: basePath || '/',
+    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+  },
+  variables: {
+    colorPrimary: '#39ff6a',
+    colorForeground: '#f0f5fb',
+    colorMutedForeground: '#a6b7ca',
+    colorDanger: '#ff9b93',
+    colorBackground: '#101c31',
+    colorInput: '#0b1728',
+    colorInputForeground: '#f0f5fb',
+    colorNeutral: '#55708b',
+    fontFamily: 'var(--app-font-sans)',
+    borderRadius: '1rem',
+  },
+  elements: {
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'bg-[#101c31] rounded-[1.5rem] w-[440px] max-w-full overflow-hidden',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    headerTitle: 'text-[#f0f5fb]',
+    headerSubtitle: 'text-[#a6b7ca]',
+    socialButtonsBlockButtonText: 'text-[#f0f5fb]',
+    formFieldLabel: 'text-[#d5e2ef]',
+    footerActionLink: 'text-[#8bffa5]',
+    footerActionText: 'text-[#a6b7ca]',
+    dividerText: 'text-[#a6b7ca]',
+    identityPreviewEditButton: 'text-[#8bffa5]',
+    formFieldSuccessText: 'text-[#8bffa5]',
+    alertText: 'text-[#ffb8b2]',
+    logoBox: 'h-10',
+    logoImage: 'h-10 w-10',
+    socialButtonsBlockButton: 'border-white/15 bg-white/5 hover:bg-white/10',
+    formButtonPrimary: 'bg-[#39ff6a] text-[#08150c] hover:bg-[#8bffa5]',
+    formFieldInput: 'border-white/15 bg-[#0b1728] text-[#f0f5fb]',
+    footerAction: 'border-white/10',
+    dividerLine: 'bg-white/15',
+    alert: 'border-[#ff9b93]/40 bg-[#ff9b93]/10',
+    otpCodeFieldInput: 'border-white/15 bg-[#0b1728] text-[#f0f5fb]',
+    formFieldRow: 'text-[#f0f5fb]',
+    main: 'bg-transparent',
+  },
+};
 const GREEN = '#39ff6a';
 const SCRIPT_URLS = {
   tensorflow: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js',
@@ -3180,13 +3254,284 @@ function Home() {
   );
 }
 
+function PublicWelcome() {
+  const [, setLocation] = useLocation();
+
+  return (
+    <div className="posture-app">
+      <div className="ambient-orb ambient-orb--top" aria-hidden="true" />
+      <div className="ambient-orb ambient-orb--bottom" aria-hidden="true" />
+      <main className="coach-layout">
+        <header className="topbar">
+          <div className="wordmark">
+            <span className="wordmark-mark" aria-hidden="true" />
+            <span>COACH / POSTURA</span>
+          </div>
+          <div className="privacy-chip">
+            <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
+            <span>Privado</span>
+          </div>
+        </header>
+        <div className="coach-stage">
+          <section className="glass-panel welcome-panel account-panel" aria-labelledby="account-title">
+            <div className="panel-kicker">
+              <span className="kicker-line" aria-hidden="true" />
+              <span>Tu espacio de alineación</span>
+              <span className="kicker-line" aria-hidden="true" />
+            </div>
+            <div className="account-mark" aria-hidden="true">
+              <Activity size={22} strokeWidth={1.8} />
+            </div>
+            <h1 id="account-title" className="welcome-title">Entrena con precisión.</h1>
+            <p className="welcome-subtitle">
+              Regístrate con Google y activa tu acceso anual para recibir correcciones de técnica
+              en tiempo real, directamente desde tu cámara.
+            </p>
+            <div className="account-actions">
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => setLocation('/sign-up')}
+              >
+                Crear cuenta con Google
+                <ArrowRight size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setLocation('/sign-in')}
+              >
+                Ya tengo una cuenta
+              </button>
+            </div>
+            <p className="privacy-note">
+              <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span>Tu cámara se procesa en tu dispositivo</span>
+            </p>
+          </section>
+        </div>
+        <p className="app-footer">Acceso protegido · Lemon Squeezy · Clerk</p>
+      </main>
+    </div>
+  );
+}
+
+function SubscriptionRequired() {
+  const { user } = useUser();
+  const checkout = useCreateBillingCheckout();
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const openCheckout = useCallback(async () => {
+    setCheckoutError(null);
+    try {
+      const result = await checkout.mutateAsync();
+      window.location.assign(result.checkoutUrl);
+    } catch {
+      setCheckoutError('No pudimos abrir el checkout. Inténtalo de nuevo en unos segundos.');
+    }
+  }, [checkout]);
+
+  return (
+    <div className="posture-app">
+      <div className="ambient-orb ambient-orb--top" aria-hidden="true" />
+      <div className="ambient-orb ambient-orb--bottom" aria-hidden="true" />
+      <main className="coach-layout">
+        <header className="topbar">
+          <div className="wordmark">
+            <span className="wordmark-mark" aria-hidden="true" />
+            <span>COACH / POSTURA</span>
+          </div>
+          <UserMenu />
+        </header>
+        <div className="coach-stage">
+          <section className="glass-panel welcome-panel account-panel" aria-labelledby="plan-title">
+            <div className="panel-kicker">
+              <span className="kicker-line" aria-hidden="true" />
+              <span>Acceso anual</span>
+              <span className="kicker-line" aria-hidden="true" />
+            </div>
+            <div className="account-mark account-mark--paid" aria-hidden="true">
+              <CheckCircle2 size={22} strokeWidth={1.8} />
+            </div>
+            <h1 id="plan-title" className="welcome-title">Activa tu coach.</h1>
+            <p className="welcome-subtitle">
+              Hola{user?.firstName ? `, ${user.firstName}` : ''}. Tu cuenta ya está lista.
+              Activa el plan anual por <strong>US$2</strong> para abrir las sesiones de postura.
+            </p>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => void openCheckout()}
+              disabled={checkout.isPending}
+            >
+              {checkout.isPending ? 'Abriendo checkout…' : 'Activar plan anual · US$2'}
+              {!checkout.isPending && <ArrowRight size={17} aria-hidden="true" />}
+            </button>
+            {checkoutError && <p className="billing-error" role="alert">{checkoutError}</p>}
+            <p className="privacy-note">
+              <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span>Pago seguro procesado por Lemon Squeezy</span>
+            </p>
+          </section>
+        </div>
+        <p className="app-footer">Tu acceso se activa cuando Lemon Squeezy confirma el pago</p>
+      </main>
+    </div>
+  );
+}
+
+function UserMenu() {
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const [, setLocation] = useLocation();
+
+  return (
+    <div className="user-menu">
+      <span>{user?.firstName || user?.primaryEmailAddress?.emailAddress || 'Cuenta'}</span>
+      <button
+        type="button"
+        className="topbar-back"
+        onClick={() => {
+          void signOut().then(() => setLocation('/'));
+        }}
+      >
+        Salir
+      </button>
+    </div>
+  );
+}
+
+function BillingGate() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const billing = useGetBillingStatus({
+    query: {
+      enabled: isLoaded && Boolean(isSignedIn),
+      queryKey: getGetBillingStatusQueryKey(),
+      refetchInterval: 30_000,
+      retry: false,
+    },
+  });
+
+  if (!isLoaded) {
+    return <AuthLoadingState label="Preparando tu cuenta…" />;
+  }
+  if (!isSignedIn) {
+    return <PublicWelcome />;
+  }
+  if (billing.isLoading) {
+    return <AuthLoadingState label="Comprobando tu plan…" />;
+  }
+  if (billing.data?.isActive) {
+    return <Home />;
+  }
+  return <SubscriptionRequired />;
+}
+
+function AuthLoadingState({ label }: { label: string }) {
+  return (
+    <div className="posture-app">
+      <main className="coach-layout">
+        <div className="coach-stage">
+          <section className="glass-panel welcome-panel auth-loading" role="status">
+            <span className="loading-mark" aria-hidden="true" />
+            <p>{label}</p>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function SignInPage() {
+  return (
+    <div className="auth-page">
+      <SignIn
+        routing="path"
+        path={`${basePath}/sign-in`}
+        signUpUrl={`${basePath}/sign-up`}
+      />
+    </div>
+  );
+}
+
+function SignUpPage() {
+  return (
+    <div className="auth-page">
+      <SignUp
+        routing="path"
+        path={`${basePath}/sign-up`}
+        signInUrl={`${basePath}/sign-in`}
+      />
+    </div>
+  );
+}
+
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const previousUserId = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const unsubscribe = addListener(({ user }) => {
+      const userId = user?.id ?? null;
+      if (previousUserId.current !== undefined && previousUserId.current !== userId) {
+        queryClient.clear();
+      }
+      previousUserId.current = userId;
+    });
+    return unsubscribe;
+  }, [addListener]);
+
+  return null;
+}
+
+function stripBase(path: string): string {
+  return basePath && path.startsWith(basePath)
+    ? path.slice(basePath.length) || '/'
+    : path;
+}
+
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
+
+  return (
+    <ClerkProvider
+      publishableKey={clerkPubKey}
+      proxyUrl={clerkProxyUrl}
+      appearance={clerkAppearance}
+      signInUrl={`${basePath}/sign-in`}
+      signUpUrl={`${basePath}/sign-up`}
+      localization={{
+        signIn: {
+          start: {
+            title: 'Bienvenido de nuevo',
+            subtitle: 'Entra para continuar con tu coach',
+          },
+        },
+        signUp: {
+          start: {
+            title: 'Crea tu cuenta',
+            subtitle: 'Activa tu espacio de postura',
+          },
+        },
+      }}
+      routerPush={(to) => setLocation(stripBase(to))}
+      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+    >
+      <ClerkQueryClientCacheInvalidator />
+      <Switch>
+        <Route path="/" component={BillingGate} />
+        <Route path="/sign-in/*?" component={SignInPage} />
+        <Route path="/sign-up/*?" component={SignUpPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </ClerkProvider>
+  );
+}
+
 function Router() {
   return (
     <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
+      <ClerkProviderWithRoutes />
     </RoutedErrorBoundary>
   );
 }

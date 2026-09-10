@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: billing
+    description: Subscription and checkout operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /billing/status:
+    get:
+      operationId: getBillingStatus
+      tags: [billing]
+      summary: Get the current user's subscription status
+      responses:
+        "200":
+          description: Current subscription status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingStatus"
+        "401":
+          description: Authentication required
+  /billing/checkout:
+    post:
+      operationId: createBillingCheckout
+      tags: [billing]
+      summary: Create a Lemon Squeezy checkout for the current user
+      responses:
+        "201":
+          description: Checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+        "401":
+          description: Authentication required
+        "502":
+          description: Lemon Squeezy checkout could not be created
+  /billing/webhook:
+    post:
+      operationId: receiveBillingWebhook
+      tags: [billing]
+      summary: Receive signed Lemon Squeezy subscription events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingWebhookPayload"
+      responses:
+        "200":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResponse"
+        "400":
+          description: Invalid webhook
 components:
   schemas:
     HealthStatus:
@@ -33,4 +85,43 @@ components:
           type: string
       required:
         - status
+    BillingStatus:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+        status:
+          type: string
+        subscriptionId:
+          type: ["string", "null"]
+        renewsAt:
+          type: ["string", "null"]
+          format: date-time
+        endsAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - isActive
+        - status
+        - subscriptionId
+        - renewsAt
+        - endsAt
+    CheckoutResponse:
+      type: object
+      properties:
+        checkoutUrl:
+          type: string
+          format: uri
+      required:
+        - checkoutUrl
+    BillingWebhookPayload:
+      type: object
+      additionalProperties: true
+    WebhookResponse:
+      type: object
+      properties:
+        received:
+          type: boolean
+      required:
+        - received
 

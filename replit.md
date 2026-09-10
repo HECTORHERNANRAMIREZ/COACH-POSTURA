@@ -1,6 +1,6 @@
-# [Project name]
+# Coach de postura
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Coach de postura analiza ejercicios desde la cámara del usuario y corrige la técnica en tiempo real con una cuenta protegida y un plan anual de Lemon Squeezy.
 
 ## Run & Operate
 
@@ -22,15 +22,24 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/posture-coach/src/App.tsx` — experiencia del coach, Clerk, acceso al plan y checkout.
+- `artifacts/api-server/src/routes/billing.ts` — checkout de Lemon Squeezy, estado de suscripción y webhook firmado.
+- `lib/db/src/schema/billingSubscriptions.ts` — persistencia del vínculo entre Clerk y Lemon Squeezy.
+- `lib/api-spec/openapi.yaml` — contrato fuente de las rutas de facturación.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Clerk es la identidad principal; el `clerkUserId` se transporta como `custom_data` en el checkout.
+- El acceso premium solo se activa después de validar la firma del webhook de Lemon Squeezy.
+- Las llamadas del navegador usan cookies de sesión de Clerk; no se manejan tokens manualmente en la aplicación web.
+- Las credenciales de Lemon Squeezy viven en Secrets y los identificadores de tienda/variante viven como variables compartidas.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Entrada y registro con Google mediante Clerk.
+- Plan anual de US$2 mediante Lemon Squeezy.
+- Activación y actualización automática del acceso según eventos de suscripción.
+- Coach de ejercicios con análisis de postura en cámara.
 
 ## User preferences
 
@@ -38,7 +47,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Lemon Squeezy debe apuntar en producción a `/api/billing/webhook` y enviar el webhook signing secret correspondiente.
+- Una respuesta correcta del checkout no activa el acceso por sí sola; el webhook firmado es la fuente de verdad.
 
 ## Pointers
 
