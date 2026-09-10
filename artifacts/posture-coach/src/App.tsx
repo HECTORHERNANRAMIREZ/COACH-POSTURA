@@ -25,6 +25,7 @@ import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
+import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -51,7 +52,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -68,6 +69,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
+  'remo-barra': barbellRowImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -180,6 +182,12 @@ const exercises: ExerciseDefinition[] = [
     angleLabel: 'Torso 15–20° · codo 80–100°',
   },
   {
+    id: 'remo-barra',
+    name: 'Remo con barra',
+    description: 'Inclina el torso 45–75° y lleva la barra hacia el cuerpo sin encorvarte.',
+    angleLabel: 'Torso 45–75° · codo 70–115°',
+  },
+  {
     id: 'flexiones',
     name: 'Flexiones de pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
@@ -267,6 +275,12 @@ const PULLDOWN_TORSO_MAX_ANGLE = 20;
 const PULLDOWN_TORSO_TOO_FAR_ANGLE = 30;
 const PULLDOWN_ELBOW_MIN_ANGLE = 80;
 const PULLDOWN_ELBOW_MAX_ANGLE = 100;
+const ROW_TORSO_MIN_ANGLE = 45;
+const ROW_TORSO_MAX_ANGLE = 75;
+const ROW_KNEE_MIN_ANGLE = 150;
+const ROW_KNEE_MAX_ANGLE = 180;
+const ROW_ELBOW_TORSO_MIN_ANGLE = 20;
+const ROW_ELBOW_TORSO_MAX_ANGLE = 60;
 const PIKE_ELBOW_BODY_MIN_ANGLE = 45;
 const PIKE_ELBOW_BODY_MAX_ANGLE = 60;
 const PIKE_WRIST_SHOULDER_MIN_ANGLE = 75;
@@ -304,6 +318,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: 80,
     endMaxAngle: 100,
     endLabel: 'codo entre 80–100°',
+  },
+  'remo-barra': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: 70,
+    endMaxAngle: 115,
+    endLabel: 'codo entre 70–115°',
   },
   flexiones: {
     direction: 'decrease',
@@ -1499,6 +1522,78 @@ function getLatPulldownTechniqueFeedback(
   };
 }
 
+function getBarbellRowTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const knee = keypoints[indexes.knee];
+  const ankle = keypoints[indexes.ankle];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const elbowTorsoAngle = calculateAngle(hip, shoulder, elbow);
+  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
+  const kneeAngle = calculateAngle(hip, knee, ankle);
+
+  if (elbowAngle === null || elbowTorsoAngle === null || torsoLean === null) {
+    return defaultTechniqueFeedback;
+  }
+
+  if (torsoLean < ROW_TORSO_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Inclina más el torso',
+      detail: `Tu torso está a ${torsoLean}°. Busca una inclinación de 45°–75° respecto a la vertical.`,
+    };
+  }
+  if (torsoLean > ROW_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No bajes tanto el torso',
+      detail: `Tu torso está a ${torsoLean}°. Mantén la espalda neutra y no te acerques a la horizontal.`,
+    };
+  }
+  if (kneeAngle !== null && kneeAngle < ROW_KNEE_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Reduce la flexión de las rodillas',
+      detail: `La rodilla está a ${kneeAngle}°. Mantén una flexión ligera, aproximadamente entre 150° y 180°.`,
+    };
+  }
+  if (kneeAngle !== null && kneeAngle > ROW_KNEE_MAX_ANGLE) {
+    return {
+      tone: 'checking',
+      message: 'Flexiona ligeramente las rodillas',
+      detail: 'Desbloquea las rodillas para proteger la articulación y estabilizar la cadera.',
+    };
+  }
+  if (elbowTorsoAngle > ROW_ELBOW_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Acerca los codos al cuerpo',
+      detail: `El codo está a ${elbowTorsoAngle}° respecto al torso. Llévalo cerca del cuerpo, entre 20° y 60°.`,
+    };
+  }
+  if (elbowTorsoAngle < ROW_ELBOW_TORSO_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado los codos',
+      detail: `El codo está a ${elbowTorsoAngle}° respecto al torso. Sepáralo suavemente hasta 20°–60°.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Remo con barra correcto',
+    detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Mantén la espalda neutra y lleva la barra hacia el cuerpo.`,
+  };
+}
+
 function calculateHipSagRatio(
   shoulder: PosePoint | undefined,
   hip: PosePoint | undefined,
@@ -1636,6 +1731,7 @@ function calculateExerciseAngle(
     || exercise === 'dominadas'
     || exercise === 'dominadas-supinas'
     || exercise === 'jalon'
+    || exercise === 'remo-barra'
     || exercise === 'flexiones'
     || exercise === 'flexiones-declinadas'
     || exercise === 'flexiones-pica'
@@ -1742,6 +1838,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     jalon: [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'remo-barra': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -2122,6 +2223,8 @@ function Home() {
                  ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'jalon'
                 ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
+              : selectedExerciseRef.current === 'remo-barra'
+                ? getBarbellRowTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancadas'
                 ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancada-banco'
@@ -2420,6 +2523,7 @@ function Home() {
                     || exercise.id === 'dominadas'
                     || exercise.id === 'dominadas-supinas'
                     || exercise.id === 'jalon'
+                    || exercise.id === 'remo-barra'
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
@@ -2487,6 +2591,7 @@ function Home() {
                           || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
+                        || selectedExercise === 'remo-barra'
                         || selectedExercise === 'zancadas'
                         || selectedExercise === 'zancada-banco'
                         || selectedExercise === 'plancha'
@@ -2575,6 +2680,17 @@ function Home() {
                     <li><b>Torso:</b> inclínalo hacia atrás entre 15° y 20°; no superes 30°.</li>
                     <li><b>Agarre:</b> brazos a 75°–80° respecto al torso y manos a aproximadamente 1,5 veces el ancho de tus hombros.</li>
                     <li><b>Codos:</b> bájalos 30°–45° hacia delante y termina cerca de 90°, como si quisieras llevarlos hacia los bolsillos.</li>
+                  </ul>
+                </div>
+              )}
+              {selectedExercise === 'remo-barra' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones del remo con barra">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Torso:</b> inclínalo hacia delante entre 45° y 75° respecto a la vertical, con la espalda neutra y la cadera atrás.</li>
+                    <li><b>Rodillas:</b> mantenlas ligeramente flexionadas, aproximadamente entre 150° y 180°; no las bloquees.</li>
+                    <li><b>Codos:</b> llévalos cerca del cuerpo, entre 20° y 60° respecto al torso, sin abrirlos formando una “T”.</li>
+                    <li><b>Movimiento:</b> lleva la barra hacia el cuerpo con control y regresa lentamente sin perder la postura.</li>
                   </ul>
                 </div>
               )}
@@ -2676,6 +2792,7 @@ function Home() {
                         || selectedExercise === 'zancadas'
                         || selectedExercise === 'zancada-banco'
                         || selectedExercise === 'jalon'
+                        || selectedExercise === 'remo-barra'
                        || selectedExercise === 'plancha'
                        ? 'lateral'
                        : 'frontal'
