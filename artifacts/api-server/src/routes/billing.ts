@@ -40,6 +40,10 @@ function isActiveSubscription(status: string, endsAt: Date | null): boolean {
   return endsAt === null || endsAt.getTime() > Date.now();
 }
 
+function isActiveOrder(status: string, refunded: boolean): boolean {
+  return status === "paid" && !refunded;
+}
+
 function getRawBody(req: Request): Buffer | null {
   return Buffer.isBuffer(req.body) ? req.body : null;
 }
@@ -213,6 +217,7 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
   const meta = asRecord(payload.meta);
   const customData = asRecord(meta?.custom_data);
   const lemonSubscriptionId = asString(data?.id);
+  const resourceType = asString(data?.type);
   if (!attributes || !lemonSubscriptionId) {
     res.status(200).json(ReceiveBillingWebhookResponse.parse({ received: true }));
     return;
@@ -237,16 +242,26 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
   const status = asString(attributes.status) ?? "none";
   const endsAt = parseDate(attributes.ends_at);
   const renewsAt = parseDate(attributes.renews_at);
+  const firstOrderItem = asRecord(attributes.first_order_item);
+  const productId =
+    asString(attributes.product_id) ?? asString(firstOrderItem?.product_id);
+  const variantId =
+    asString(attributes.variant_id) ?? asString(firstOrderItem?.variant_id);
+  const isOrder = resourceType === "orders";
+  const isActive = isOrder
+    ? isActiveOrder(status, attributes.refunded === true)
+    : isActiveSubscription(status, endsAt);
   const subscriptionValues = {
     clerkUserId,
     lemonSubscriptionId,
     lemonCustomerId: asString(attributes.customer_id),
-    lemonOrderId: asString(attributes.order_id),
-    productId: asString(attributes.product_id),
-    variantId: asString(attributes.variant_id),
+    lemonOrderId:
+      asString(attributes.order_id) ?? (isOrder ? lemonSubscriptionId : null),
+    productId,
+    variantId,
     userEmail: asString(attributes.user_email),
     status,
-    isActive: isActiveSubscription(status, endsAt),
+    isActive,
     renewsAt,
     endsAt,
     updatedAt: new Date(),
