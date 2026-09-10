@@ -20,3 +20,10 @@ path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
 [nix]
+
+[userenv]
+
+[userenv.shared]
+LEMON_SQUEEZY_MODE = "live"
+LEMON_SQUEEZY_STORE_SLUG = "pagos"
+LEMON_SQUEEZY_VARIANT_ID = "2029790"
