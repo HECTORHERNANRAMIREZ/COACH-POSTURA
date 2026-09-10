@@ -149,6 +149,14 @@ router.post("/billing/checkout", async (req, res): Promise<void> => {
       .json(CreateBillingCheckoutResponse.parse({ checkoutUrl }));
   } catch (error) {
     req.log.error({ err: error }, "Unable to create Lemon Squeezy checkout");
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("/data/relationships/store")) {
+      res.status(502).json({
+        error:
+          "Lemon Squeezy no reconoce el Store ID configurado. Verifica que pertenezca a la misma cuenta de la API key.",
+      });
+      return;
+    }
     res.status(502).json({ error: "Unable to create checkout" });
   }
 });

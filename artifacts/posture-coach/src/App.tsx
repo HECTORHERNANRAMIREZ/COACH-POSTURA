@@ -3326,8 +3326,12 @@ function SubscriptionRequired() {
     try {
       const result = await checkout.mutateAsync();
       window.location.assign(result.checkoutUrl);
-    } catch {
-      setCheckoutError('No pudimos abrir el checkout. Inténtalo de nuevo en unos segundos.');
+    } catch (error) {
+      const apiError = error as { error?: string };
+      setCheckoutError(
+        apiError.error ||
+          'No pudimos abrir el checkout. Inténtalo de nuevo en unos segundos.',
+      );
     }
   }, [checkout]);
 
