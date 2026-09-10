@@ -98,7 +98,10 @@ async function createCheckout(userId: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`Lemon Squeezy checkout failed with ${response.status}`);
+    const errorBody = (await response.text()).slice(0, 500);
+    throw new Error(
+      `Lemon Squeezy checkout failed with ${response.status}: ${errorBody}`,
+    );
   }
 
   const payload = asRecord(await response.json());
