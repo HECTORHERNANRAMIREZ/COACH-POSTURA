@@ -26,6 +26,7 @@ import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._17
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
+import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -52,7 +53,7 @@ const skeletonConnections: Array<[number, number]> = [
   [11, 13], [13, 15], [12, 14], [14, 16],
 ];
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -70,6 +71,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-militar': militaryPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'remo-barra': barbellRowImage,
+  'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -216,6 +218,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Extensiones de tríceps en polea alta',
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
+  },
+  {
+    id: 'curl-biceps',
+    name: 'Curl de bíceps',
+    description: 'Flexiona los codos sin mover los brazos ni balancear el torso.',
+    angleLabel: 'Codo · objetivo 30–45°',
   },
   {
     id: 'sentadillas',
@@ -372,6 +380,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: 145,
     endMaxAngle: 180,
     endLabel: 'extensión entre 145–180°',
+  },
+  'curl-biceps': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 30,
+    endMaxAngle: 45,
+    endLabel: 'flexión entre 30–45°',
   },
   zancadas: {
     direction: 'decrease',
@@ -1080,6 +1097,58 @@ function getTricepsPushdownTechniqueFeedback(
   };
 }
 
+function getBicepsCurlTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const upperArmFloorAngle = calculateAngleToFloor(shoulder, elbow);
+  const torsoFloorAngle = calculateAngleToFloor(shoulder, hip);
+
+  if (
+    elbowAngle === null
+    || upperArmFloorAngle === null
+    || torsoFloorAngle === null
+  ) {
+    return defaultTechniqueFeedback;
+  }
+
+  if (torsoFloorAngle < 75 || torsoFloorAngle > 105) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el torso erguido',
+      detail: `Tu torso está a ${torsoFloorAngle}° respecto al suelo. Evita inclinarte o balancearte para subir la mancuerna.`,
+    };
+  }
+  if (upperArmFloorAngle < 70 || upperArmFloorAngle > 110) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el brazo quieto',
+      detail: `La parte superior del brazo está a ${upperArmFloorAngle}° respecto al suelo. Deja el codo cerca del torso y mueve solo el antebrazo.`,
+    };
+  }
+  if (elbowAngle < 25) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado el codo',
+      detail: `El codo está a ${elbowAngle}°. Detén la subida entre 30° y 45° para mantener la tensión del bíceps.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Curl controlado',
+    detail: `Codo ${elbowAngle}° · brazos estables. Sube hasta 30–45° y baja lentamente hasta extender sin bloquear.`,
+  };
+}
+
 function getLungeTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -1737,6 +1806,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones-pica'
     || exercise === 'press-militar'
     || exercise === 'triceps-polea-alta'
+    || exercise === 'curl-biceps'
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
   ) {
@@ -1868,6 +1938,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'triceps-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'curl-biceps': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -2215,6 +2290,8 @@ function Home() {
             ? getMilitaryPressTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'triceps-polea-alta'
             ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'curl-biceps'
+            ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
              : selectedExerciseRef.current === 'dominadas'
@@ -2529,6 +2606,7 @@ function Home() {
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
                     || exercise.id === 'triceps-polea-alta'
+                    || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
                       || exercise.id === 'zancadas'
@@ -2582,13 +2660,14 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                        {selectedExercise === 'flexiones'
+                      {selectedExercise === 'flexiones'
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'press-militar'
                         || selectedExercise === 'triceps-polea-alta'
+                        || selectedExercise === 'curl-biceps'
                         || selectedExercise === 'fondos'
-                          || selectedExercise === 'dominadas'
+                        || selectedExercise === 'dominadas'
                         || selectedExercise === 'dominadas-supinas'
                         || selectedExercise === 'jalon'
                         || selectedExercise === 'remo-barra'
@@ -2740,6 +2819,18 @@ function Home() {
                   </ul>
                 </div>
               )}
+              {selectedExercise === 'curl-biceps' && (
+                <div className="pulldown-instructions" aria-label="Indicaciones del curl de bíceps">
+                  <strong>Cómo hacerlo</strong>
+                  <ul>
+                    <li><b>Posición inicial:</b> ponte de pie con la espalda recta, los pies al ancho de los hombros y las rodillas ligeramente flexionadas.</li>
+                    <li><b>Brazos:</b> mantén los brazos junto al torso, con los codos debajo de los hombros y los antebrazos apuntando hacia el suelo al comenzar.</li>
+                    <li><b>Agarre:</b> sujeta las mancuernas con agarre neutro y conserva las palmas enfrentadas durante todo el recorrido.</li>
+                    <li><b>Subida:</b> flexiona los codos sin llevarlos hacia delante ni hacia atrás; llega a un ángulo de 30°–45° sin tocar los hombros.</li>
+                    <li><b>Bajada:</b> desciende lentamente hasta extender los brazos entre 145° y 180°, sin bloquear bruscamente los codos ni balancear el torso.</li>
+                  </ul>
+                </div>
+              )}
               {selectedExercise === 'dominadas-supinas' && (
                 <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
                   <strong>Cómo hacerlo</strong>
@@ -2780,23 +2871,24 @@ function Home() {
                   playsInline
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
-                   aria-label={`Vista previa de la cámara ${
-                       selectedExercise === 'flexiones'
-                        || selectedExercise === 'flexiones-declinadas'
-                        || selectedExercise === 'flexiones-pica'
-                        || selectedExercise === 'press-militar'
-                        || selectedExercise === 'triceps-polea-alta'
-                       || selectedExercise === 'fondos'
-                        || selectedExercise === 'dominadas'
-                        || selectedExercise === 'dominadas-supinas'
-                        || selectedExercise === 'zancadas'
-                        || selectedExercise === 'zancada-banco'
-                        || selectedExercise === 'jalon'
-                        || selectedExercise === 'remo-barra'
-                       || selectedExercise === 'plancha'
-                       ? 'lateral'
-                       : 'frontal'
-                   }`}
+                  aria-label={`Vista previa de la cámara ${
+                    selectedExercise === 'flexiones'
+                      || selectedExercise === 'flexiones-declinadas'
+                      || selectedExercise === 'flexiones-pica'
+                      || selectedExercise === 'press-militar'
+                      || selectedExercise === 'triceps-polea-alta'
+                      || selectedExercise === 'curl-biceps'
+                      || selectedExercise === 'fondos'
+                      || selectedExercise === 'dominadas'
+                      || selectedExercise === 'dominadas-supinas'
+                      || selectedExercise === 'zancadas'
+                      || selectedExercise === 'zancada-banco'
+                      || selectedExercise === 'jalon'
+                      || selectedExercise === 'remo-barra'
+                      || selectedExercise === 'plancha'
+                      ? 'lateral'
+                      : 'frontal'
+                  }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
                 <div className="video-vignette" aria-hidden="true" />
