@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Camera,
   CheckCircle2,
+  LogOut,
   Maximize2,
   ShieldCheck,
   Square,
@@ -2059,6 +2060,8 @@ function getExercise(exerciseId: ExerciseId | null) {
 }
 
 function Home() {
+  const { signOut } = useClerk();
+  const [, setLocation] = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -2650,9 +2653,22 @@ function Home() {
               <span>COACH / POSTURA</span>
             </div>
           )}
-          <div className="privacy-chip">
-            <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
-            <span>Privado</span>
+          <div className="topbar-actions">
+            <div className="privacy-chip">
+              <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
+              <span>Privado</span>
+            </div>
+            <button
+              type="button"
+              className="logout-button"
+              aria-label="Cerrar sesión"
+              onClick={() => {
+                void signOut().then(() => setLocation('/'));
+              }}
+            >
+              <LogOut size={15} strokeWidth={1.8} aria-hidden="true" />
+              <span>Cerrar sesión</span>
+            </button>
           </div>
         </header>
 

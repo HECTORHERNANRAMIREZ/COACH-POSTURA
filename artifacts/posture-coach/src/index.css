@@ -263,6 +263,43 @@
   color: #39ff6a;
 }
 
+.topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.logout-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2.25rem;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.78rem;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(226, 235, 246, 0.78);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.69rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(14px) saturate(130%);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.logout-button svg {
+  color: #8bffa5;
+}
+
+.logout-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(57, 255, 106, 0.34);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f0f5fb;
+}
+
 .coach-stage {
   display: flex;
   flex: 1;
