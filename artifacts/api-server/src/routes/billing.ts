@@ -57,7 +57,27 @@ function isValidSignature(rawBody: Buffer, signature: string | undefined): boole
   );
 }
 
-async function createCheckout(userId: string): Promise<string> {
+function getReturnUrl(req: Request): string {
+  const origin = req.get("origin");
+  if (origin) {
+    return new URL("/", origin).toString();
+  }
+
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  const host = forwardedHost || req.get("host");
+  if (!host) {
+    throw new Error("Unable to determine the app return URL");
+  }
+
+  return `${protocol}://${host}/`;
+}
+
+async function createCheckout(
+  userId: string,
+  returnUrl: string,
+): Promise<string> {
   const storeId = process.env.LEMON_SQUEEZY_STORE_ID;
   const variantId = process.env.LEMON_SQUEEZY_VARIANT_ID;
   const apiKey = process.env.LEMON_SQUEEZY_API_KEY;
@@ -83,6 +103,9 @@ async function createCheckout(userId: string): Promise<string> {
           },
           checkout_options: {
             embed: false,
+          },
+          product_options: {
+            redirect_url: returnUrl,
           },
         },
         relationships: {
@@ -143,7 +166,7 @@ router.post("/billing/checkout", async (req, res): Promise<void> => {
   }
 
   try {
-    const checkoutUrl = await createCheckout(userId);
+    const checkoutUrl = await createCheckout(userId, getReturnUrl(req));
     res
       .status(201)
       .json(CreateBillingCheckoutResponse.parse({ checkoutUrl }));
