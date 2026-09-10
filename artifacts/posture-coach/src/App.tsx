@@ -91,7 +91,7 @@ type TechniqueFeedback = {
   message: string;
   detail: string;
 };
-type SquatPhase = 'arriba' | 'bajando' | 'abajo';
+type SquatPhase = 'esperando arriba' | 'arriba' | 'bajando' | 'abajo';
 type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
 type SquatTracker = {
   phase: SquatPhase;
@@ -214,13 +214,13 @@ const SQUAT_VALID_MIN_ANGLE = 83;
 const SQUAT_VALID_MAX_ANGLE = 90;
 const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
-const SQUAT_MEANINGFUL_DESCENT = 22;
+const SQUAT_MEANINGFUL_DESCENT = 30;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
-const PULLUP_BOTTOM_MIN_ANGLE = 175;
+const PULLUP_BOTTOM_MIN_ANGLE = 165;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
-const PULLUP_NO_LOCKOUT_ANGLE = 170;
+const PULLUP_NO_LOCKOUT_ANGLE = 160;
 const PULLUP_TOP_MAX_ANGLE = 60;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const SUPINE_PULLUP_TOP_MIN_ANGLE = 75;
@@ -263,7 +263,7 @@ const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
 
 function createSquatTracker(): SquatTracker {
   return {
-    phase: 'arriba',
+    phase: 'esperando arriba',
     repetitions: 0,
     goodRepetitions: 0,
     minimumAngle: null,
@@ -311,6 +311,14 @@ function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrac
     event: null,
   };
   let completedMinimumAngle: number | null = null;
+
+  if (nextTracker.phase === 'esperando arriba') {
+    if (smoothedAngle >= SQUAT_TOP_THRESHOLD) {
+      nextTracker.phase = 'arriba';
+      nextTracker.minimumAngle = null;
+    }
+    return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
+  }
 
   if (nextTracker.phase === 'arriba' && smoothedAngle < SQUAT_TOP_THRESHOLD) {
     nextTracker.phase = 'bajando';
@@ -1617,7 +1625,7 @@ function Home() {
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [squatRepetitions, setSquatRepetitions] = useState(0);
   const [squatGoodRepetitions, setSquatGoodRepetitions] = useState(0);
-  const [squatPhase, setSquatPhase] = useState<SquatPhase>('arriba');
+  const [squatPhase, setSquatPhase] = useState<SquatPhase>('esperando arriba');
   const [squatMinimumAngle, setSquatMinimumAngle] = useState<number | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
   const [pullupRepetitions, setPullupRepetitions] = useState(0);
@@ -1795,8 +1803,8 @@ function Home() {
             tone: 'success',
             message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
             detail: isSupinePullup
-              ? `Codo final ${pullupUpdate.completedMinimumAngle}° dentro de 75–105° · extensión inicial entre 175–180° · barbilla sobre la barra.`
-              : `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 175–180° · barbilla sobre la barra.`,
+              ? `Codo final ${pullupUpdate.completedMinimumAngle}° dentro de 75–105° · extensión inicial entre 165–180° · barbilla sobre la barra.`
+              : `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 165–180° · barbilla sobre la barra.`,
           });
         } else if (pullupUpdate.tracker.event === 'no-top') {
           setPullupFeedback({
@@ -1810,7 +1818,7 @@ function Home() {
           setPullupFeedback({
             tone: 'warning',
             message: 'No rep · falta extensión',
-            detail: `Volviste a subir con ${pullupUpdate.smoothedAngle}°. Extiende primero los brazos entre 175–180°.`,
+            detail: `Volviste a subir con ${pullupUpdate.smoothedAngle}°. Extiende primero los brazos entre 165–180°.`,
           });
         } else {
           setPullupFeedback(
@@ -1961,7 +1969,7 @@ function Home() {
     squatTrackerRef.current = createSquatTracker();
     setSquatRepetitions(0);
     setSquatGoodRepetitions(0);
-    setSquatPhase('arriba');
+    setSquatPhase('esperando arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
     pullupTrackerRef.current = createPullupTracker();
@@ -2039,7 +2047,7 @@ function Home() {
     squatTrackerRef.current = createSquatTracker();
     setSquatRepetitions(0);
     setSquatGoodRepetitions(0);
-    setSquatPhase('arriba');
+    setSquatPhase('esperando arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
     pullupTrackerRef.current = createPullupTracker();
@@ -2089,11 +2097,13 @@ function Home() {
         ? 'EN PROCESO'
         : 'AJUSTAR';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
-  const squatPhaseLabel = squatPhase === 'arriba'
-    ? 'Arriba'
-    : squatPhase === 'bajando'
-      ? 'Bajando'
-      : 'Abajo';
+  const squatPhaseLabel = squatPhase === 'esperando arriba'
+    ? 'Colócate arriba'
+    : squatPhase === 'arriba'
+      ? 'Arriba'
+      : squatPhase === 'bajando'
+        ? 'Bajando'
+        : 'Abajo';
   const pullupPhaseLabel = pullupPhase === 'esperando abajo'
     ? 'Esperando extensión'
     : pullupPhase === 'abajo'
@@ -2270,8 +2280,8 @@ function Home() {
                   </div>
                   <p>
                     {selectedExercise === 'dominadas-supinas'
-                      ? 'Inicio 175–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
-                      : 'Inicio y final 175–180° · subida menor de 60° · barbilla sobre la barra.'}
+                      ? 'Inicio 165–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
+                      : 'Inicio y final 165–180° · subida menor de 60° · barbilla sobre la barra.'}
                   </p>
                 </div>
               )}
@@ -2335,7 +2345,7 @@ function Home() {
                 <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
                   <strong>Cómo hacerlo</strong>
                   <ul>
-                    <li><b>Codo:</b> termina la subida cerca de 90° y desciende hasta extender los brazos entre 175° y 180°.</li>
+                    <li><b>Codo:</b> termina la subida cerca de 90° y desciende hasta extender los brazos entre 165° y 180°.</li>
                     <li><b>Hombro:</b> mantén los codos entre 30° y 45° de abducción respecto al torso.</li>
                     <li><b>Control:</b> pasa la barbilla sobre la barra sin balancearte y baja lentamente.</li>
                   </ul>
