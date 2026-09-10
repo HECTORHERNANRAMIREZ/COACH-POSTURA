@@ -115,6 +115,30 @@ type PullupTracker = {
   event: PullupRepEvent;
   lastAngle: number | null;
 };
+type ExerciseRepPhase = 'esperando inicio' | 'inicio' | 'en movimiento' | 'final';
+type ExerciseRepDirection = 'decrease' | 'increase';
+type ExerciseRepConfig = {
+  direction: ExerciseRepDirection;
+  startMinAngle: number;
+  startMaxAngle: number;
+  activationAngle: number;
+  endMinAngle: number;
+  endMaxAngle: number;
+  endLabel: string;
+};
+type ExerciseRepTracker = {
+  phase: ExerciseRepPhase;
+  repetitions: number;
+  goodRepetitions: number;
+  endpointAngle: number | null;
+  samples: number[];
+  event: 'valid' | null;
+};
+type ExerciseRepTrackerUpdate = {
+  tracker: ExerciseRepTracker;
+  smoothedAngle: number;
+  completedEndpointAngle: number | null;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -260,6 +284,172 @@ const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
 const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
 const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
+
+const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
+  fondos: {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 80,
+    endMaxAngle: 100,
+    endLabel: 'codo entre 80–100°',
+  },
+  jalon: {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 80,
+    endMaxAngle: 100,
+    endLabel: 'codo entre 80–100°',
+  },
+  flexiones: {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 70,
+    endMaxAngle: 105,
+    endLabel: 'codo entre 70–105°',
+  },
+  'flexiones-declinadas': {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 70,
+    endMaxAngle: 105,
+    endLabel: 'codo entre 70–105°',
+  },
+  'flexiones-pica': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: 70,
+    endMaxAngle: 110,
+    endLabel: 'codo entre 70–110°',
+  },
+  'press-militar': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: 70,
+    endMaxAngle: 110,
+    endLabel: 'codo entre 70–110°',
+  },
+  'triceps-polea-alta': {
+    direction: 'increase',
+    startMinAngle: 70,
+    startMaxAngle: 120,
+    activationAngle: 135,
+    endMinAngle: 145,
+    endMaxAngle: 180,
+    endLabel: 'extensión entre 145–180°',
+  },
+  zancadas: {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: 80,
+    endMaxAngle: 100,
+    endLabel: 'rodilla entre 80–100°',
+  },
+  'zancada-banco': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: 80,
+    endMaxAngle: 100,
+    endLabel: 'rodilla entre 80–100°',
+  },
+};
+
+function createExerciseRepTracker(): ExerciseRepTracker {
+  return {
+    phase: 'esperando inicio',
+    repetitions: 0,
+    goodRepetitions: 0,
+    endpointAngle: null,
+    samples: [],
+    event: null,
+  };
+}
+
+function isWithinAngle(angle: number, min: number, max: number) {
+  return angle >= min && angle <= max;
+}
+
+function advanceExerciseRepTracker(
+  tracker: ExerciseRepTracker,
+  rawAngle: number,
+  config: ExerciseRepConfig,
+): ExerciseRepTrackerUpdate {
+  const samples = [...tracker.samples, rawAngle].slice(-SQUAT_SMOOTHING_SAMPLES);
+  const smoothedAngle = median(samples) ?? rawAngle;
+  const nextTracker: ExerciseRepTracker = {
+    ...tracker,
+    samples,
+    event: null,
+  };
+  const isAtStart = isWithinAngle(
+    smoothedAngle,
+    config.startMinAngle,
+    config.startMaxAngle,
+  );
+  const hasActivated = config.direction === 'decrease'
+    ? smoothedAngle < config.activationAngle
+    : smoothedAngle > config.activationAngle;
+  const isAtEnd = isWithinAngle(
+    smoothedAngle,
+    config.endMinAngle,
+    config.endMaxAngle,
+  );
+  let completedEndpointAngle: number | null = null;
+
+  if (nextTracker.phase === 'esperando inicio') {
+    if (isAtStart) {
+      nextTracker.phase = 'inicio';
+      nextTracker.endpointAngle = null;
+    }
+  } else if (nextTracker.phase === 'inicio') {
+    if (hasActivated) {
+      nextTracker.phase = 'en movimiento';
+      nextTracker.endpointAngle = smoothedAngle;
+    } else if (!isAtStart) {
+      nextTracker.phase = 'esperando inicio';
+    }
+  } else if (nextTracker.phase === 'en movimiento') {
+    nextTracker.endpointAngle = config.direction === 'decrease'
+      ? Math.min(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle)
+      : Math.max(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle);
+
+    if (isAtEnd) {
+      nextTracker.phase = 'final';
+      nextTracker.event = 'valid';
+      nextTracker.repetitions += 1;
+      nextTracker.goodRepetitions += 1;
+      completedEndpointAngle = nextTracker.endpointAngle;
+    } else if (isAtStart) {
+      nextTracker.phase = 'inicio';
+      nextTracker.endpointAngle = null;
+    }
+  } else if (nextTracker.phase === 'final') {
+    if (isAtStart) {
+      nextTracker.phase = 'inicio';
+    }
+  }
+
+  return { tracker: nextTracker, smoothedAngle, completedEndpointAngle };
+}
+
+function getRepetitionConfig(exercise: ExerciseId | null) {
+  return exercise ? repetitionConfigs[exercise] ?? null : null;
+}
 
 function createSquatTracker(): SquatTracker {
   return {
@@ -1473,6 +1663,31 @@ function calculateExerciseAngle(
   return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
 }
 
+function calculateRepetitionAngle(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return null;
+  const indexes = sideKeypoints[side];
+
+  if (exercise === 'zancadas' || exercise === 'zancada-banco') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+      keypoints[indexes.ankle],
+    );
+  }
+
+  if (exercise === 'plancha') return null;
+
+  return calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  );
+}
+
 function calculateSquatAngle(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return null;
 
@@ -1633,6 +1848,10 @@ function Home() {
   const [pullupPhase, setPullupPhase] = useState<PullupPhase>('esperando abajo');
   const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
   const [pullupFeedback, setPullupFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
+  const [exerciseRepetitions, setExerciseRepetitions] = useState(0);
+  const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
+  const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
+  const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
   const errorCountRef = useRef(0);
@@ -1644,6 +1863,7 @@ function Home() {
   const lastAngleDisplayAtRef = useRef(0);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -1739,6 +1959,14 @@ function Home() {
           pose?.keypoints,
           nextDominantSide,
         );
+      const repetitionConfig = getRepetitionConfig(selectedExerciseForFrame);
+      const repetitionAngle = repetitionConfig
+        ? calculateRepetitionAngle(
+          selectedExerciseForFrame,
+          pose?.keypoints,
+          nextDominantSide,
+        )
+        : null;
       let nextAngle = rawAngle;
       if (selectedExerciseRef.current === 'sentadillas' && rawAngle !== null) {
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
@@ -1827,6 +2055,20 @@ function Home() {
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
           );
         }
+      }
+      if (repetitionConfig && repetitionAngle !== null) {
+        const exerciseRepUpdate = advanceExerciseRepTracker(
+          exerciseRepTrackerRef.current,
+          repetitionAngle,
+          repetitionConfig,
+        );
+        exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
+        setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
+        setExerciseGoodRepetitions(exerciseRepUpdate.tracker.goodRepetitions);
+        setExerciseRepPhase(exerciseRepUpdate.tracker.phase);
+        setExerciseMinimumAngle(
+          exerciseRepUpdate.tracker.endpointAngle ?? exerciseRepUpdate.completedEndpointAngle,
+        );
       }
       let displayAngle = nextAngle;
       if (nextAngle === null) {
@@ -1978,6 +2220,11 @@ function Home() {
     setPullupPhase('esperando abajo');
     setPullupMinimumAngle(null);
     setPullupFeedback(defaultTechniqueFeedback);
+    exerciseRepTrackerRef.current = createExerciseRepTracker();
+    setExerciseRepetitions(0);
+    setExerciseGoodRepetitions(0);
+    setExerciseRepPhase('esperando inicio');
+    setExerciseMinimumAngle(null);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('requesting');
@@ -2056,6 +2303,11 @@ function Home() {
     setPullupPhase('esperando abajo');
     setPullupMinimumAngle(null);
     setPullupFeedback(defaultTechniqueFeedback);
+    exerciseRepTrackerRef.current = createExerciseRepTracker();
+    setExerciseRepetitions(0);
+    setExerciseGoodRepetitions(0);
+    setExerciseRepPhase('esperando inicio');
+    setExerciseMinimumAngle(null);
     previousSideRef.current = null;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
@@ -2113,6 +2365,13 @@ function Home() {
         : pullupPhase === 'arriba'
           ? 'Arriba'
           : 'Bajando';
+  const exerciseRepPhaseLabel = exerciseRepPhase === 'esperando inicio'
+    ? 'Colócate en la posición inicial'
+    : exerciseRepPhase === 'inicio'
+      ? 'Listo'
+      : exerciseRepPhase === 'en movimiento'
+        ? 'En movimiento'
+        : 'Repetición válida';
 
   return (
     <div className="posture-app">
@@ -2282,6 +2541,29 @@ function Home() {
                     {selectedExercise === 'dominadas-supinas'
                       ? 'Inicio 165–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
                       : 'Inicio y final 165–180° · subida menor de 60° · barbilla sobre la barra.'}
+                  </p>
+                </div>
+              )}
+              {getRepetitionConfig(selectedExercise) && (
+                <div className="squat-summary" aria-label={`Contador de ${activeExercise?.name ?? 'ejercicio'}`}>
+                  <div className="squat-summary-stat">
+                    <span>Correctas</span>
+                    <strong>{exerciseGoodRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Total válidas</span>
+                    <strong>{exerciseRepetitions}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Fase</span>
+                    <strong>{exerciseRepPhaseLabel}</strong>
+                  </div>
+                  <div className="squat-summary-stat">
+                    <span>Ángulo final</span>
+                    <strong>{exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}</strong>
+                  </div>
+                  <p>
+                    Solo cuenta cuando completas el recorrido y llegas al rango de {getRepetitionConfig(selectedExercise)?.endLabel}.
                   </p>
                 </div>
               )}
@@ -2522,6 +2804,28 @@ function Home() {
                         <dd className={`diagnostic-value ${pullupFeedback.tone === 'success' ? 'diagnostic-value--success' : pullupFeedback.tone === 'warning' ? 'diagnostic-value--warning' : ''}`}>
                           {pullupFeedback.message}
                         </dd>
+                      </div>
+                    </>
+                  )}
+                  {getRepetitionConfig(selectedExercise) && (
+                    <>
+                      <div className="diagnostic-row">
+                        <dt>Correctas</dt>
+                        <dd className="diagnostic-value diagnostic-value--success">{exerciseGoodRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Total válidas</dt>
+                        <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Ángulo final</dt>
+                        <dd className="diagnostic-value">
+                          {exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}
+                        </dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Fase</dt>
+                        <dd className="diagnostic-value">{exerciseRepPhaseLabel}</dd>
                       </div>
                     </>
                   )}
