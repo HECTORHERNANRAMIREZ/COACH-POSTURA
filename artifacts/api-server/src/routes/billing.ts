@@ -74,16 +74,19 @@ function isValidSignature(rawBody: Buffer, signature: string | undefined): boole
 }
 
 function getReturnUrl(req: Request): string {
+  // The browser origin is the public app URL. Prefer it over forwarded
+  // headers so a proxied API service can never send the customer back to an
+  // internal service hostname after clicking Lemon Squeezy's Continue button.
+  const origin = req.get("origin");
+  if (origin) {
+    return new URL("/payment/success", origin).toString();
+  }
+
   const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
   const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
   if (forwardedHost) {
     const protocol = forwardedProto || "https";
     return `${protocol}://${forwardedHost}/payment/success`;
-  }
-
-  const origin = req.get("origin");
-  if (origin) {
-    return new URL("/payment/success", origin).toString();
   }
 
   const host = req.get("host");
