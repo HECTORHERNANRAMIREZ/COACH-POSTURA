@@ -64,7 +64,7 @@ function isValidSignature(rawBody: Buffer, signature: string | undefined): boole
 function getReturnUrl(req: Request): string {
   const origin = req.get("origin");
   if (origin) {
-    return new URL("/", origin).toString();
+    return new URL("/payment/success", origin).toString();
   }
 
   const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
@@ -75,7 +75,7 @@ function getReturnUrl(req: Request): string {
     throw new Error("Unable to determine the app return URL");
   }
 
-  return `${protocol}://${host}/`;
+  return `${protocol}://${host}/payment/success`;
 }
 
 async function createCheckout(

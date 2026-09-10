@@ -3384,6 +3384,102 @@ function SubscriptionRequired() {
   );
 }
 
+function PaymentReturnPage() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const [, setLocation] = useLocation();
+  const [timedOut, setTimedOut] = useState(false);
+  const billing = useGetBillingStatus({
+    query: {
+      enabled: isLoaded && Boolean(isSignedIn),
+      queryKey: getGetBillingStatusQueryKey(),
+      refetchInterval: timedOut ? false : 2_000,
+      retry: false,
+    },
+  });
+
+  useEffect(() => {
+    if (billing.data?.isActive) {
+      setLocation('/');
+    }
+  }, [billing.data?.isActive, setLocation]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setTimedOut(true), 30_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  if (!isLoaded) {
+    return <AuthLoadingState label="Preparando tu cuenta…" />;
+  }
+
+  if (!isSignedIn) {
+    return <PublicWelcome />;
+  }
+
+  return (
+    <div className="posture-app">
+      <div className="ambient-orb ambient-orb--top" aria-hidden="true" />
+      <div className="ambient-orb ambient-orb--bottom" aria-hidden="true" />
+      <main className="coach-layout">
+        <header className="topbar">
+          <div className="wordmark">
+            <span className="wordmark-mark" aria-hidden="true" />
+            <span>COACH / POSTURA</span>
+          </div>
+          <UserMenu />
+        </header>
+        <div className="coach-stage">
+          <section className="glass-panel welcome-panel payment-return-panel" aria-labelledby="payment-return-title">
+            <div className="account-mark account-mark--paid" aria-hidden="true">
+              <CheckCircle2 size={22} strokeWidth={1.8} />
+            </div>
+            <h1 id="payment-return-title" className="welcome-title">
+              {timedOut ? 'Estamos tardando un poco más.' : 'Confirmando tu pago.'}
+            </h1>
+            <p className="welcome-subtitle">
+              {timedOut
+                ? 'El pago puede estar confirmado, pero todavía no recibimos el aviso de Lemon Squeezy.'
+                : 'Lemon Squeezy está confirmando tu pago. Tu coach se abrirá automáticamente en cuanto recibamos la confirmación.'}
+            </p>
+            {!timedOut && (
+              <div className="payment-checking" role="status" aria-live="polite">
+                <span className="loading-mark" aria-hidden="true" />
+                <span>Esperando confirmación segura…</span>
+              </div>
+            )}
+            {timedOut && (
+              <div className="account-actions">
+                <button
+                  type="button"
+                  className="primary-action"
+                  onClick={() => {
+                    setTimedOut(false);
+                    void billing.refetch();
+                  }}
+                >
+                  Comprobar de nuevo
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => setLocation('/')}
+                >
+                  Volver al plan
+                </button>
+              </div>
+            )}
+            <p className="privacy-note">
+              <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span>No cierres esta ventana mientras confirmamos el acceso</span>
+            </p>
+          </section>
+        </div>
+        <p className="app-footer">Acceso protegido · Lemon Squeezy · Clerk</p>
+      </main>
+    </div>
+  );
+}
+
 function UserMenu() {
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -3523,6 +3619,7 @@ function ClerkProviderWithRoutes() {
     >
       <ClerkQueryClientCacheInvalidator />
       <Switch>
+        <Route path="/payment/success" component={PaymentReturnPage} />
         <Route path="/" component={BillingGate} />
         <Route path="/sign-in/*?" component={SignInPage} />
         <Route path="/sign-up/*?" component={SignUpPage} />
