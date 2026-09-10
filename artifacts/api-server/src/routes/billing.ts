@@ -62,20 +62,24 @@ function isValidSignature(rawBody: Buffer, signature: string | undefined): boole
 }
 
 function getReturnUrl(req: Request): string {
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  if (forwardedHost) {
+    const protocol = forwardedProto || "https";
+    return `${protocol}://${forwardedHost}/payment/success`;
+  }
+
   const origin = req.get("origin");
   if (origin) {
     return new URL("/payment/success", origin).toString();
   }
 
-  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const protocol = forwardedProto || req.protocol;
-  const host = forwardedHost || req.get("host");
+  const host = req.get("host");
   if (!host) {
     throw new Error("Unable to determine the app return URL");
   }
 
-  return `${protocol}://${host}/payment/success`;
+  return `${req.protocol}://${host}/payment/success`;
 }
 
 async function createCheckout(
@@ -170,7 +174,9 @@ router.post("/billing/checkout", async (req, res): Promise<void> => {
   }
 
   try {
-    const checkoutUrl = await createCheckout(userId, getReturnUrl(req));
+    const returnUrl = getReturnUrl(req);
+    req.log.info({ returnUrl }, "Creating Lemon Squeezy checkout");
+    const checkoutUrl = await createCheckout(userId, returnUrl);
     res
       .status(201)
       .json(CreateBillingCheckoutResponse.parse({ checkoutUrl }));
