@@ -319,8 +319,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-militar',
     name: 'Press militar con mancuernas',
-    description: 'Empuja las mancuernas con los codos cerca de 45° respecto al torso.',
-    angleLabel: 'Codos · objetivo 45°',
+    description: 'Baja los codos hasta 85°–110° y vuelve a extenderlos con control.',
+    angleLabel: 'Codo al bajar · objetivo 85°–110°',
     cameraNote: 'Vista frontal o en 3/4 · deja espacio sobre la cabeza.',
   },
   {
@@ -376,6 +376,8 @@ const PULLUP_NO_LOCKOUT_ANGLE = 160;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
+const MILITARY_PRESS_VALID_MIN_ANGLE = 85;
+const MILITARY_PRESS_VALID_MAX_ANGLE = 110;
 // La inclinación y la alineación corporal de fondos quedan desactivadas
 // temporalmente: para este ejercicio basta con validar el ángulo del codo.
 // const DIP_MIN_FORWARD_LEAN = 8;
@@ -476,9 +478,9 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     startMinAngle: 145,
     startMaxAngle: 180,
     activationAngle: 130,
-    endMinAngle: 70,
-    endMaxAngle: 110,
-    endLabel: 'codo entre 70–110°',
+    endMinAngle: MILITARY_PRESS_VALID_MIN_ANGLE,
+    endMaxAngle: MILITARY_PRESS_VALID_MAX_ANGLE,
+    endLabel: `codo entre ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
   },
   'triceps-polea-alta': {
     direction: 'increase',
@@ -1980,7 +1982,11 @@ function calculateExerciseAngle(
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
     }
     if (exercise === 'press-militar') {
-      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+      return calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      );
     }
     if (exercise === 'zancadas' || exercise === 'zancada-banco') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
