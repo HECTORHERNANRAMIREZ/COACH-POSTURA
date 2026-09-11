@@ -293,9 +293,9 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'remo-barra',
     name: 'Remo con barra',
-    description: 'Inclina el torso 45–75° y lleva la barra hacia el cuerpo sin encorvarte.',
-    angleLabel: 'Torso 45–75° · codo 70–115°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    description: 'Haz una bisagra de cadera, mantén la espalda neutra y lleva la barra al cuerpo con control.',
+    angleLabel: 'Torso 45–75° · codo 70–115° · rodilla 150–180°',
+    cameraNote: 'Nota: debe grabarse de lado y mostrar todo el cuerpo.',
   },
   {
     id: 'flexiones',
@@ -1052,6 +1052,8 @@ function getCameraGuidance(
       ? ['hip', 'knee', 'ankle']
       : exercise === 'jalon'
         ? ['hip', 'shoulder', 'elbow']
+          : exercise === 'remo-barra'
+            ? ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle']
         : exercise === 'plancha'
           ? ['shoulder', 'elbow', 'wrist', 'hip', 'ankle']
           : ['shoulder', 'elbow', 'wrist'];
@@ -1787,7 +1789,13 @@ function getBarbellRowTechniqueFeedback(
   const torsoLean = calculateForwardLeanAngle(shoulder, hip);
   const kneeAngle = calculateAngle(hip, knee, ankle);
 
-  if (elbowAngle === null || elbowTorsoAngle === null || torsoLean === null) {
+  if (
+    elbowAngle === null
+    || elbowTorsoAngle === null
+    || torsoLean === null
+    || kneeAngle === null
+    || !ankle
+  ) {
     return defaultTechniqueFeedback;
   }
 
@@ -1839,6 +1847,52 @@ function getBarbellRowTechniqueFeedback(
     message: 'Remo con barra correcto',
     detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Mantén la espalda neutra y lleva la barra hacia el cuerpo.`,
   };
+}
+
+function isBarbellRowTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  const requiredPoints = [
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
+    keypoints[indexes.ankle],
+  ];
+  if (requiredPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)) {
+    return false;
+  }
+
+  const torsoLean = calculateForwardLeanAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+  );
+  const kneeAngle = calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
+    keypoints[indexes.ankle],
+  );
+  const elbowTorsoAngle = calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+  );
+
+  return torsoLean !== null
+    && kneeAngle !== null
+    && elbowTorsoAngle !== null
+    && isWithinAngle(torsoLean, ROW_TORSO_MIN_ANGLE, ROW_TORSO_MAX_ANGLE)
+    && isWithinAngle(kneeAngle, ROW_KNEE_MIN_ANGLE, ROW_KNEE_MAX_ANGLE)
+    && isWithinAngle(
+      elbowTorsoAngle,
+      ROW_ELBOW_TORSO_MIN_ANGLE,
+      ROW_ELBOW_TORSO_MAX_ANGLE,
+    );
 }
 
 function calculateHipSagRatio(
@@ -2106,9 +2160,12 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
     ],
     'remo-barra': [
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
     ],
     flexiones: [
       { label: 'Cadera', joint: 'hip' },
@@ -2468,7 +2525,15 @@ function Home() {
           );
         }
       }
-      if (exerciseStartedRef.current && frameCameraReady && repetitionConfig && repetitionAngle !== null) {
+      const rowTechniqueReady = selectedExerciseForFrame !== 'remo-barra'
+        || isBarbellRowTechniqueValid(pose?.keypoints, nextDominantSide);
+      if (
+        exerciseStartedRef.current
+        && frameCameraReady
+        && repetitionConfig
+        && repetitionAngle !== null
+        && rowTechniqueReady
+      ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
@@ -2481,6 +2546,17 @@ function Home() {
         setExerciseMinimumAngle(
           exerciseRepUpdate.tracker.endpointAngle ?? exerciseRepUpdate.completedEndpointAngle,
         );
+      } else if (
+        selectedExerciseForFrame === 'remo-barra'
+        && exerciseStartedRef.current
+        && (!frameCameraReady || !rowTechniqueReady)
+      ) {
+        const resetTracker = createExerciseRepTracker();
+        exerciseRepTrackerRef.current = resetTracker;
+        setExerciseRepetitions(resetTracker.repetitions);
+        setExerciseGoodRepetitions(resetTracker.goodRepetitions);
+        setExerciseRepPhase(resetTracker.phase);
+        setExerciseMinimumAngle(resetTracker.endpointAngle);
       }
       let displayAngle = nextAngle;
       if (nextAngle === null) {
@@ -3137,6 +3213,8 @@ function Home() {
                   <p>
                     {selectedExercise === 'jalon'
                       ? 'Solo cuenta cuando el ángulo entra entre 25° y 60° y vuelve a subir.'
+                      : selectedExercise === 'remo-barra'
+                        ? 'Solo cuenta si mantienes la posición del remo durante todo el recorrido y completas la subida y la vuelta.'
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
@@ -3153,12 +3231,14 @@ function Home() {
               )}
               {selectedExercise === 'remo-barra' && (
                 <details className="pulldown-instructions">
-                  <summary>Cómo hacerlo</summary>
+                  <summary>Condiciones para una repetición correcta</summary>
                   <ul>
-                    <li><b>Torso:</b> inclínalo hacia delante entre 45° y 75° respecto a la vertical, con la espalda neutra y la cadera atrás.</li>
-                    <li><b>Rodillas:</b> mantenlas ligeramente flexionadas, aproximadamente entre 150° y 180°; no las bloquees.</li>
-                    <li><b>Codos:</b> llévalos cerca del cuerpo, entre 20° y 60° respecto al torso, sin abrirlos formando una “T”.</li>
-                    <li><b>Movimiento:</b> lleva la barra hacia el cuerpo con control y regresa lentamente sin perder la postura.</li>
+                    <li><b>Encuadre:</b> colócate de lado y deja visibles hombro, codo, muñeca, cadera, rodilla y tobillo durante toda la serie.</li>
+                    <li><b>Posición:</b> lleva la cadera atrás, inclina el torso 45°–75° respecto a la vertical y mantén la espalda neutra; no redondees ni balancees el cuerpo.</li>
+                    <li><b>Rodillas:</b> mantenlas desbloqueadas, aproximadamente entre 150° y 180°, con los pies firmes en el suelo.</li>
+                    <li><b>Tirón:</b> lleva los codos cerca del cuerpo, entre 20° y 60° respecto al torso, y dirige la barra hacia el abdomen o las costillas bajas.</li>
+                    <li><b>Recorrido:</b> empieza con los brazos extendidos entre 145° y 180°, tira hasta que el codo llegue a 70°–115° y regresa lentamente al inicio.</li>
+                    <li><b>Repetición:</b> el contador se reinicia si pierdes la inclinación, cambias la posición de las rodillas o abres demasiado los codos.</li>
                   </ul>
                 </details>
               )}
