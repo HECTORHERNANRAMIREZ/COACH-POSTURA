@@ -2070,6 +2070,8 @@ function Home() {
   const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
   const selectedExerciseRef = useRef<ExerciseId | null>(null);
   const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
+  const exerciseStartedRef = useRef(false);
+  const [exerciseStarted, setExerciseStarted] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
@@ -2220,7 +2222,11 @@ function Home() {
         )
         : null;
       let nextAngle = rawAngle;
-      if (selectedExerciseRef.current === 'sentadillas' && rawAngle !== null) {
+      if (
+        exerciseStartedRef.current
+        && selectedExerciseRef.current === 'sentadillas'
+        && rawAngle !== null
+      ) {
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
         squatTrackerRef.current = squatUpdate.tracker;
         nextAngle = squatUpdate.smoothedAngle;
@@ -2258,6 +2264,7 @@ function Home() {
       if (
         (selectedExerciseRef.current === 'dominadas'
           || selectedExerciseRef.current === 'dominadas-supinas')
+        && exerciseStartedRef.current
         && rawAngle !== null
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
@@ -2308,7 +2315,7 @@ function Home() {
           );
         }
       }
-      if (repetitionConfig && repetitionAngle !== null) {
+      if (exerciseStartedRef.current && repetitionConfig && repetitionAngle !== null) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
@@ -2436,7 +2443,10 @@ function Home() {
     );
   }, []);
 
-  const startCamera = useCallback(async (exerciseId?: ExerciseId) => {
+  const startCamera = useCallback(async (
+    exerciseId?: ExerciseId,
+    preserveExerciseStarted = false,
+  ) => {
     if (busyRef.current) return;
     busyRef.current = true;
     const activeExercise = exerciseId ?? selectedExerciseRef.current;
@@ -2446,6 +2456,8 @@ function Home() {
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
+    exerciseStartedRef.current = preserveExerciseStarted;
+    setExerciseStarted(preserveExerciseStarted);
     stopResources();
     setPoseDetected(false);
     setErrorMessage('');
@@ -2544,13 +2556,24 @@ function Home() {
       : 'user';
     cameraFacingModeRef.current = nextFacingMode;
     setCameraFacingMode(nextFacingMode);
-    void startCamera(selectedExerciseRef.current);
+    void startCamera(selectedExerciseRef.current, exerciseStartedRef.current);
   }, [startCamera]);
+
+  const beginExercise = useCallback(() => {
+    if (phase !== 'tracking' || exerciseStartedRef.current) return;
+    exerciseStartedRef.current = true;
+    setExerciseStarted(true);
+    setSquatFeedback(defaultSquatFeedback);
+    setPullupFeedback(defaultTechniqueFeedback);
+    setTechniqueFeedback(defaultTechniqueFeedback);
+  }, [phase]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
     selectedExerciseRef.current = null;
     setSelectedExercise(null);
+    exerciseStartedRef.current = false;
+    setExerciseStarted(false);
     setPoseDetected(false);
     setErrorMessage('');
     setAngle(null);
@@ -2590,7 +2613,13 @@ function Home() {
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
   const activeExercise = getExercise(selectedExercise);
-  const statusMessage = poseDetected ? 'Cuerpo detectado ✓' : 'Buscando tu cuerpo...';
+  const statusMessage = phase !== 'tracking'
+    ? 'Preparando el análisis...'
+    : !exerciseStarted
+      ? 'Colócate en posición y pulsa Iniciar ejercicio'
+      : poseDetected
+        ? 'Cuerpo detectado ✓'
+        : 'Buscando tu cuerpo...';
   const modelStatusClass = modelStatus.includes('✓')
     ? 'diagnostic-value diagnostic-value--success'
     : modelStatus === 'Cargando modelo...'
@@ -2613,14 +2642,16 @@ function Home() {
     : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
       ? pullupFeedback
       : techniqueFeedback;
-  const angleIsGood = angleFeedback.tone === 'success';
-  const diagnosisStatus = angle === null
-    ? 'ESPERANDO'
-    : angleFeedback.tone === 'success'
-      ? 'BIEN'
-      : angleFeedback.tone === 'checking'
-        ? 'EN PROCESO'
-        : 'AJUSTAR';
+  const angleIsGood = exerciseStarted && angleFeedback.tone === 'success';
+  const diagnosisStatus = !exerciseStarted
+    ? 'LISTO PARA INICIAR'
+    : angle === null
+      ? 'ESPERANDO'
+      : angleFeedback.tone === 'success'
+        ? 'BIEN'
+        : angleFeedback.tone === 'checking'
+          ? 'EN PROCESO'
+          : 'AJUSTAR';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
   const squatPhaseLabel = squatPhase === 'esperando arriba'
     ? 'Colócate arriba'
@@ -2791,6 +2822,31 @@ function Home() {
                   <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
                 </div>
               </div>
+              <div className={`exercise-start-bar ${exerciseStarted ? 'is-started' : ''}`}>
+                <div className="exercise-start-copy">
+                  <strong>{exerciseStarted ? 'Ejercicio iniciado' : '¿Ya estás listo?'}</strong>
+                  <span>
+                    {exerciseStarted
+                      ? 'El contador está activo y evaluando tus repeticiones.'
+                      : 'Colócate en posición y comienza cuando quieras.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="exercise-start-button"
+                  disabled={phase !== 'tracking' || exerciseStarted}
+                  onClick={beginExercise}
+                >
+                  {exerciseStarted ? 'En curso' : 'Iniciar ejercicio'}
+                </button>
+              </div>
+              {angleIsGood && angle !== null && (
+                <div className="exercise-good-message" role="status" aria-live="polite">
+                  <span aria-hidden="true">✓</span>
+                  <strong>¡Bien hecho!</strong>
+                  <span>El movimiento está dentro del rango.</span>
+                </div>
+              )}
               {selectedExercise === 'sentadillas' && (
                 <div className="squat-summary" aria-label="Resumen de sentadillas">
                   <div className="squat-summary-stat">
