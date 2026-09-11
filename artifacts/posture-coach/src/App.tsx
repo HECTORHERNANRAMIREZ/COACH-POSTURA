@@ -325,8 +325,9 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'curl-biceps',
     name: 'Curl de bíceps',
-    description: 'Flexiona los codos sin mover los brazos ni balancear el torso.',
-    angleLabel: 'Codo · objetivo 30–45°',
+    description: 'Sube las manos casi hasta el pecho y baja sin extender por completo.',
+    angleLabel: 'Codo · objetivo 30–60°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'sentadillas',
@@ -481,12 +482,12 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   },
   'curl-biceps': {
     direction: 'decrease',
-    startMinAngle: 145,
-    startMaxAngle: 180,
-    activationAngle: 135,
+    startMinAngle: 85,
+    startMaxAngle: 135,
+    activationAngle: 70,
     endMinAngle: 30,
-    endMaxAngle: 45,
-    endLabel: 'flexión entre 30–45°',
+    endMaxAngle: 60,
+    endLabel: 'flexión entre 30–60°',
   },
   zancadas: {
     direction: 'decrease',
@@ -1303,45 +1304,28 @@ function getBicepsCurlTechniqueFeedback(
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
-  const hip = keypoints[indexes.hip];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const upperArmFloorAngle = calculateAngleToFloor(shoulder, elbow);
-  const torsoFloorAngle = calculateAngleToFloor(shoulder, hip);
+  if (elbowAngle === null) return defaultTechniqueFeedback;
 
-  if (
-    elbowAngle === null
-    || upperArmFloorAngle === null
-    || torsoFloorAngle === null
-  ) {
-    return defaultTechniqueFeedback;
-  }
-
-  if (torsoFloorAngle < 75 || torsoFloorAngle > 105) {
-    return {
-      tone: 'warning',
-      message: 'Mantén el torso erguido',
-      detail: `Tu torso está a ${torsoFloorAngle}° respecto al suelo. Evita inclinarte o balancearte para subir la mancuerna.`,
-    };
-  }
-  if (upperArmFloorAngle < 70 || upperArmFloorAngle > 110) {
-    return {
-      tone: 'warning',
-      message: 'Mantén el brazo quieto',
-      detail: `La parte superior del brazo está a ${upperArmFloorAngle}° respecto al suelo. Deja el codo cerca del torso y mueve solo el antebrazo.`,
-    };
-  }
   if (elbowAngle < 25) {
     return {
-      tone: 'danger',
+      tone: 'warning',
       message: 'No cierres demasiado el codo',
-      detail: `El codo está a ${elbowAngle}°. Detén la subida entre 30° y 45° para mantener la tensión del bíceps.`,
+      detail: `El codo está a ${elbowAngle}°. Detén la subida cerca del pecho y conserva el control.`,
+    };
+  }
+  if (elbowAngle > 60) {
+    return {
+      tone: 'warning',
+      message: 'Sube un poco más',
+      detail: `El codo está a ${elbowAngle}°. Lleva las manos casi hasta el pecho antes de bajar.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Curl controlado',
-    detail: `Codo ${elbowAngle}° · brazos estables. Sube hasta 30–45° y baja lentamente hasta extender sin bloquear.`,
+    detail: `Codo ${elbowAngle}° · rango correcto. Baja solo hasta mantener la tensión, sin extender por completo.`,
   };
 }
 
@@ -3053,11 +3037,10 @@ function Home() {
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
                   <ul>
-                    <li><b>Posición inicial:</b> ponte de pie con la espalda recta, los pies al ancho de los hombros y las rodillas ligeramente flexionadas.</li>
-                    <li><b>Brazos:</b> mantén los brazos junto al torso, con los codos debajo de los hombros y los antebrazos apuntando hacia el suelo al comenzar.</li>
-                    <li><b>Agarre:</b> sujeta las mancuernas con agarre neutro y conserva las palmas enfrentadas durante todo el recorrido.</li>
-                    <li><b>Subida:</b> flexiona los codos sin llevarlos hacia delante ni hacia atrás; llega a un ángulo de 30°–45° sin tocar los hombros.</li>
-                    <li><b>Bajada:</b> desciende lentamente hasta extender los brazos entre 145° y 180°, sin bloquear bruscamente los codos ni balancear el torso.</li>
+                    <li><b>Vista:</b> grábate de lado para que se vea claramente el ángulo del codo.</li>
+                    <li><b>Subida:</b> flexiona el codo y lleva las manos casi hasta el pecho, llegando aproximadamente a 30°–60°.</li>
+                    <li><b>Bajada:</b> desciende con control, pero detente entre 85° y 135°; no extiendas por completo el brazo para mantener la tensión.</li>
+                    <li><b>Control:</b> evita los rebotes y mantén un movimiento continuo, sin necesidad de cumplir otras condiciones posturales.</li>
                   </ul>
                 </details>
               )}
