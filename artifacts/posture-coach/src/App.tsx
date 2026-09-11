@@ -2824,20 +2824,28 @@ function Home() {
               </div>
               <div className={`exercise-start-bar ${exerciseStarted ? 'is-started' : ''}`}>
                 <div className="exercise-start-copy">
-                  <strong>{exerciseStarted ? 'Ejercicio iniciado' : '¿Ya estás listo?'}</strong>
+                  <strong>
+                    {exerciseStarted
+                      ? 'Ejercicio iniciado'
+                      : poseDetected
+                        ? '¿Ya estás listo?'
+                        : 'Buscando tu cuerpo...'}
+                  </strong>
                   <span>
                     {exerciseStarted
                       ? 'El contador está activo y evaluando tus repeticiones.'
-                      : 'Colócate en posición y comienza cuando quieras.'}
+                      : poseDetected
+                        ? 'Colócate en posición y comienza cuando quieras.'
+                        : 'Mantente dentro del encuadre para habilitar el inicio.'}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="exercise-start-button"
-                  disabled={phase !== 'tracking' || exerciseStarted}
+                  disabled={phase !== 'tracking' || !poseDetected || exerciseStarted}
                   onClick={beginExercise}
                 >
-                  {exerciseStarted ? 'En curso' : 'Iniciar ejercicio'}
+                  {exerciseStarted ? 'En curso' : poseDetected ? 'Iniciar ejercicio' : 'Esperando detección'}
                 </button>
               </div>
               {angleIsGood && angle !== null && (
