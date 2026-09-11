@@ -170,6 +170,19 @@ type PoseDetector = {
   estimatePoses: (video: HTMLVideoElement, options?: { flipHorizontal?: boolean }) => Promise<Pose[]>;
   dispose?: () => void;
 };
+type PoseCandidate = {
+  pose: Pose;
+  centerX: number;
+  centerY: number;
+  area: number;
+  prominence: number;
+};
+type PoseTrack = {
+  centerX: number;
+  centerY: number;
+  area: number;
+  lostFrames: number;
+};
 type DiagnosticPoint = {
   label: string;
   score: number | null;
@@ -799,7 +812,11 @@ function advancePullupTracker(
 type BrowserGlobals = Window & {
   poseDetection?: {
     SupportedModels: { MoveNet: unknown };
-    movenet: { modelType: { SINGLEPOSE_LIGHTNING: unknown } };
+    movenet: {
+      modelType: {
+        MULTIPOSE_LIGHTNING: unknown;
+      };
+    };
     createDetector: (
       model: unknown,
       config: { modelType: unknown },
@@ -893,6 +910,80 @@ const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'h
   left: { shoulder: 5, elbow: 7, wrist: 9, hip: 11, knee: 13, ankle: 15 },
   right: { shoulder: 6, elbow: 8, wrist: 10, hip: 12, knee: 14, ankle: 16 },
 };
+
+function getPoseCandidate(
+  pose: Pose,
+  videoWidth: number,
+  videoHeight: number,
+): PoseCandidate | null {
+  const visiblePoints = (pose.keypoints ?? []).filter((point) => (point.score ?? 0) >= 0.3);
+  if (visiblePoints.length < 4) return null;
+
+  const minX = Math.min(...visiblePoints.map((point) => point.x));
+  const maxX = Math.max(...visiblePoints.map((point) => point.x));
+  const minY = Math.min(...visiblePoints.map((point) => point.y));
+  const maxY = Math.max(...visiblePoints.map((point) => point.y));
+  const frameArea = Math.max(1, videoWidth * videoHeight);
+  const area = Math.max(0, (maxX - minX) * (maxY - minY)) / frameArea;
+  const averageConfidence = visiblePoints.reduce(
+    (sum, point) => sum + (point.score ?? 0),
+    0,
+  ) / visiblePoints.length;
+  const visibilityRatio = visiblePoints.length / Math.max(17, pose.keypoints?.length ?? 0);
+
+  return {
+    pose,
+    centerX: ((minX + maxX) / 2) / Math.max(1, videoWidth),
+    centerY: ((minY + maxY) / 2) / Math.max(1, videoHeight),
+    area,
+    prominence: Math.min(1, area / 0.22) * 0.55
+      + averageConfidence * 0.3
+      + visibilityRatio * 0.15,
+  };
+}
+
+function getPoseContinuityBonus(candidate: PoseCandidate, previousTrack: PoseTrack | null) {
+  if (!previousTrack) return 0;
+
+  const distance = Math.hypot(
+    candidate.centerX - previousTrack.centerX,
+    candidate.centerY - previousTrack.centerY,
+  );
+  if (distance > 0.28) return 0;
+
+  const largerArea = Math.max(candidate.area, previousTrack.area, 0.001);
+  const areaSimilarity = Math.min(candidate.area, previousTrack.area) / largerArea;
+  return (1 - distance / 0.28) * areaSimilarity * 0.2;
+}
+
+function selectPrimaryPose(
+  poses: Pose[],
+  videoWidth: number,
+  videoHeight: number,
+  previousTrack: PoseTrack | null,
+) {
+  const candidates = poses
+    .map((pose) => getPoseCandidate(pose, videoWidth, videoHeight))
+    .filter((candidate): candidate is PoseCandidate => candidate !== null);
+  if (!candidates.length) return null;
+
+  const best = candidates
+    .map((candidate) => ({
+      candidate,
+      score: candidate.prominence + getPoseContinuityBonus(candidate, previousTrack),
+    }))
+    .sort((first, second) => second.score - first.score)[0].candidate;
+
+  return {
+    pose: best.pose,
+    track: {
+      centerX: best.centerX,
+      centerY: best.centerY,
+      area: best.area,
+      lostFrames: 0,
+    },
+  };
+}
 
 function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult | null {
   if (!keypoints) return null;
@@ -2039,6 +2130,7 @@ function Home() {
   const fpsFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
+  const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -2128,7 +2220,21 @@ function Home() {
 
     try {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
-      const pose = poses[0];
+      const primaryPose = selectPrimaryPose(
+        poses,
+        video.videoWidth,
+        video.videoHeight,
+        primaryPoseTrackRef.current,
+      );
+      const pose = primaryPose?.pose;
+      if (primaryPose) {
+        primaryPoseTrackRef.current = primaryPose.track;
+      } else if (primaryPoseTrackRef.current) {
+        const nextLostFrames = primaryPoseTrackRef.current.lostFrames + 1;
+        primaryPoseTrackRef.current = nextLostFrames >= 8
+          ? null
+          : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
+      }
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextDominantSideResult = getDominantSide(pose?.keypoints);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
@@ -2366,7 +2472,7 @@ function Home() {
     if (!browser.poseDetection) throw new Error('El análisis no está disponible.');
     return browser.poseDetection.createDetector(
       browser.poseDetection.SupportedModels.MoveNet,
-      { modelType: browser.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING },
+      { modelType: browser.poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING },
     );
   }, []);
 
@@ -2407,6 +2513,7 @@ function Home() {
     setSideConfidence(null);
     setSideSwitches(0);
     setSideChangeNotice('Sin cambios');
+    primaryPoseTrackRef.current = null;
     setAnglePoints([]);
     setAngleHistory([]);
     setTechniqueFeedback(defaultTechniqueFeedback);
