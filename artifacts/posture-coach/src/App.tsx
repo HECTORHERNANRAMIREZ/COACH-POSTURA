@@ -420,6 +420,7 @@ const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
 const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
 const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
+const FACE_POINT_MIN_SCORE = 0.3;
 const CAMERA_POINT_MIN_SCORE = 0.45;
 const CAMERA_FRAME_MARGIN = 0.06;
 
@@ -1019,6 +1020,12 @@ function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult
   });
   const best = scores.sort((first, second) => second.average - first.average)[0];
   return best.count ? { side: best.side, average: best.average } : null;
+}
+
+function hasFaceDetected(keypoints: PosePoint[] | undefined) {
+  return [0, 1, 2, 3, 4].some((index) => (
+    (keypoints?.[index]?.score ?? 0) >= FACE_POINT_MIN_SCORE
+  ));
 }
 
 function getCameraGuidance(
@@ -2186,6 +2193,7 @@ function Home() {
   const exerciseStartedRef = useRef(false);
   const [exerciseStarted, setExerciseStarted] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraGuidance, setCameraGuidance] = useState<CameraGuidance>({
     tone: 'checking',
@@ -2337,6 +2345,7 @@ function Home() {
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
+      const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const nextDominantSideResult = getDominantSide(pose?.keypoints);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
@@ -2497,6 +2506,7 @@ function Home() {
 
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
+      setFaceDetected(nextFaceDetected);
       setCameraReady(frameCameraReady);
       setCameraGuidance(nextCameraGuidance);
       setDominantSide(nextDominantSide);
@@ -2606,6 +2616,7 @@ function Home() {
     setExerciseStarted(preserveExerciseStarted);
     stopResources();
     setPoseDetected(false);
+    setFaceDetected(false);
     setCameraReady(false);
     setCameraGuidance({
       tone: 'checking',
@@ -2724,13 +2735,13 @@ function Home() {
       return;
     }
 
-    if (!poseDetected || !cameraReady) return;
+    if (!faceDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
-  }, [cameraReady, phase, poseDetected]);
+  }, [faceDetected, phase]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -2739,6 +2750,7 @@ function Home() {
     exerciseStartedRef.current = false;
     setExerciseStarted(false);
     setPoseDetected(false);
+    setFaceDetected(false);
     setCameraReady(false);
     setCameraGuidance({
       tone: 'checking',
@@ -2786,9 +2798,11 @@ function Home() {
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? cameraReady
-        ? 'Colócate en posición y pulsa Iniciar curso'
-        : cameraGuidance.message
+      ? faceDetected
+        ? cameraReady
+          ? 'Colócate en posición y pulsa Iniciar ejercicio'
+          : 'Rostro detectado ✓ · puedes iniciar'
+        : 'Buscando tu cara...'
       : poseDetected
         ? cameraReady
           ? 'Cuerpo detectado ✓'
@@ -2999,36 +3013,36 @@ function Home() {
                       ? cameraReady
                         ? 'Ejercicio iniciado'
                         : 'Ajusta la cámara para continuar'
-                      : poseDetected
+                      : faceDetected
                         ? cameraReady
                           ? '¿Ya estás listo?'
-                          : cameraGuidance.message
-                        : 'Buscando tu cuerpo...'}
+                          : 'Rostro detectado ✓'
+                        : 'Buscando tu cara...'}
                   </strong>
                   <span>
                     {exerciseStarted
                       ? cameraReady
                         ? 'El contador está activo. Detén el curso cuando hayas terminado.'
                         : cameraGuidance.detail
-                      : poseDetected
+                      : faceDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
-                          : cameraGuidance.detail
-                        : 'Mantente dentro del encuadre para habilitar el inicio.'}
+                          : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
+                        : 'Mantén tu cara visible para habilitar el inicio.'}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="exercise-start-button"
-                  disabled={phase !== 'tracking' || (!cameraReady && !exerciseStarted)}
+                  disabled={phase !== 'tracking' || (!faceDetected && !exerciseStarted)}
                   aria-pressed={exerciseStarted}
                   onClick={toggleExercise}
                 >
                   {exerciseStarted
                     ? 'Detener curso'
-                    : cameraReady
-                      ? 'Iniciar curso'
-                      : 'Ajusta la cámara'}
+                      : faceDetected
+                        ? 'Iniciar ejercicio'
+                        : 'Buscando usuario'}
                 </button>
               </div>
               {angleIsGood && angle !== null && (
@@ -3288,7 +3302,7 @@ function Home() {
                 )}
               </div>
               <div
-                className={`status-surface ${poseDetected ? 'is-detected' : 'is-searching'}`}
+                className={`status-surface ${faceDetected || poseDetected ? 'is-detected' : 'is-searching'}`}
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
@@ -3469,8 +3483,8 @@ function Home() {
                   </div>
                   <div className="diagnostic-row">
                     <dt>Persona</dt>
-                    <dd className={`diagnostic-value ${poseDetected ? 'diagnostic-value--success' : ''}`}>
-                      {poseDetected ? 'Cuerpo detectado ✓' : 'Sin detección'}
+                    <dd className={`diagnostic-value ${faceDetected ? 'diagnostic-value--success' : ''}`}>
+                      {poseDetected ? 'Cuerpo detectado ✓' : faceDetected ? 'Rostro detectado ✓' : 'Sin detección'}
                     </dd>
                   </div>
                   <div className="diagnostic-row diagnostic-row--confidence">
