@@ -23,7 +23,6 @@ import {
   ArrowRight,
   Camera,
   CheckCircle2,
-  LogOut,
   Maximize2,
   ShieldCheck,
   Square,
@@ -55,14 +54,23 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
+
+// MODO TEMPORAL DE DESARROLLO:
+// Se conserva todo el código de Clerk y Lemon Squeezy, pero el coach abre
+// directamente mientras agregamos y ajustamos ejercicios.
+// Para reactivar login y pagos, cambiar este valor a true.
+const AUTH_AND_BILLING_ENABLED = false;
+
+const clerkPubKey = AUTH_AND_BILLING_ENABLED
+  ? publishableKeyFromHost(
+      window.location.hostname,
+      import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+    )
+  : '';
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-if (!clerkPubKey) {
+if (AUTH_AND_BILLING_ENABLED && !clerkPubKey) {
   throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in the environment.');
 }
 
@@ -2060,8 +2068,6 @@ function getExercise(exerciseId: ExerciseId | null) {
 }
 
 function Home() {
-  const { signOut } = useClerk();
-  const [, setLocation] = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -2658,17 +2664,8 @@ function Home() {
               <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
               <span>Privado</span>
             </div>
-            <button
-              type="button"
-              className="logout-button"
-              aria-label="Cerrar sesión"
-              onClick={() => {
-                void signOut().then(() => setLocation('/'));
-              }}
-            >
-              <LogOut size={15} strokeWidth={1.8} aria-hidden="true" />
-              <span>Cerrar sesión</span>
-            </button>
+            {/* El botón de cerrar sesión queda conservado en UserMenu para
+                cuando se reactive AUTH_AND_BILLING_ENABLED. */}
           </div>
         </header>
 
@@ -3573,6 +3570,8 @@ function UserMenu() {
 }
 
 function BillingGate() {
+  // Login y validación de suscripción se mantienen aquí para reactivarlos
+  // después. En el modo temporal, Router renderiza Home directamente.
   const { isLoaded, isSignedIn } = useAuth();
   const billing = useGetBillingStatus({
     query: {
@@ -3701,6 +3700,11 @@ function ClerkProviderWithRoutes() {
 }
 
 function Router() {
+  // Acceso temporal directo al coach: no elimina Clerk ni Lemon Squeezy.
+  if (!AUTH_AND_BILLING_ENABLED) {
+    return <Home />;
+  }
+
   return (
     <RoutedErrorBoundary>
       <ClerkProviderWithRoutes />
