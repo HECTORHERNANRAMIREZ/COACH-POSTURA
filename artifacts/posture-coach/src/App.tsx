@@ -323,7 +323,6 @@ const exercises: ExerciseDefinition[] = [
     name: 'Press militar con mancuernas',
     description: 'Baja los codos hasta 85°–110° y vuelve a extenderlos con control.',
     angleLabel: 'Codo al bajar · objetivo 85°–110°',
-    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'triceps-polea-alta',
