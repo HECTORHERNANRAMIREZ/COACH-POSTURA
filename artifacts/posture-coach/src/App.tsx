@@ -2577,14 +2577,25 @@ function Home() {
     void startCamera(selectedExerciseRef.current, exerciseStartedRef.current);
   }, [startCamera]);
 
-  const beginExercise = useCallback(() => {
-    if (phase !== 'tracking' || exerciseStartedRef.current) return;
+  const toggleExercise = useCallback(() => {
+    if (phase !== 'tracking') return;
+
+    if (exerciseStartedRef.current) {
+      exerciseStartedRef.current = false;
+      setExerciseStarted(false);
+      setSquatFeedback(defaultSquatFeedback);
+      setPullupFeedback(defaultTechniqueFeedback);
+      setTechniqueFeedback(defaultTechniqueFeedback);
+      return;
+    }
+
+    if (!poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
-  }, [phase]);
+  }, [phase, poseDetected]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -2634,7 +2645,7 @@ function Home() {
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? 'Colócate en posición y pulsa Iniciar ejercicio'
+      ? 'Colócate en posición y pulsa Iniciar curso'
       : poseDetected
         ? 'Cuerpo detectado ✓'
         : 'Buscando tu cuerpo...';
@@ -2855,7 +2866,7 @@ function Home() {
                   </strong>
                   <span>
                     {exerciseStarted
-                      ? 'El contador está activo y evaluando tus repeticiones.'
+                      ? 'El contador está activo. Detén el curso cuando hayas terminado.'
                       : poseDetected
                         ? 'Colócate en posición y comienza cuando quieras.'
                         : 'Mantente dentro del encuadre para habilitar el inicio.'}
@@ -2864,10 +2875,11 @@ function Home() {
                 <button
                   type="button"
                   className="exercise-start-button"
-                  disabled={phase !== 'tracking' || !poseDetected || exerciseStarted}
-                  onClick={beginExercise}
+                  disabled={phase !== 'tracking' || (!poseDetected && !exerciseStarted)}
+                  aria-pressed={exerciseStarted}
+                  onClick={toggleExercise}
                 >
-                  {exerciseStarted ? 'En curso' : poseDetected ? 'Iniciar ejercicio' : 'Esperando detección'}
+                  {exerciseStarted ? 'Detener curso' : poseDetected ? 'Iniciar curso' : 'Esperando detección'}
                 </button>
               </div>
               {angleIsGood && angle !== null && (
