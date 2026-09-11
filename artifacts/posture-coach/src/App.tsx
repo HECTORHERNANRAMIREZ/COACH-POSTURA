@@ -214,6 +214,7 @@ type ExerciseRepConfig = {
   endMinAngle: number;
   endMaxAngle: number;
   endLabel: string;
+  countOnReturn?: boolean;
 };
 type ExerciseRepTracker = {
   phase: ExerciseRepPhase;
@@ -264,8 +265,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
-    description: 'Inclina el torso 15–20° y lleva los codos hacia abajo y adelante.',
-    angleLabel: 'Torso 15–20° · codo 80–100°',
+    description: 'Lleva el ángulo cadera–hombro–codo a 25°–60° y vuelve a subir.',
+    angleLabel: 'Cadera–hombro–codo · objetivo 25°–60°',
   },
   {
     id: 'remo-barra',
@@ -359,11 +360,8 @@ const PLANK_ARM_FLOOR_MIN_ANGLE = 80;
 const PLANK_ARM_FLOOR_MAX_ANGLE = 100;
 const PLANK_ELBOW_MIN_ANGLE = 80;
 const PLANK_ELBOW_MAX_ANGLE = 100;
-const PULLDOWN_TORSO_MIN_ANGLE = 15;
-const PULLDOWN_TORSO_MAX_ANGLE = 20;
-const PULLDOWN_TORSO_TOO_FAR_ANGLE = 30;
-const PULLDOWN_ELBOW_MIN_ANGLE = 80;
-const PULLDOWN_ELBOW_MAX_ANGLE = 100;
+const PULLDOWN_ANGLE_MIN = 25;
+const PULLDOWN_ANGLE_MAX = 60;
 const ROW_TORSO_MIN_ANGLE = 45;
 const ROW_TORSO_MAX_ANGLE = 75;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -404,9 +402,10 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     startMinAngle: 150,
     startMaxAngle: 180,
     activationAngle: 135,
-    endMinAngle: 80,
-    endMaxAngle: 100,
-    endLabel: 'codo entre 80–100°',
+    endMinAngle: 25,
+    endMaxAngle: 60,
+    endLabel: 'ángulo cadera–hombro–codo entre 25–60°',
+    countOnReturn: true,
   },
   'remo-barra': {
     direction: 'decrease',
@@ -561,7 +560,19 @@ function advanceExerciseRepTracker(
       nextTracker.endpointAngle = null;
     }
   } else if (nextTracker.phase === 'final') {
-    if (isAtStart) {
+    if (config.countOnReturn) {
+      const hasReturnedFromEnd = config.direction === 'decrease'
+        ? smoothedAngle > config.endMaxAngle
+        : smoothedAngle < config.endMinAngle;
+
+      if (hasReturnedFromEnd) {
+        nextTracker.phase = isAtStart ? 'inicio' : 'final';
+        nextTracker.event = 'valid';
+        nextTracker.repetitions += 1;
+        nextTracker.goodRepetitions += 1;
+        completedEndpointAngle = nextTracker.endpointAngle;
+      }
+    } else if (isAtStart) {
       nextTracker.phase = 'inicio';
     }
   }
@@ -1535,55 +1546,32 @@ function getLatPulldownTechniqueFeedback(
   if (!keypoints || !side) return defaultTechniqueFeedback;
 
   const indexes = sideKeypoints[side];
+  const hip = keypoints[indexes.hip];
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
-  const wrist = keypoints[indexes.wrist];
-  const hip = keypoints[indexes.hip];
-  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
+  const pulldownAngle = calculateAngle(hip, shoulder, elbow);
 
-  if (elbowAngle === null || torsoLean === null) return defaultTechniqueFeedback;
+  if (pulldownAngle === null) return defaultTechniqueFeedback;
 
-  if (torsoLean > PULLDOWN_TORSO_TOO_FAR_ANGLE) {
+  if (pulldownAngle > PULLDOWN_ANGLE_MAX) {
+    return {
+      tone: 'warning',
+      message: 'Baja más el ángulo',
+      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe entrar entre 25° y 60°.`,
+    };
+  }
+  if (pulldownAngle < PULLDOWN_ANGLE_MIN) {
     return {
       tone: 'danger',
-      message: 'No te inclines demasiado',
-      detail: `Tu torso está a ${torsoLean}°. No superes 30° hacia atrás para evitar convertir el jalón en un remo.`,
-    };
-  }
-  if (torsoLean < PULLDOWN_TORSO_MIN_ANGLE) {
-    return {
-      tone: 'warning',
-      message: 'Inclina un poco el torso hacia atrás',
-      detail: `La inclinación es de ${torsoLean}°. Busca entre 15° y 20° respecto a la vertical.`,
-    };
-  }
-  if (torsoLean > PULLDOWN_TORSO_MAX_ANGLE) {
-    return {
-      tone: 'warning',
-      message: 'Reduce un poco la inclinación',
-      detail: `La inclinación es de ${torsoLean}°. Mantente entre 15° y 20° hacia atrás.`,
-    };
-  }
-  if (elbowAngle > PULLDOWN_ELBOW_MAX_ANGLE) {
-    return {
-      tone: 'checking',
-      message: 'Lleva los codos hacia abajo y adelante',
-      detail: `Tu codo está a ${elbowAngle}°. Busca una flexión cercana a 90° y una trayectoria de 30–45° hacia delante.`,
-    };
-  }
-  if (elbowAngle < PULLDOWN_ELBOW_MIN_ANGLE) {
-    return {
-      tone: 'warning',
-      message: 'No cierres demasiado los codos',
-      detail: `Tu codo está a ${elbowAngle}°. El final debe quedar cerca de 90°; lleva los codos hacia los bolsillos.`,
+      message: 'No cierres demasiado el ángulo',
+      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe mantenerse entre 25° y 60°.`,
     };
   }
 
   return {
     tone: 'success',
-    message: 'Jalón correcto',
-    detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Pecho abierto, codos 30–45° hacia delante y regreso lento.`,
+    message: 'Rango correcto',
+    detail: `Ángulo cadera–hombro–codo: ${pulldownAngle}°. Vuelve a subir para contar la repetición.`,
   };
 }
 
@@ -1818,6 +1806,9 @@ function calculateExerciseAngle(
     if (exercise === 'zancadas' || exercise === 'zancada-banco') {
       return calculateAngle(keypoints[indexes.hip], keypoints[indexes.knee], keypoints[indexes.ankle]);
     }
+    if (exercise === 'jalon') {
+      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    }
     return calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.elbow], keypoints[indexes.wrist]);
   }
   if (exercise === 'sentadillas') {
@@ -1843,6 +1834,14 @@ function calculateRepetitionAngle(
   }
 
   if (exercise === 'plancha') return null;
+
+  if (exercise === 'jalon') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    );
+  }
 
   return calculateAngle(
     keypoints[indexes.shoulder],
@@ -1904,9 +1903,9 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     jalon: [
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
-      { label: 'Muñeca', joint: 'wrist' },
     ],
     'remo-barra': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -2857,11 +2856,13 @@ function Home() {
                     <strong>{exerciseRepPhaseLabel}</strong>
                   </div>
                   <div className="squat-summary-stat">
-                    <span>Ángulo final</span>
+                    <span>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</span>
                     <strong>{exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}</strong>
                   </div>
                   <p>
-                    Solo cuenta cuando completas el recorrido y llegas al rango de {getRepetitionConfig(selectedExercise)?.endLabel}.
+                    {selectedExercise === 'jalon'
+                      ? 'Solo cuenta cuando el ángulo entra entre 25° y 60° y vuelve a subir.'
+                      : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
               )}
@@ -2869,9 +2870,9 @@ function Home() {
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
                   <ul>
-                    <li><b>Torso:</b> inclínalo hacia atrás entre 15° y 20°; no superes 30°.</li>
-                    <li><b>Agarre:</b> brazos a 75°–80° respecto al torso y manos a aproximadamente 1,5 veces el ancho de tus hombros.</li>
-                    <li><b>Codos:</b> bájalos 30°–45° hacia delante y termina cerca de 90°, como si quisieras llevarlos hacia los bolsillos.</li>
+                    <li><b>Movimiento:</b> tira de la barra hacia el pecho.</li>
+                    <li><b>Rango:</b> el ángulo cadera–hombro–codo debe bajar y entrar entre 25° y 60°.</li>
+                    <li><b>Repetición:</b> cuando el ángulo entre en ese rango y vuelva a subir, se suma una repetición.</li>
                   </ul>
                 </details>
               )}
@@ -3142,7 +3143,7 @@ function Home() {
                         <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
                       </div>
                       <div className="diagnostic-row">
-                        <dt>Ángulo final</dt>
+                         <dt>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</dt>
                         <dd className="diagnostic-value">
                           {exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}
                         </dd>
