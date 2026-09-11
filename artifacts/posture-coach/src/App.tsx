@@ -313,8 +313,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-militar',
     name: 'Press militar con mancuernas',
-    description: 'Usa un banco a 75–80° y empuja las mancuernas con codos a 45°.',
-    angleLabel: 'Banco 75–80° · codos 45°',
+    description: 'Empuja las mancuernas con los codos cerca de 45° respecto al torso.',
+    angleLabel: 'Codos · objetivo 45°',
   },
   {
     id: 'triceps-polea-alta',
@@ -1251,7 +1251,7 @@ function getMilitaryPressTechniqueFeedback(
   return {
     tone: 'success',
     message: 'Press militar controlado',
-    detail: `Codos a ${elbowTorsoAngle}° · plano escapular correcto. Mantén el banco entre 75° y 80° y empuja con control.`,
+    detail: `Codos a ${elbowTorsoAngle}° · plano escapular correcto. Empuja con control y evita abrirlos demasiado.`,
   };
 }
 
@@ -3025,8 +3025,7 @@ function Home() {
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
                   <ul>
-                    <li><b>Inclinación del banco:</b> ajústalo entre 75° y 80°. Evita dejarlo completamente vertical a 90°; una ligera inclinación ayuda a mantener la curvatura natural de la columna y reduce la presión lumbar.</li>
-                    <li><b>Posición inicial:</b> apoya la espalda en el banco y coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
+                    <li><b>Posición inicial:</b> coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
                     <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
