@@ -142,7 +142,7 @@ type ExerciseDefinition = {
   name: string;
   description: string;
   angleLabel: string;
-  cameraNote: string;
+  cameraNote?: string;
 };
 const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
@@ -276,14 +276,12 @@ const exercises: ExerciseDefinition[] = [
     name: 'Dominadas en barra',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
-    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'dominadas-supinas',
     name: 'Dominadas supinas',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
-    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'jalon',
@@ -2976,8 +2974,7 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {activeExercise?.cameraNote ?? 'Nota: debe grabarse de lado.'}
-                      {' · '}
+                      {activeExercise?.cameraNote && `${activeExercise.cameraNote} · `}
                       {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
                     </span>
                   </div>
