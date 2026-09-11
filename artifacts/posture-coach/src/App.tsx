@@ -2901,6 +2901,19 @@ function Home() {
                   </p>
                 </div>
               )}
+              {selectedExercise === 'dominadas' && (
+                <div className="pulldown-instructions" aria-label="Características de una dominada válida">
+                  <strong>Qué debe cumplir tu dominada</strong>
+                  <ul>
+                    <li><b>Posición:</b> usa una vista lateral, deja todo el cuerpo dentro del encuadre y mantén las manos por encima de los hombros.</li>
+                    <li><b>Inicio:</b> comienza con los brazos casi totalmente extendidos, entre 165° y 180°, sin soltarte de la barra.</li>
+                    <li><b>Cuerpo:</b> conserva cabeza, espalda, cadera y piernas controladas; evita balancearte o arquearte.</li>
+                    <li><b>Subida:</b> lleva los codos hacia abajo y acerca el pecho a la barra sin impulsarte con las piernas.</li>
+                    <li><b>Final:</b> pasa la barbilla por encima de la barra y alcanza una flexión de codo menor de 60°.</li>
+                    <li><b>Bajada:</b> desciende de forma lenta y vuelve a extender los brazos para completar el recorrido.</li>
+                  </ul>
+                </div>
+              )}
               {getRepetitionConfig(selectedExercise) && (
                 <div className="squat-summary" aria-label={`Contador de ${activeExercise?.name ?? 'ejercicio'}`}>
                   <div className="squat-summary-stat">
