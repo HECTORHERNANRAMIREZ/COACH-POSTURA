@@ -665,8 +665,8 @@
 }
 
 .active-panel {
-  max-width: 52rem;
-  padding: 0.75rem;
+  max-width: 68rem;
+  padding: 0.6rem;
 }
 
 .active-header {
@@ -951,7 +951,8 @@
 
 .video-stage {
   position: relative;
-  width: 100%;
+  width: calc(100% + 0.8rem);
+  margin-inline: -0.4rem;
   aspect-ratio: 3 / 4;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.17);
@@ -1830,7 +1831,13 @@
   }
 
   .active-panel {
+    max-width: 70rem;
     padding: 0.9rem;
+  }
+
+  .video-stage {
+    width: calc(100% + 1.2rem);
+    margin-inline: -0.6rem;
   }
 
   .error-panel {
@@ -1852,6 +1859,12 @@
     width: calc(100% + 1rem);
     max-width: none;
     margin-inline: -0.5rem;
+  }
+
+  .video-stage {
+    width: calc(100% + 1.5rem);
+    margin-inline: -0.75rem;
+    border-radius: 1.15rem;
   }
 
   .squat-summary {
