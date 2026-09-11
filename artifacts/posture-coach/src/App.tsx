@@ -346,7 +346,6 @@ const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const PULLUP_BOTTOM_MIN_ANGLE = 165;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 160;
-const PULLUP_TOP_MAX_ANGLE = 60;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const SUPINE_PULLUP_TOP_MIN_ANGLE = 75;
 const SUPINE_PULLUP_TOP_MAX_ANGLE = 105;
@@ -698,7 +697,7 @@ type PullupTrackerConfig = {
 
 const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   topMinAngle: 0,
-  topMaxAngle: PULLUP_TOP_MAX_ANGLE,
+  topMaxAngle: 180,
 };
 
 const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
@@ -709,7 +708,7 @@ const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 function advancePullupTracker(
   tracker: PullupTracker,
   rawAngle: number,
-  chinOverBar: boolean,
+  headOverWrists: boolean,
   config: PullupTrackerConfig = STANDARD_PULLUP_TRACKER_CONFIG,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
@@ -729,7 +728,7 @@ function advancePullupTracker(
   const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
   const hasReachedTop = smoothedAngle >= config.topMinAngle
     && smoothedAngle <= config.topMaxAngle
-    && chinOverBar;
+    && headOverWrists;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
 
@@ -1403,7 +1402,7 @@ function calculateForwardLeanAngle(
   return Math.round(Math.atan2(horizontalDistance, verticalDistance) * (180 / Math.PI));
 }
 
-function isChinOverBar(
+function isHeadOverWrists(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
 ) {
@@ -1463,66 +1462,33 @@ function getPullupTechniqueFeedback(
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
-  const hip = keypoints[indexes.hip];
-  const ankle = keypoints[indexes.ankle];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
 
-  if (elbowAngle === null || bodyLineAngle === null || !shoulder || !wrist) {
+  if (elbowAngle === null || !shoulder || !wrist) {
     return defaultTechniqueFeedback;
   }
 
-  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
-  const wristsAboveShoulders = wrist.y < shoulder.y;
-  const chinOverBar = isChinOverBar(keypoints, side);
+  const headOverWrists = isHeadOverWrists(keypoints, side);
 
-  if (!wristsAboveShoulders) {
-    return {
-      tone: 'warning',
-      message: 'Mantén las manos sobre la cabeza',
-      detail: 'Colócate debajo de la barra y conserva las muñecas por encima de los hombros.',
-    };
-  }
-  if (bodyLineDeviation > 25) {
-    return {
-      tone: 'warning',
-      message: 'Evita balancearte',
-      detail: 'Contrae el abdomen y mantén el cuerpo controlado mientras subes y bajas.',
-    };
-  }
   if (elbowAngle >= PULLUP_BOTTOM_MIN_ANGLE) {
     return {
       tone: 'checking',
-      message: 'Inicio válido',
-      detail: `Brazo a ${elbowAngle}°. Desde aquí inicia la subida manteniendo el cuerpo controlado.`,
+      message: 'Extiende bien los codos',
+      detail: `Codo a ${elbowAngle}°. Desde esta extensión inicia la subida.`,
     };
   }
-  if (elbowAngle > 100) {
-    return {
-      tone: 'checking',
-      message: 'Lleva los codos hacia abajo',
-      detail: `Tu codo está a ${elbowAngle}°. Tira de la barra con control y acerca el pecho.`,
-    };
-  }
-  if (elbowAngle >= PULLUP_TOP_MAX_ANGLE) {
-    return {
-      tone: 'checking',
-      message: 'Sigue subiendo',
-      detail: `Tu codo está a ${elbowAngle}°. Busca menos de 60° y lleva la barbilla por encima de la barra.`,
-    };
-  }
-  if (!chinOverBar) {
+  if (!headOverWrists) {
     return {
       tone: 'warning',
-      message: 'Pasa la barbilla sobre la barra',
-      detail: 'El ángulo ya es menor de 60°, pero la barbilla todavía no supera la altura de la barra.',
+      message: 'Sube un poco más',
+      detail: 'La cabeza todavía no ha pasado por encima de las muñecas.',
     };
   }
 
   return {
     tone: 'success',
-    message: 'Dominada controlada',
-    detail: `Codo a ${elbowAngle}°. Mantén el abdomen firme y desciende sin soltarte de golpe.`,
+    message: 'Dominada válida',
+    detail: `Codo a ${elbowAngle}° y cabeza por encima de las muñecas.`,
   };
 }
 
@@ -2271,7 +2237,7 @@ function Home() {
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
-          isChinOverBar(pose?.keypoints, nextDominantSide),
+          isHeadOverWrists(pose?.keypoints, nextDominantSide),
           isSupinePullup
             ? SUPINE_PULLUP_TRACKER_CONFIG
             : STANDARD_PULLUP_TRACKER_CONFIG,
@@ -2291,7 +2257,7 @@ function Home() {
             message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
             detail: isSupinePullup
               ? `Codo final ${pullupUpdate.completedMinimumAngle}° dentro de 75–105° · extensión inicial entre 165–180° · barbilla sobre la barra.`
-              : `Ángulo mínimo ${pullupUpdate.completedMinimumAngle}° · extensión final entre 165–180° · barbilla sobre la barra.`,
+              : `Extensión de codos entre 165–180° · cabeza por encima de las muñecas.`,
           });
         } else if (pullupUpdate.tracker.event === 'no-top') {
           setPullupFeedback({
@@ -2299,7 +2265,7 @@ function Home() {
             message: 'No rep · subida incompleta',
             detail: isSupinePullup
               ? `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta 75–105° y pasa la barbilla sobre la barra.`
-              : `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta menos de 60° y pasa la barbilla sobre la barra.`,
+              : 'Sube hasta pasar la cabeza por encima de las muñecas.',
           });
         } else if (pullupUpdate.tracker.event === 'no-lockout') {
           setPullupFeedback({
@@ -2897,7 +2863,7 @@ function Home() {
                   <p>
                     {selectedExercise === 'dominadas-supinas'
                       ? 'Inicio 165–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
-                      : 'Inicio y final 165–180° · subida menor de 60° · barbilla sobre la barra.'}
+                       : 'Extensión de codos 165–180° · cabeza por encima de las muñecas.'}
                   </p>
                 </div>
               )}
@@ -2905,12 +2871,8 @@ function Home() {
                 <details className="pulldown-instructions">
                   <summary>Qué debe cumplir tu dominada</summary>
                   <ul>
-                    <li><b>Posición:</b> usa una vista lateral, deja todo el cuerpo dentro del encuadre y mantén las manos por encima de los hombros.</li>
-                    <li><b>Inicio:</b> comienza con los brazos casi totalmente extendidos, entre 165° y 180°, sin soltarte de la barra.</li>
-                    <li><b>Cuerpo:</b> conserva cabeza, espalda, cadera y piernas controladas; evita balancearte o arquearte.</li>
-                    <li><b>Subida:</b> lleva los codos hacia abajo y acerca el pecho a la barra sin impulsarte con las piernas.</li>
-                    <li><b>Final:</b> pasa la barbilla por encima de la barra y alcanza una flexión de codo menor de 60°.</li>
-                    <li><b>Bajada:</b> desciende de forma lenta y vuelve a extender los brazos para completar el recorrido.</li>
+                    <li><b>Extensión:</b> inicia y termina con los codos bien extendidos, entre 165° y 180°.</li>
+                    <li><b>Altura:</b> sube hasta que la cabeza pase por encima de las muñecas.</li>
                   </ul>
                 </details>
               )}
