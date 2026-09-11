@@ -2,3 +2,4 @@
 - [Entradas escalonadas](animation-entrances.md) — con `animation-fill-mode: backwards`, la opacidad base debe quedar en 1 para que el contenido no permanezca oculto.
 - [Clerk en preview](clerk-preview.md) — el SDK falla si el proyecto usa Clerk en código pero aún no se ha provisionado la instancia administrada.
 - [Webhooks de Lemon](lemon-webhook-preview.md) — los dominios de preview cambian; un webhook antiguo puede devolver 404 aunque Lemon haya creado el pago y el comprobante.
+- [Alineación de cámara](camera-alignment-guidance.md) — el conteo debe validar las articulaciones necesarias y el margen del encuadre, no solo detectar una persona.

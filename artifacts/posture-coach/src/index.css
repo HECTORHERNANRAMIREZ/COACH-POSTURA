@@ -1250,6 +1250,69 @@
   animation: soft-pulse 1.25s ease-in-out infinite;
 }
 
+.camera-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.62rem;
+  margin-top: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(216, 228, 242, 0.82);
+}
+
+.camera-guidance svg {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+}
+
+.camera-guidance > div {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.camera-guidance strong {
+  color: currentColor;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.camera-guidance small {
+  color: rgba(205, 220, 235, 0.66);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.camera-guidance--checking {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.camera-guidance--ready {
+  border-color: rgba(57, 255, 106, 0.3);
+  background:
+    linear-gradient(145deg, rgba(57, 255, 106, 0.09), rgba(255, 255, 255, 0.03)),
+    rgba(7, 26, 20, 0.42);
+  color: #8bffa5;
+}
+
+.camera-guidance--ready small {
+  color: rgba(202, 255, 214, 0.68);
+}
+
+.camera-guidance--warning {
+  border-color: rgba(255, 216, 138, 0.38);
+  background:
+    linear-gradient(145deg, rgba(255, 216, 138, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(35, 27, 12, 0.44);
+  color: #ffd88a;
+}
+
+.camera-guidance--warning small {
+  color: rgba(255, 229, 173, 0.72);
+}
+
 .technique-feedback {
   display: flex;
   align-items: flex-start;

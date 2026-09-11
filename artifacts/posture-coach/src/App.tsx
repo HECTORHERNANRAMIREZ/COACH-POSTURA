@@ -256,6 +256,12 @@ type VideoResolution = {
   width: number;
   height: number;
 };
+type CameraGuidanceTone = 'checking' | 'ready' | 'warning';
+type CameraGuidance = {
+  tone: CameraGuidanceTone;
+  message: string;
+  detail: string;
+};
 
 const exercises: ExerciseDefinition[] = [
   {
@@ -315,6 +321,7 @@ const exercises: ExerciseDefinition[] = [
     name: 'Press militar con mancuernas',
     description: 'Empuja las mancuernas con los codos cerca de 45° respecto al torso.',
     angleLabel: 'Codos · objetivo 45°',
+    cameraNote: 'Vista frontal o en 3/4 · deja espacio sobre la cabeza.',
   },
   {
     id: 'triceps-polea-alta',
@@ -405,6 +412,8 @@ const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
 const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
 const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
+const CAMERA_POINT_MIN_SCORE = 0.45;
+const CAMERA_FRAME_MARGIN = 0.06;
 
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   fondos: {
@@ -1004,6 +1013,90 @@ function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult
   return best.count ? { side: best.side, average: best.average } : null;
 }
 
+function getCameraGuidance(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+  videoWidth: number,
+  videoHeight: number,
+): CameraGuidance {
+  if (!keypoints || !side) {
+    return {
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: exercise === 'press-militar'
+        ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
+        : 'Mantén una sola persona dentro del encuadre para poder seguir tu postura.',
+    };
+  }
+
+  const indexes = sideKeypoints[side];
+  const requiredJoints: Array<keyof typeof indexes> = exercise === 'press-militar'
+    ? ['shoulder', 'elbow', 'wrist', 'hip']
+    : exercise === 'sentadillas' || exercise === 'zancadas' || exercise === 'zancada-banco'
+      ? ['hip', 'knee', 'ankle']
+      : exercise === 'jalon'
+        ? ['hip', 'shoulder', 'elbow']
+        : exercise === 'plancha'
+          ? ['shoulder', 'elbow', 'wrist', 'hip', 'ankle']
+          : ['shoulder', 'elbow', 'wrist'];
+  const jointLabels: Record<keyof typeof indexes, string> = {
+    shoulder: 'hombro',
+    elbow: 'codo',
+    wrist: 'muñeca',
+    hip: 'cadera',
+    knee: 'rodilla',
+    ankle: 'tobillo',
+  };
+  const requiredPoints = requiredJoints.map((joint) => ({
+    label: jointLabels[joint],
+    point: keypoints[indexes[joint]],
+  }));
+  const missingLabels = requiredPoints
+    .filter(({ point }) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+    .map(({ label }) => label);
+
+  if (missingLabels.length) {
+    const visibleLabels = missingLabels.length === 1
+      ? missingLabels[0]
+      : `${missingLabels.slice(0, -1).join(', ')} y ${missingLabels[missingLabels.length - 1]}`;
+    return {
+      tone: 'warning',
+      message: 'No veo todos los puntos necesarios',
+      detail: `Deja visibles ${visibleLabels}. Aleja o gira un poco el móvil sin tapar las articulaciones.`,
+    };
+  }
+
+  const framePoints = requiredPoints.map(({ point }) => point).filter(
+    (point): point is PosePoint => Boolean(point),
+  );
+  const hasValidFrame = videoWidth > 0 && videoHeight > 0;
+  const outsideFrame = hasValidFrame && framePoints.some((point) => (
+    point.x < videoWidth * CAMERA_FRAME_MARGIN
+    || point.x > videoWidth * (1 - CAMERA_FRAME_MARGIN)
+    || point.y < videoHeight * CAMERA_FRAME_MARGIN
+    || point.y > videoHeight * (1 - CAMERA_FRAME_MARGIN)
+  ));
+
+  if (outsideFrame) {
+    return {
+      tone: 'warning',
+      message: 'Deja más espacio alrededor de tu cuerpo',
+      detail: exercise === 'press-militar'
+        ? 'Las muñecas pueden salir del encuadre al subir. Aleja el móvil y deja margen sobre la cabeza.'
+        : 'Aleja un poco el móvil para que las articulaciones no queden pegadas al borde.',
+    };
+  }
+
+  return {
+    tone: 'ready',
+    message: 'Cámara bien alineada',
+    detail: exercise === 'press-militar'
+      ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
+      : 'Los puntos necesarios están visibles. Puedes iniciar el ejercicio.',
+  };
+}
+
 function calculateAngle(
   first: PosePoint | undefined,
   vertex: PosePoint | undefined,
@@ -1223,7 +1316,13 @@ function getMilitaryPressTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
 ): TechniqueFeedback {
-  if (!keypoints || !side) return defaultTechniqueFeedback;
+  if (!keypoints || !side) {
+    return {
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.',
+    };
+  }
 
   const indexes = sideKeypoints[side];
   const shoulder = keypoints[indexes.shoulder];
@@ -2075,6 +2174,12 @@ function Home() {
   const exerciseStartedRef = useRef(false);
   const [exerciseStarted, setExerciseStarted] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraGuidance, setCameraGuidance] = useState<CameraGuidance>({
+    tone: 'checking',
+    message: 'Ajustando la cámara',
+    detail: 'Mantente dentro del encuadre para validar tu posición.',
+  });
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
   const [modelStatus, setModelStatus] = useState('Modelo sin iniciar');
@@ -2223,6 +2328,14 @@ function Home() {
       const nextDominantSideResult = getDominantSide(pose?.keypoints);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
+      const nextCameraGuidance = getCameraGuidance(
+        selectedExerciseForFrame,
+        pose?.keypoints,
+        nextDominantSide,
+        video.videoWidth,
+        video.videoHeight,
+      );
+      const frameCameraReady = nextCameraGuidance.tone === 'ready';
       const rawAngle = selectedExerciseForFrame === 'sentadillas'
         ? calculateSquatAngle(pose?.keypoints)
         : calculateExerciseAngle(
@@ -2241,6 +2354,7 @@ function Home() {
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
+        && frameCameraReady
         && selectedExerciseRef.current === 'sentadillas'
         && rawAngle !== null
       ) {
@@ -2282,6 +2396,7 @@ function Home() {
         (selectedExerciseRef.current === 'dominadas'
           || selectedExerciseRef.current === 'dominadas-supinas')
         && exerciseStartedRef.current
+        && frameCameraReady
         && rawAngle !== null
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
@@ -2332,7 +2447,7 @@ function Home() {
           );
         }
       }
-      if (exerciseStartedRef.current && repetitionConfig && repetitionAngle !== null) {
+      if (exerciseStartedRef.current && frameCameraReady && repetitionConfig && repetitionAngle !== null) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
@@ -2370,6 +2485,8 @@ function Home() {
 
       fpsFramesRef.current += 1;
       setPoseDetected(visiblePoints >= 5);
+      setCameraReady(frameCameraReady);
+      setCameraGuidance(nextCameraGuidance);
       setDominantSide(nextDominantSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
       setAngle(displayAngle);
@@ -2477,6 +2594,12 @@ function Home() {
     setExerciseStarted(preserveExerciseStarted);
     stopResources();
     setPoseDetected(false);
+    setCameraReady(false);
+    setCameraGuidance({
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Mantente dentro del encuadre para validar tu posición.',
+    });
     setErrorMessage('');
     setModelStatus('Cargando modelo...');
     setVideoResolution({ width: 0, height: 0 });
@@ -2589,13 +2712,13 @@ function Home() {
       return;
     }
 
-    if (!poseDetected) return;
+    if (!poseDetected || !cameraReady) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
-  }, [phase, poseDetected]);
+  }, [cameraReady, phase, poseDetected]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -2604,6 +2727,12 @@ function Home() {
     exerciseStartedRef.current = false;
     setExerciseStarted(false);
     setPoseDetected(false);
+    setCameraReady(false);
+    setCameraGuidance({
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Mantente dentro del encuadre para validar tu posición.',
+    });
     setErrorMessage('');
     setAngle(null);
     angleDisplaySamplesRef.current = [];
@@ -2645,9 +2774,13 @@ function Home() {
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? 'Colócate en posición y pulsa Iniciar curso'
+      ? cameraReady
+        ? 'Colócate en posición y pulsa Iniciar curso'
+        : cameraGuidance.message
       : poseDetected
-        ? 'Cuerpo detectado ✓'
+        ? cameraReady
+          ? 'Cuerpo detectado ✓'
+          : cameraGuidance.message
         : 'Buscando tu cuerpo...';
   const modelStatusClass = modelStatus.includes('✓')
     ? 'diagnostic-value diagnostic-value--success'
@@ -2671,16 +2804,25 @@ function Home() {
     : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
       ? pullupFeedback
       : techniqueFeedback;
-  const angleIsGood = exerciseStarted && angleFeedback.tone === 'success';
-  const diagnosisStatus = !exerciseStarted
-    ? 'LISTO PARA INICIAR'
-    : angle === null
+  const angleIsGood = exerciseStarted && cameraReady && angleFeedback.tone === 'success';
+  const diagnosisTone = cameraReady
+    ? angleFeedback.tone
+    : cameraGuidance.tone === 'warning'
+      ? 'warning'
+      : 'checking';
+  const diagnosisStatus = phase !== 'tracking'
+    ? 'ESPERANDO'
+    : !cameraReady
+      ? 'AJUSTAR CÁMARA'
+      : !exerciseStarted
+        ? 'LISTO PARA INICIAR'
+        : angle === null
       ? 'ESPERANDO'
       : angleFeedback.tone === 'success'
         ? 'BIEN'
         : angleFeedback.tone === 'checking'
           ? 'EN PROCESO'
-          : 'AJUSTAR';
+        : 'AJUSTAR';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
   const squatPhaseLabel = squatPhase === 'esperando arriba'
     ? 'Colócate arriba'
@@ -2859,27 +3001,39 @@ function Home() {
                 <div className="exercise-start-copy">
                   <strong>
                     {exerciseStarted
-                      ? 'Ejercicio iniciado'
+                      ? cameraReady
+                        ? 'Ejercicio iniciado'
+                        : 'Ajusta la cámara para continuar'
                       : poseDetected
-                        ? '¿Ya estás listo?'
+                        ? cameraReady
+                          ? '¿Ya estás listo?'
+                          : cameraGuidance.message
                         : 'Buscando tu cuerpo...'}
                   </strong>
                   <span>
                     {exerciseStarted
-                      ? 'El contador está activo. Detén el curso cuando hayas terminado.'
+                      ? cameraReady
+                        ? 'El contador está activo. Detén el curso cuando hayas terminado.'
+                        : cameraGuidance.detail
                       : poseDetected
-                        ? 'Colócate en posición y comienza cuando quieras.'
+                        ? cameraReady
+                          ? 'Colócate en posición y comienza cuando quieras.'
+                          : cameraGuidance.detail
                         : 'Mantente dentro del encuadre para habilitar el inicio.'}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="exercise-start-button"
-                  disabled={phase !== 'tracking' || (!poseDetected && !exerciseStarted)}
+                  disabled={phase !== 'tracking' || (!cameraReady && !exerciseStarted)}
                   aria-pressed={exerciseStarted}
                   onClick={toggleExercise}
                 >
-                  {exerciseStarted ? 'Detener curso' : poseDetected ? 'Iniciar curso' : 'Esperando detección'}
+                  {exerciseStarted
+                    ? 'Detener curso'
+                    : cameraReady
+                      ? 'Iniciar curso'
+                      : 'Ajusta la cámara'}
                 </button>
               </div>
               {angleIsGood && angle !== null && (
@@ -3151,7 +3305,19 @@ function Home() {
                 </div>
               </div>
               <div
-                className={`simple-diagnosis simple-diagnosis--${angleFeedback.tone}`}
+                className={`camera-guidance camera-guidance--${cameraGuidance.tone}`}
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <Camera size={16} strokeWidth={1.9} aria-hidden="true" />
+                <div>
+                  <strong>{cameraGuidance.message}</strong>
+                  <small>{cameraGuidance.detail}</small>
+                </div>
+              </div>
+              <div
+                className={`simple-diagnosis simple-diagnosis--${diagnosisTone}`}
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
@@ -3164,9 +3330,11 @@ function Home() {
                   <span>Resultado</span>
                   <strong>{diagnosisStatus}</strong>
                 </div>
-                {diagnosisStatus === 'AJUSTAR' && angle !== null && (
+                {diagnosisStatus === 'AJUSTAR CÁMARA' ? (
+                  <p>{cameraGuidance.detail}</p>
+                ) : diagnosisStatus === 'AJUSTAR' && angle !== null ? (
                   <p>{angleFeedback.message}</p>
-                )}
+                ) : null}
               </div>
               <div className="diagnostic-dock">
                 <button
