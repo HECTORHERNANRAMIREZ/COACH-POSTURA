@@ -142,6 +142,7 @@ type ExerciseDefinition = {
   name: string;
   description: string;
   angleLabel: string;
+  cameraNote?: string;
 };
 const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
@@ -249,24 +250,28 @@ const exercises: ExerciseDefinition[] = [
     name: 'Fondos en barra',
     description: 'Inclina el cuerpo y desciende hasta 90° de codo.',
     angleLabel: 'Codo · objetivo 90°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'dominadas',
     name: 'Dominadas en barra',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'dominadas-supinas',
     name: 'Dominadas supinas',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
     description: 'Lleva el ángulo cadera–hombro–codo a 25°–60° y vuelve a subir.',
     angleLabel: 'Cadera–hombro–codo · objetivo 25°–60°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'remo-barra',
@@ -2687,6 +2692,9 @@ function Home() {
                         <span className="exercise-card-copy">
                           <strong>{exercise.name}</strong>
                           <small>{exercise.description}</small>
+                          {exercise.cameraNote && (
+                            <small className="exercise-card-note">{exercise.cameraNote}</small>
+                          )}
                         </span>
                         <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
                       </button>
@@ -2709,7 +2717,8 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {selectedExercise === 'flexiones'
+                      {activeExercise?.cameraNote
+                        ?? (selectedExercise === 'flexiones'
                         || selectedExercise === 'flexiones-declinadas'
                         || selectedExercise === 'flexiones-pica'
                         || selectedExercise === 'press-militar'
@@ -2724,7 +2733,7 @@ function Home() {
                         || selectedExercise === 'zancada-banco'
                         || selectedExercise === 'plancha'
                         ? 'Vista lateral recomendada'
-                        : 'Vista frontal'}
+                        : 'Vista frontal')}
                       {' · '}
                       {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
                     </span>
