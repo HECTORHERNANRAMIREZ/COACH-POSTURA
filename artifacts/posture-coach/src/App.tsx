@@ -183,6 +183,11 @@ type PoseTrack = {
   area: number;
   lostFrames: number;
 };
+type PosePointMemory = {
+  point: PosePoint;
+  missingFrames: number;
+};
+type BarbellRowPointMemory = Partial<Record<number, PosePointMemory>>;
 type DiagnosticPoint = {
   label: string;
   score: number | null;
@@ -422,6 +427,8 @@ const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
 const FACE_POINT_MIN_SCORE = 0.3;
 const CAMERA_POINT_MIN_SCORE = 0.45;
+const ROW_ARM_POINT_MIN_SCORE = 0.28;
+const ROW_STALE_POINT_FRAMES = 4;
 const CAMERA_FRAME_MARGIN = 0.06;
 
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
@@ -833,6 +840,7 @@ type BrowserGlobals = Window & {
     SupportedModels: { MoveNet: unknown };
     movenet: {
       modelType: {
+        SINGLEPOSE_LIGHTNING: unknown;
         MULTIPOSE_LIGHTNING: unknown;
       };
     };
@@ -1022,6 +1030,100 @@ function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult
   return best.count ? { side: best.side, average: best.average } : null;
 }
 
+function getBarbellRowDominantSide(
+  keypoints: PosePoint[] | undefined,
+  previousSide: PoseSide | null,
+): DominantSideResult | null {
+  if (!keypoints) return null;
+
+  const sides: PoseSide[] = ['left', 'right'];
+  const supportJoints: Array<keyof typeof sideKeypoints.left> = [
+    'shoulder',
+    'hip',
+    'knee',
+    'ankle',
+  ];
+  const armJoints: Array<keyof typeof sideKeypoints.left> = ['elbow', 'wrist'];
+  const scores = sides.map((side) => {
+    const indexes = sideKeypoints[side];
+    const supportScores = supportJoints
+      .map((joint) => keypoints[indexes[joint]]?.score ?? 0);
+    const armScores = armJoints
+      .map((joint) => keypoints[indexes[joint]]?.score ?? 0);
+    const supportAverage = supportScores.reduce((sum, score) => sum + score, 0)
+      / supportScores.length;
+    const armAverage = armScores.reduce((sum, score) => sum + score, 0) / armScores.length;
+    const supportCount = supportScores.filter((score) => score >= CAMERA_POINT_MIN_SCORE).length;
+
+    return {
+      side,
+      average: supportAverage * 0.78 + armAverage * 0.22,
+      supportAverage,
+      supportCount,
+    };
+  });
+
+  const strongest = scores.sort((first, second) => second.average - first.average)[0];
+  if (!strongest) return null;
+  const previous = previousSide
+    ? scores.find((candidate) => candidate.side === previousSide)
+    : null;
+  const shouldKeepPreviousSide = Boolean(
+    previous
+    && strongest.side !== previous.side
+    && previous.supportCount >= 3
+    && previous.supportAverage >= 0.35
+    && strongest.average - previous.average < 0.18,
+  );
+  const selected = shouldKeepPreviousSide && previous ? previous : strongest;
+
+  return selected.supportCount || selected.average > 0
+    ? { side: selected.side, average: selected.average }
+    : null;
+}
+
+function stabilizeBarbellRowArmPoints(
+  keypoints: PosePoint[] | undefined,
+  memory: BarbellRowPointMemory,
+) {
+  if (!keypoints) return undefined;
+
+  const stabilized = [...keypoints];
+  [7, 8, 9, 10].forEach((index) => {
+    const current = keypoints[index];
+    const previous = memory[index];
+    if (current && (current.score ?? 0) >= 0.2) {
+      const point = previous
+        ? {
+            ...current,
+            x: current.x * 0.72 + previous.point.x * 0.28,
+            y: current.y * 0.72 + previous.point.y * 0.28,
+          }
+        : current;
+      stabilized[index] = point;
+      memory[index] = { point, missingFrames: 0 };
+      return;
+    }
+
+    if (previous && previous.missingFrames < ROW_STALE_POINT_FRAMES) {
+      const point = {
+        ...previous.point,
+        score: Math.max(ROW_ARM_POINT_MIN_SCORE, (previous.point.score ?? 0.3) * 0.86),
+      };
+      stabilized[index] = point;
+      memory[index] = {
+        point,
+        missingFrames: previous.missingFrames + 1,
+      };
+      return;
+    }
+
+    delete memory[index];
+  });
+
+  return stabilized;
+}
+
 function hasFaceDetected(keypoints: PosePoint[] | undefined) {
   return [0, 1, 2, 3, 4].some((index) => (
     (keypoints?.[index]?.score ?? 0) >= FACE_POINT_MIN_SCORE
@@ -1066,11 +1168,18 @@ function getCameraGuidance(
     ankle: 'tobillo',
   };
   const requiredPoints = requiredJoints.map((joint) => ({
+    joint,
     label: jointLabels[joint],
     point: keypoints[indexes[joint]],
   }));
   const missingLabels = requiredPoints
-    .filter(({ point }) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+    .filter(({ joint, point }) => {
+      const minimumScore = exercise === 'remo-barra'
+        && (joint === 'elbow' || joint === 'wrist')
+        ? ROW_ARM_POINT_MIN_SCORE
+        : CAMERA_POINT_MIN_SCORE;
+      return (point?.score ?? 0) < minimumScore;
+    })
     .map(({ label }) => label);
 
   if (missingLabels.length) {
@@ -1856,15 +1965,20 @@ function isBarbellRowTechniqueValid(
   if (!keypoints || !side) return false;
 
   const indexes = sideKeypoints[side];
-  const requiredPoints = [
+  const bodyPoints = [
     keypoints[indexes.shoulder],
-    keypoints[indexes.elbow],
-    keypoints[indexes.wrist],
     keypoints[indexes.hip],
     keypoints[indexes.knee],
     keypoints[indexes.ankle],
   ];
-  if (requiredPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)) {
+  const armPoints = [
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  ];
+  if (
+    bodyPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+    || armPoints.some((point) => (point?.score ?? 0) < ROW_ARM_POINT_MIN_SCORE)
+  ) {
     return false;
   }
 
@@ -2297,6 +2411,7 @@ function Home() {
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
+  const barbellRowPointMemoryRef = useRef<BarbellRowPointMemory>({});
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -2363,6 +2478,7 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
+    barbellRowPointMemoryRef.current = {};
   }, []);
 
   const syncVideoSize = useCallback(() => {
@@ -2392,7 +2508,7 @@ function Home() {
         video.videoHeight,
         primaryPoseTrackRef.current,
       );
-      const pose = primaryPose?.pose;
+      const detectedPose = primaryPose?.pose;
       if (primaryPose) {
         primaryPoseTrackRef.current = primaryPose.track;
       } else if (primaryPoseTrackRef.current) {
@@ -2401,11 +2517,24 @@ function Home() {
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
+      const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
+      const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
+        ? getBarbellRowDominantSide(detectedPose?.keypoints, previousSideRef.current)
+        : getDominantSide(detectedPose?.keypoints);
+      const nextDominantSide = nextDominantSideResult?.side ?? null;
+      const pose = detectedPose
+        ? {
+            ...detectedPose,
+            keypoints: selectedExerciseForFrame === 'remo-barra'
+              ? stabilizeBarbellRowArmPoints(
+                  detectedPose.keypoints,
+                  barbellRowPointMemoryRef.current,
+                )
+              : detectedPose.keypoints,
+          }
+        : undefined;
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
-      const nextDominantSideResult = getDominantSide(pose?.keypoints);
-      const nextDominantSide = nextDominantSideResult?.side ?? null;
-      const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
       const nextCameraGuidance = getCameraGuidance(
         selectedExerciseForFrame,
         pose?.keypoints,
@@ -2671,7 +2800,7 @@ function Home() {
     if (!browser.poseDetection) throw new Error('El análisis no está disponible.');
     return browser.poseDetection.createDetector(
       browser.poseDetection.SupportedModels.MoveNet,
-      { modelType: browser.poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING },
+      { modelType: browser.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING },
     );
   }, []);
 
