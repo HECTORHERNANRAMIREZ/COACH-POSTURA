@@ -353,7 +353,9 @@ const SUPINE_PULLUP_SHOULDER_MIN_ANGLE = 30;
 const SUPINE_PULLUP_SHOULDER_MAX_ANGLE = 45;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
-const DIP_MIN_FORWARD_LEAN = 8;
+// La inclinación y la alineación corporal de fondos quedan desactivadas
+// temporalmente: para este ejercicio basta con validar el ángulo del codo.
+// const DIP_MIN_FORWARD_LEAN = 8;
 const PLANK_MAX_HIP_SAG_RATIO = 0.08;
 const PLANK_MAX_HIP_RAISE_RATIO = 0.08;
 const PLANK_MIN_BODY_LINE_ANGLE = 162;
@@ -1414,18 +1416,11 @@ function getDipTechniqueFeedback(
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
-  const hip = keypoints[indexes.hip];
-  const ankle = keypoints[indexes.ankle];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
-  const chinOverBar = isChinOverBar(keypoints, side);
-  const forwardLeanAngle = calculateForwardLeanAngle(shoulder, hip);
 
-  if (elbowAngle === null || bodyLineAngle === null || forwardLeanAngle === null) {
+  if (elbowAngle === null) {
     return defaultTechniqueFeedback;
   }
-
-  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
 
   if (elbowAngle > DIP_VALID_MAX_ANGLE) {
     return {
@@ -1441,25 +1436,11 @@ function getDipTechniqueFeedback(
       detail: `Tu codo está a ${elbowAngle}°. Sube un poco; el objetivo es aproximadamente 90°.`,
     };
   }
-  if (forwardLeanAngle < DIP_MIN_FORWARD_LEAN) {
-    return {
-      tone: 'warning',
-      message: 'Inclina el cuerpo hacia adelante',
-      detail: `La inclinación detectada es de ${forwardLeanAngle}°. Lleva ligeramente el pecho hacia adelante.`,
-    };
-  }
-  if (bodyLineDeviation > 18) {
-    return {
-      tone: 'danger',
-      message: 'Mantén el cuerpo alineado',
-      detail: 'Inclínate desde todo el cuerpo; evita arquear la espalda o doblarte desde la cadera.',
-    };
-  }
 
   return {
     tone: 'success',
     message: 'Fondo correcto',
-    detail: `Codo a ${elbowAngle}° · inclinación ${forwardLeanAngle}°. Sube con control sin bloquear bruscamente.`,
+    detail: `Codo a ${elbowAngle}°. La profundidad está dentro del rango correcto.`,
   };
 }
 
