@@ -258,8 +258,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'dominadas-supinas',
     name: 'Dominadas supinas',
-    description: 'Sube con control, codos cerca del torso y hombros estables.',
-    angleLabel: 'Codo · objetivo 90° · hombro 30–45°',
+    description: 'Mismo recorrido que la dominada, con agarre supino.',
+    angleLabel: 'Extensión completa · cabeza sobre muñecas',
   },
   {
     id: 'jalon',
@@ -347,10 +347,6 @@ const PULLUP_BOTTOM_MIN_ANGLE = 165;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 160;
 const PULLUP_SMOOTHING_SAMPLES = 5;
-const SUPINE_PULLUP_TOP_MIN_ANGLE = 75;
-const SUPINE_PULLUP_TOP_MAX_ANGLE = 105;
-const SUPINE_PULLUP_SHOULDER_MIN_ANGLE = 30;
-const SUPINE_PULLUP_SHOULDER_MAX_ANGLE = 45;
 const DIP_VALID_MIN_ANGLE = 80;
 const DIP_VALID_MAX_ANGLE = 100;
 // La inclinación y la alineación corporal de fondos quedan desactivadas
@@ -701,8 +697,8 @@ const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 };
 
 const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
-  topMinAngle: SUPINE_PULLUP_TOP_MIN_ANGLE,
-  topMaxAngle: SUPINE_PULLUP_TOP_MAX_ANGLE,
+  topMinAngle: 0,
+  topMaxAngle: 180,
 };
 
 function advancePullupTracker(
@@ -1502,72 +1498,33 @@ function getSupinePullupTechniqueFeedback(
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
-  const hip = keypoints[indexes.hip];
-  const ankle = keypoints[indexes.ankle];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-  const shoulderAbductionAngle = calculateAngle(hip, shoulder, elbow);
-  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
 
-  if (
-    elbowAngle === null
-    || shoulderAbductionAngle === null
-    || bodyLineAngle === null
-    || !shoulder
-    || !wrist
-  ) {
+  if (elbowAngle === null || !shoulder || !wrist) {
     return defaultTechniqueFeedback;
   }
 
-  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
-  const wristsAboveShoulders = wrist.y < shoulder.y;
+  const headOverWrists = isHeadOverWrists(keypoints, side);
 
-  if (!wristsAboveShoulders) {
-    return {
-      tone: 'warning',
-      message: 'Mantén las manos sobre la cabeza',
-      detail: 'Colócate debajo de la barra y conserva las muñecas por encima de los hombros.',
-    };
-  }
-  if (bodyLineDeviation > 25) {
-    return {
-      tone: 'warning',
-      message: 'Evita balancearte',
-      detail: 'Contrae el abdomen y mantén cabeza, espalda, cadera y piernas controladas.',
-    };
-  }
-  if (shoulderAbductionAngle > SUPINE_PULLUP_SHOULDER_MAX_ANGLE) {
-    return {
-      tone: 'warning',
-      message: 'Acerca los codos al torso',
-      detail: `La abducción del hombro es de ${shoulderAbductionAngle}°. Busca entre 30° y 45° respecto al torso.`,
-    };
-  }
-  if (shoulderAbductionAngle < SUPINE_PULLUP_SHOULDER_MIN_ANGLE) {
-    return {
-      tone: 'warning',
-      message: 'No cierres demasiado los codos',
-      detail: `La abducción del hombro es de ${shoulderAbductionAngle}°. Abre ligeramente hasta 30°–45°.`,
-    };
-  }
-  if (elbowAngle > SUPINE_PULLUP_TOP_MAX_ANGLE) {
+  if (elbowAngle >= PULLUP_BOTTOM_MIN_ANGLE) {
     return {
       tone: 'checking',
-      message: 'Sigue subiendo',
-      detail: `Tu codo está a ${elbowAngle}°. Acércate a 90° al final de la subida.`,
+      message: 'Extiende bien los codos',
+      detail: `Codo a ${elbowAngle}°. Desde esta extensión inicia la subida con agarre supino.`,
     };
   }
-  if (elbowAngle < SUPINE_PULLUP_TOP_MIN_ANGLE) {
+  if (!headOverWrists) {
     return {
       tone: 'warning',
-      message: 'No cierres demasiado el codo',
-      detail: `Tu codo está a ${elbowAngle}°. El objetivo al final de la subida es aproximadamente 90°.`,
+      message: 'Sube un poco más',
+      detail: 'La cabeza todavía no ha pasado por encima de las muñecas.',
     };
   }
 
   return {
     tone: 'success',
-    message: 'Dominada supina correcta',
-    detail: `Codo a ${elbowAngle}° · hombro ${shoulderAbductionAngle}°. Desciende con control y sin balancearte.`,
+    message: 'Dominada supina válida',
+    detail: `Codo a ${elbowAngle}° y cabeza por encima de las muñecas.`,
   };
 }
 
@@ -2256,7 +2213,7 @@ function Home() {
             tone: 'success',
             message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
             detail: isSupinePullup
-              ? `Codo final ${pullupUpdate.completedMinimumAngle}° dentro de 75–105° · extensión inicial entre 165–180° · barbilla sobre la barra.`
+              ? 'Extensión de codos entre 165–180° · cabeza por encima de las muñecas · agarre supino.'
               : `Extensión de codos entre 165–180° · cabeza por encima de las muñecas.`,
           });
         } else if (pullupUpdate.tracker.event === 'no-top') {
@@ -2264,7 +2221,7 @@ function Home() {
             tone: 'warning',
             message: 'No rep · subida incompleta',
             detail: isSupinePullup
-              ? `Solo llegaste a ${pullupUpdate.completedMinimumAngle}°. Sube hasta 75–105° y pasa la barbilla sobre la barra.`
+              ? 'Sube hasta pasar la cabeza por encima de las muñecas.'
               : 'Sube hasta pasar la cabeza por encima de las muñecas.',
           });
         } else if (pullupUpdate.tracker.event === 'no-lockout') {
@@ -2862,7 +2819,7 @@ function Home() {
                   </div>
                   <p>
                     {selectedExercise === 'dominadas-supinas'
-                      ? 'Inicio 165–180° · final 75–105° (objetivo 90°) · hombro 30–45° · barbilla sobre la barra.'
+                      ? 'Extensión de codos 165–180° · cabeza por encima de las muñecas · agarre supino.'
                        : 'Extensión de codos 165–180° · cabeza por encima de las muñecas.'}
                   </p>
                 </div>
@@ -2873,6 +2830,15 @@ function Home() {
                   <ul>
                     <li><b>Extensión:</b> inicia y termina con los codos bien extendidos, entre 165° y 180°.</li>
                     <li><b>Altura:</b> sube hasta que la cabeza pase por encima de las muñecas.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'dominadas-supinas' && (
+                <details className="pulldown-instructions">
+                  <summary>Qué debe cumplir tu dominada supina</summary>
+                  <ul>
+                    <li><b>Agarre:</b> usa el agarre supino que muestra la imagen.</li>
+                    <li><b>Recorrido:</b> extiende bien los codos, sube hasta que la cabeza pase por encima de las muñecas y vuelve a extender los brazos.</li>
                   </ul>
                 </details>
               )}
