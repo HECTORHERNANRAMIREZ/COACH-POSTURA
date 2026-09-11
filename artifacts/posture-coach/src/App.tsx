@@ -142,7 +142,7 @@ type ExerciseDefinition = {
   name: string;
   description: string;
   angleLabel: string;
-  cameraNote?: string;
+  cameraNote: string;
 };
 const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
@@ -297,24 +297,28 @@ const exercises: ExerciseDefinition[] = [
     name: 'Remo con barra',
     description: 'Inclina el torso 45–75° y lleva la barra hacia el cuerpo sin encorvarte.',
     angleLabel: 'Torso 45–75° · codo 70–115°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'flexiones',
     name: 'Flexiones de pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
     angleLabel: 'Codo · torso · objetivo 45°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'flexiones-declinadas',
     name: 'Flexiones declinadas',
     description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
     angleLabel: 'Codo 30–60° · cuerpo 162–180°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'flexiones-pica',
     name: 'Flexiones en pica',
     description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
     angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'press-militar',
@@ -328,6 +332,7 @@ const exercises: ExerciseDefinition[] = [
     name: 'Extensiones de tríceps en polea alta',
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'curl-biceps',
@@ -341,24 +346,28 @@ const exercises: ExerciseDefinition[] = [
     name: 'Sentadillas',
     description: 'Mide la profundidad y el control de tus piernas.',
     angleLabel: 'Cadera · rodilla · tobillo',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'zancadas',
     name: 'Zancadas dinámicas',
     description: 'Baja con control hasta formar 90° en las piernas.',
     angleLabel: 'Rodilla delantera · objetivo 90°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'zancada-banco',
     name: 'Zancada en banco',
     description: 'Eleva el pie trasero y controla la rodilla delantera.',
     angleLabel: 'Rodilla 80–100° · torso 15–20°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
     id: 'plancha',
     name: 'Plancha',
     description: 'Mantén la cadera alineada y el cuerpo recto.',
     angleLabel: 'Codo · objetivo 90°',
+    cameraNote: 'Nota: debe grabarse de lado.',
   },
 ];
 
@@ -2967,23 +2976,7 @@ function Home() {
                   <div className="active-meta">
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
-                      {activeExercise?.cameraNote
-                        ?? (selectedExercise === 'flexiones'
-                        || selectedExercise === 'flexiones-declinadas'
-                        || selectedExercise === 'flexiones-pica'
-                        || selectedExercise === 'press-militar'
-                        || selectedExercise === 'triceps-polea-alta'
-                        || selectedExercise === 'curl-biceps'
-                        || selectedExercise === 'fondos'
-                        || selectedExercise === 'dominadas'
-                        || selectedExercise === 'dominadas-supinas'
-                        || selectedExercise === 'jalon'
-                        || selectedExercise === 'remo-barra'
-                        || selectedExercise === 'zancadas'
-                        || selectedExercise === 'zancada-banco'
-                        || selectedExercise === 'plancha'
-                        ? 'Vista lateral recomendada'
-                        : 'Vista frontal')}
+                      {activeExercise?.cameraNote ?? 'Nota: debe grabarse de lado.'}
                       {' · '}
                       {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
                     </span>
