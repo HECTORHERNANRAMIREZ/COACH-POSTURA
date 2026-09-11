@@ -677,6 +677,42 @@
   padding: 0.2rem 0.25rem 0.95rem;
 }
 
+.active-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.camera-switch-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 2rem;
+  padding: 0.38rem 0.58rem;
+  border: 1px solid rgba(57, 255, 106, 0.28);
+  border-radius: 0.68rem;
+  background: rgba(57, 255, 106, 0.08);
+  color: rgba(232, 242, 250, 0.86);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.camera-switch-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(57, 255, 106, 0.58);
+  background: rgba(57, 255, 106, 0.16);
+  color: #f0f5fb;
+}
+
+.camera-switch-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
 .squat-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -819,7 +855,6 @@
 
 .video-stage video {
   display: block;
-  transform: scaleX(-1);
   background: #0a1424;
 }
 

@@ -161,6 +161,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   plancha: plankImage,
 };
 type PoseSide = 'left' | 'right';
+type CameraFacingMode = 'user' | 'environment';
 type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
 type PosePoint = { x: number; y: number; score?: number };
 type Pose = { keypoints?: PosePoint[] };
@@ -814,7 +815,12 @@ function loadScript(url: string, id: string) {
   });
 }
 
-function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, pose?: Pose) {
+function drawSkeleton(
+  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
+  pose?: Pose,
+  mirror = true,
+) {
   const width = video.videoWidth;
   const height = video.videoHeight;
   if (!width || !height) return;
@@ -836,17 +842,20 @@ function drawSkeleton(canvas: HTMLCanvasElement, video: HTMLVideoElement, pose?:
     const first = keypoints[start];
     const second = keypoints[end];
     if (!first || !second || (first.score ?? 0) < 0.3 || (second.score ?? 0) < 0.3) return;
+    const firstX = mirror ? width - first.x : first.x;
+    const secondX = mirror ? width - second.x : second.x;
     context.beginPath();
-    context.moveTo(width - first.x, first.y);
-    context.lineTo(width - second.x, second.y);
+    context.moveTo(firstX, first.y);
+    context.lineTo(secondX, second.y);
     context.stroke();
   });
 
   context.shadowBlur = Math.max(3, width / 200);
   keypoints.forEach((point) => {
     if ((point.score ?? 0) < 0.3) return;
+    const pointX = mirror ? width - point.x : point.x;
     context.beginPath();
-    context.arc(width - point.x, point.y, Math.max(4, width / 115), 0, Math.PI * 2);
+    context.arc(pointX, point.y, Math.max(4, width / 115), 0, Math.PI * 2);
     context.fillStyle = GREEN;
     context.fill();
   });
@@ -2056,9 +2065,11 @@ function Home() {
   const animationFrameRef = useRef<number | null>(null);
   const activeRef = useRef(false);
   const busyRef = useRef(false);
+  const cameraFacingModeRef = useRef<CameraFacingMode>('user');
   const [phase, setPhase] = useState<SessionPhase>('exercise-select');
   const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
   const selectedExerciseRef = useRef<ExerciseId | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
   const [poseDetected, setPoseDetected] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
@@ -2394,7 +2405,14 @@ function Home() {
         selectMostConfident(pose?.keypoints, 'Cadera', 11, 12),
         selectMostConfident(pose?.keypoints, 'Rodilla', 13, 14),
       ]);
-      if (canvasRef.current) drawSkeleton(canvasRef.current, video, pose);
+      if (canvasRef.current) {
+        drawSkeleton(
+          canvasRef.current,
+          video,
+          pose,
+          cameraFacingModeRef.current === 'user',
+        );
+      }
     } catch {
       if (activeRef.current) {
         incrementErrorCount();
@@ -2481,7 +2499,7 @@ function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          facingMode: 'user',
+          facingMode: cameraFacingModeRef.current,
           width: { ideal: 1280 },
           height: { ideal: 1280 },
         },
@@ -2518,6 +2536,16 @@ function Home() {
       busyRef.current = false;
     }
   }, [loadDetector, processFrame, stopResources, syncVideoSize]);
+
+  const toggleCamera = useCallback(() => {
+    if (busyRef.current || !selectedExerciseRef.current) return;
+    const nextFacingMode: CameraFacingMode = cameraFacingModeRef.current === 'user'
+      ? 'environment'
+      : 'user';
+    cameraFacingModeRef.current = nextFacingMode;
+    setCameraFacingMode(nextFacingMode);
+    void startCamera(selectedExerciseRef.current);
+  }, [startCamera]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -2749,7 +2777,19 @@ function Home() {
                     </span>
                   </div>
                 </div>
-                <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
+                <div className="active-header-actions">
+                  <button
+                    type="button"
+                    className="camera-switch-button"
+                    disabled={phase !== 'tracking'}
+                    aria-label={`Cambiar a cámara ${cameraFacingMode === 'user' ? 'trasera' : 'delantera'}`}
+                    onClick={toggleCamera}
+                  >
+                    <Camera size={15} strokeWidth={1.9} aria-hidden="true" />
+                    <span>{cameraFacingMode === 'user' ? 'Delantera' : 'Trasera'}</span>
+                  </button>
+                  <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
+                </div>
               </div>
               {selectedExercise === 'sentadillas' && (
                 <div className="squat-summary" aria-label="Resumen de sentadillas">
@@ -2937,6 +2977,7 @@ function Home() {
                   muted
                   autoPlay
                   playsInline
+                  style={{ transform: cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none' }}
                   onLoadedMetadata={syncVideoSize}
                   data-testid="video-camera-preview"
                   aria-label={`Vista previa de la cámara ${
