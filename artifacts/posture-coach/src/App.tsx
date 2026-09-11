@@ -2938,39 +2938,39 @@ function Home() {
                 </div>
               )}
               {selectedExercise === 'jalon' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones del jalón al pecho">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Torso:</b> inclínalo hacia atrás entre 15° y 20°; no superes 30°.</li>
                     <li><b>Agarre:</b> brazos a 75°–80° respecto al torso y manos a aproximadamente 1,5 veces el ancho de tus hombros.</li>
                     <li><b>Codos:</b> bájalos 30°–45° hacia delante y termina cerca de 90°, como si quisieras llevarlos hacia los bolsillos.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'remo-barra' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones del remo con barra">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Torso:</b> inclínalo hacia delante entre 45° y 75° respecto a la vertical, con la espalda neutra y la cadera atrás.</li>
                     <li><b>Rodillas:</b> mantenlas ligeramente flexionadas, aproximadamente entre 150° y 180°; no las bloquees.</li>
                     <li><b>Codos:</b> llévalos cerca del cuerpo, entre 20° y 60° respecto al torso, sin abrirlos formando una “T”.</li>
                     <li><b>Movimiento:</b> lleva la barra hacia el cuerpo con control y regresa lentamente sin perder la postura.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'flexiones-pica' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las flexiones en pica">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Codos:</b> mantenlos entre 45° y 60° respecto al cuerpo; evita abrirlos formando una “T”.</li>
                     <li><b>Muñecas y hombros:</b> coloca las manos debajo de los hombros, formando aproximadamente 90° con el suelo.</li>
                     <li><b>Cuerpo:</b> mantén cabeza, espalda, cadera y talones en una línea firme durante todo el movimiento.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'flexiones-declinadas' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las flexiones declinadas">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Apoyo:</b> coloca los pies sobre un banco o soporte estable y mantén el cuerpo en una línea firme.</li>
                     <li><b>Manos:</b> apóyalas debajo de los hombros, con los dedos abiertos y el abdomen activo.</li>
@@ -2978,11 +2978,11 @@ function Home() {
                     <li><b>Cuerpo:</b> mantén hombros, cadera y tobillos alineados entre 162° y 180°; no dejes caer la cadera.</li>
                     <li><b>Movimiento:</b> baja el pecho de forma controlada y sube sin bloquear bruscamente los codos.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'press-militar' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones del press militar con mancuernas">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Inclinación del banco:</b> ajústalo entre 75° y 80°. Evita dejarlo completamente vertical a 90°; una ligera inclinación ayuda a mantener la curvatura natural de la columna y reduce la presión lumbar.</li>
                     <li><b>Posición inicial:</b> apoya la espalda en el banco y coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
@@ -2990,11 +2990,11 @@ function Home() {
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'triceps-polea-alta' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las extensiones de tríceps en polea alta">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Posición:</b> colócate frente a la polea alta con los pies al ancho de los hombros y una ligera inclinación del torso, sin encorvarte.</li>
                     <li><b>Codos:</b> mantenlos pegados a los costados y fijos; no los lleves hacia delante ni los abras durante la serie.</li>
@@ -3002,11 +3002,11 @@ function Home() {
                     <li><b>Movimiento:</b> extiende los codos hacia abajo hasta acercarte a la extensión completa, sin bloquearlos bruscamente.</li>
                     <li><b>Regreso:</b> sube lentamente hasta un ángulo cómodo de 80–100° y repite sin balancear el torso.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'curl-biceps' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones del curl de bíceps">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Posición inicial:</b> ponte de pie con la espalda recta, los pies al ancho de los hombros y las rodillas ligeramente flexionadas.</li>
                     <li><b>Brazos:</b> mantén los brazos junto al torso, con los codos debajo de los hombros y los antebrazos apuntando hacia el suelo al comenzar.</li>
@@ -3014,31 +3014,31 @@ function Home() {
                     <li><b>Subida:</b> flexiona los codos sin llevarlos hacia delante ni hacia atrás; llega a un ángulo de 30°–45° sin tocar los hombros.</li>
                     <li><b>Bajada:</b> desciende lentamente hasta extender los brazos entre 145° y 180°, sin bloquear bruscamente los codos ni balancear el torso.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'dominadas-supinas' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las dominadas supinas">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Codo:</b> termina la subida cerca de 90° y desciende hasta extender los brazos entre 165° y 180°.</li>
                     <li><b>Hombro:</b> mantén los codos entre 30° y 45° de abducción respecto al torso.</li>
                     <li><b>Control:</b> pasa la barbilla sobre la barra sin balancearte y baja lentamente.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'zancadas' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las zancadas dinámicas">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Rodilla delantera:</b> llega aproximadamente a 90° y mantenla alineada verticalmente con el tobillo.</li>
                     <li><b>Cadera y rodilla trasera:</b> busca 90° en ambas, dejando la rodilla trasera cerca del suelo sin golpearlo.</li>
                     <li><b>Torso:</b> mantén una inclinación leve de 75°–80° respecto al suelo y controla cada transición.</li>
                   </ul>
-                </div>
+                </details>
               )}
               {selectedExercise === 'zancada-banco' && (
-                <div className="pulldown-instructions" aria-label="Indicaciones de las zancadas en banco">
-                  <strong>Cómo hacerlo</strong>
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Altura del banco:</b> debe quedar al nivel de tu rodilla o ligeramente por debajo cuando estés de pie junto a él.</li>
                     <li><b>Pie trasero:</b> apoya todo el pie activo sobre el banco, incluido el talón; evita dejarlo suspendido.</li>
@@ -3046,7 +3046,7 @@ function Home() {
                     <li><b>Torso:</b> inclínalo entre 15° y 20° hacia delante manteniendo la espalda recta.</li>
                     <li><b>Movimiento:</b> sube usando la pierna que está arriba y baja lentamente; extiende cadera y rodilla con control, sin bloquearlas de golpe.</li>
                   </ul>
-                </div>
+                </details>
               )}
               <div className="video-stage" style={{ aspectRatio: videoRatio }}>
                 <video
