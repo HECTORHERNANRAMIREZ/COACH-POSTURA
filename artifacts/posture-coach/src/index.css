@@ -1056,12 +1056,12 @@
 .dip-angle-hud {
   position: absolute;
   z-index: 3;
-  top: 0.9rem;
-  right: 0.9rem;
+  right: 0.8rem;
+  bottom: 1.05rem;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-  width: min(15rem, calc(100% - 1.8rem));
+  gap: 0.3rem;
+  width: min(8.4rem, calc(100% - 1.6rem));
   pointer-events: none;
 }
 
@@ -1069,48 +1069,46 @@
   display: grid;
   justify-items: center;
   min-width: 0;
-  padding: 0.58rem 0.48rem 0.52rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 0.85rem;
+  padding: 0.36rem 0.28rem 0.32rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.58rem;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035)),
-    rgba(8, 18, 32, 0.72);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0.7rem 1.6rem rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(18px) saturate(150%);
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.025)),
+    rgba(8, 18, 32, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px) saturate(125%);
   text-align: center;
 }
 
 .dip-angle-reading.is-valid {
-  border-color: rgba(57, 255, 106, 0.55);
+  border-color: rgba(57, 255, 106, 0.4);
   background:
-    linear-gradient(145deg, rgba(57, 255, 106, 0.16), rgba(255, 255, 255, 0.035)),
-    rgba(8, 24, 24, 0.74);
+    linear-gradient(145deg, rgba(57, 255, 106, 0.12), rgba(255, 255, 255, 0.025)),
+    rgba(8, 24, 24, 0.6);
 }
 
 .dip-angle-label {
-  color: rgba(208, 223, 238, 0.78);
-  font-size: 0.59rem;
-  font-weight: 750;
-  letter-spacing: 0.1em;
+  color: rgba(208, 223, 238, 0.68);
+  font-size: 0.45rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
 }
 
 .dip-angle-reading strong {
-  margin-top: 0.24rem;
-  color: #f0f5fb;
-  font-size: clamp(1.45rem, 7vw, 2.2rem);
-  font-weight: 650;
-  letter-spacing: -0.08em;
+  margin-top: 0.18rem;
+  color: rgba(240, 245, 251, 0.92);
+  font-size: clamp(1rem, 4.5vw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: -0.06em;
   line-height: 1;
 }
 
 .dip-angle-reading small {
-  margin-top: 0.3rem;
-  color: rgba(183, 255, 198, 0.72);
-  font-size: 0.5rem;
+  margin-top: 0.2rem;
+  color: rgba(183, 255, 198, 0.6);
+  font-size: 0.38rem;
   line-height: 1.2;
 }
 
