@@ -30,6 +30,7 @@ import {
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
 import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
+import muscleUpImage from '@assets/ChatGPT_Image_14_sept_2026,_13_48_26_1789411716868.png';
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
@@ -145,7 +146,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
   dominadas: pullupImage,
   'dominadas-supinas': supinePullupImage,
-  'muscle-up': pullupImage,
+  'muscle-up': muscleUpImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
