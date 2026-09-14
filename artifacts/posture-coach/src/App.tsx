@@ -666,6 +666,22 @@ function median(values: number[]) {
   return sorted[Math.floor(sorted.length / 2)] ?? null;
 }
 
+function smoothAngleReading(
+  value: number | null,
+  samplesRef: { current: number[] },
+) {
+  if (value === null) {
+    samplesRef.current = [];
+    return null;
+  }
+
+  samplesRef.current = [
+    ...samplesRef.current,
+    value,
+  ].slice(-ANGLE_DISPLAY_SAMPLES);
+  return median(samplesRef.current) ?? value;
+}
+
 type SquatTrackerUpdate = {
   tracker: SquatTracker;
   smoothedAngle: number;
@@ -2578,6 +2594,8 @@ function Home() {
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
+  const pulldownTorsoSamplesRef = useRef<number[]>([]);
+  const pulldownElbowSamplesRef = useRef<number[]>([]);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
@@ -2749,10 +2767,18 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].wrist],
           )
         : null;
+      const displayPulldownTorsoAngle = smoothAngleReading(
+        pulldownTorsoAngleForFrame,
+        pulldownTorsoSamplesRef,
+      );
+      const displayPulldownElbowAngle = smoothAngleReading(
+        pulldownElbowAngleForFrame,
+        pulldownElbowSamplesRef,
+      );
       setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
       setDipTorsoAngle(dipTorsoAngleForFrame);
-      setPulldownTorsoAngle(pulldownTorsoAngleForFrame);
-      setPulldownElbowAngle(pulldownElbowAngleForFrame);
+      setPulldownTorsoAngle(displayPulldownTorsoAngle);
+      setPulldownElbowAngle(displayPulldownElbowAngle);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -3057,6 +3083,8 @@ function Home() {
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
     setPulldownElbowAngle(null);
+    pulldownTorsoSamplesRef.current = [];
+    pulldownElbowSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3184,6 +3212,8 @@ function Home() {
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
     setPulldownElbowAngle(null);
+    pulldownTorsoSamplesRef.current = [];
+    pulldownElbowSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
