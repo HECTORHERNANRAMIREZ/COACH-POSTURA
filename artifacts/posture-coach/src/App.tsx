@@ -272,8 +272,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'fondos',
     name: 'Fondos en barra',
-    description: 'Inclina el cuerpo y desciende hasta 90° de codo.',
-    angleLabel: 'Codo · objetivo 90°',
+    description: 'Inclina el torso hacia delante y desciende hasta 90° de codo para enfatizar el pecho.',
+    angleLabel: 'Torso 30–40° · codo 85–95°',
     cameraNote: 'Nota: debe grabarse de lado.',
   },
   {
@@ -385,13 +385,12 @@ const PULLUP_BOTTOM_MIN_ANGLE = 165;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 160;
 const PULLUP_SMOOTHING_SAMPLES = 5;
-const DIP_VALID_MIN_ANGLE = 80;
-const DIP_VALID_MAX_ANGLE = 100;
+const DIP_VALID_MIN_ANGLE = 85;
+const DIP_VALID_MAX_ANGLE = 95;
 const MILITARY_PRESS_VALID_MIN_ANGLE = 85;
 const MILITARY_PRESS_VALID_MAX_ANGLE = 110;
-// La inclinación y la alineación corporal de fondos quedan desactivadas
-// temporalmente: para este ejercicio basta con validar el ángulo del codo.
-// const DIP_MIN_FORWARD_LEAN = 8;
+const DIP_TORSO_MIN_ANGLE = 30;
+const DIP_TORSO_MAX_ANGLE = 40;
 const PLANK_MAX_HIP_SAG_RATIO = 0.08;
 const PLANK_MAX_HIP_RAISE_RATIO = 0.08;
 const PLANK_MIN_BODY_LINE_ANGLE = 162;
@@ -437,9 +436,9 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     startMinAngle: 150,
     startMaxAngle: 180,
     activationAngle: 135,
-    endMinAngle: 80,
-    endMaxAngle: 100,
-    endLabel: 'codo entre 80–100°',
+    endMinAngle: DIP_VALID_MIN_ANGLE,
+    endMaxAngle: DIP_VALID_MAX_ANGLE,
+    endLabel: `codo entre ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°`,
   },
   jalon: {
     direction: 'decrease',
@@ -1143,6 +1142,8 @@ function getCameraGuidance(
       message: 'Ajustando la cámara',
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
+        : exercise === 'fondos'
+          ? 'Ponte de lado y muestra hombro, codo, muñeca y cadera durante todo el movimiento.'
         : 'Mantén una sola persona dentro del encuadre para poder seguir tu postura.',
     };
   }
@@ -1150,15 +1151,17 @@ function getCameraGuidance(
   const indexes = sideKeypoints[side];
   const requiredJoints: Array<keyof typeof indexes> = exercise === 'press-militar'
     ? ['shoulder', 'elbow', 'wrist', 'hip']
-    : exercise === 'sentadillas' || exercise === 'zancadas' || exercise === 'zancada-banco'
-      ? ['hip', 'knee', 'ankle']
-      : exercise === 'jalon'
-        ? ['hip', 'shoulder', 'elbow']
+    : exercise === 'fondos'
+      ? ['shoulder', 'elbow', 'wrist', 'hip']
+      : exercise === 'sentadillas' || exercise === 'zancadas' || exercise === 'zancada-banco'
+        ? ['hip', 'knee', 'ankle']
+        : exercise === 'jalon'
+          ? ['hip', 'shoulder', 'elbow']
           : exercise === 'remo-barra'
             ? ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle']
-        : exercise === 'plancha'
-          ? ['shoulder', 'elbow', 'wrist', 'hip', 'ankle']
-          : ['shoulder', 'elbow', 'wrist'];
+            : exercise === 'plancha'
+              ? ['shoulder', 'elbow', 'wrist', 'hip', 'ankle']
+              : ['shoulder', 'elbow', 'wrist'];
   const jointLabels: Record<keyof typeof indexes, string> = {
     shoulder: 'hombro',
     elbow: 'codo',
@@ -1737,31 +1740,78 @@ function getDipTechniqueFeedback(
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
   const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const torsoLean = calculateForwardLeanAngle(shoulder, keypoints[indexes.hip]);
 
-  if (elbowAngle === null) {
+  if (elbowAngle === null || torsoLean === null) {
     return defaultTechniqueFeedback;
   }
 
+  if (torsoLean < DIP_TORSO_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Inclina más el torso hacia delante',
+      detail: `La inclinación es de ${torsoLean}°. Para trabajar el pecho, mantén el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}°.`,
+    };
+  }
+  if (torsoLean > DIP_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Reduce la inclinación del torso',
+      detail: `La inclinación es de ${torsoLean}°. Mantén el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}°.`,
+    };
+  }
   if (elbowAngle > DIP_VALID_MAX_ANGLE) {
     return {
       tone: 'warning',
       message: 'Desciende hasta 90°',
-      detail: `Tu codo está a ${elbowAngle}°. Baja de forma controlada hasta el rango 80–100°.`,
+      detail: `Tu codo está a ${elbowAngle}°. Baja de forma controlada hasta el rango ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°.`,
     };
   }
   if (elbowAngle < DIP_VALID_MIN_ANGLE) {
     return {
       tone: 'danger',
       message: 'No bajes demasiado',
-      detail: `Tu codo está a ${elbowAngle}°. Sube un poco; el objetivo es aproximadamente 90°.`,
+      detail: `Tu codo está a ${elbowAngle}°. Sube un poco; el objetivo es ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Fondo correcto',
-    detail: `Codo a ${elbowAngle}°. La profundidad está dentro del rango correcto.`,
+    detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Mantén la inclinación y sube con control.`,
   };
+}
+
+function isDipTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  const requiredPoints = [
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+    keypoints[indexes.hip],
+  ];
+  if (requiredPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)) {
+    return false;
+  }
+
+  const torsoLean = calculateForwardLeanAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+  );
+  const elbowAngle = calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  );
+
+  return torsoLean !== null
+    && elbowAngle !== null
+    && isWithinAngle(torsoLean, DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE);
 }
 
 function getPullupTechniqueFeedback(
@@ -2254,6 +2304,7 @@ function getAngleDiagnosticPoints(
 ): AngleDiagnosticPoint[] {
   const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
     fondos: [
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -2656,12 +2707,15 @@ function Home() {
       }
       const rowTechniqueReady = selectedExerciseForFrame !== 'remo-barra'
         || isBarbellRowTechniqueValid(pose?.keypoints, nextDominantSide);
+      const dipTechniqueReady = selectedExerciseForFrame !== 'fondos'
+        || isDipTechniqueValid(pose?.keypoints, nextDominantSide);
       if (
         exerciseStartedRef.current
         && frameCameraReady
         && repetitionConfig
         && repetitionAngle !== null
         && rowTechniqueReady
+        && dipTechniqueReady
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
@@ -2676,9 +2730,9 @@ function Home() {
           exerciseRepUpdate.tracker.endpointAngle ?? exerciseRepUpdate.completedEndpointAngle,
         );
       } else if (
-        selectedExerciseForFrame === 'remo-barra'
+        (selectedExerciseForFrame === 'remo-barra' || selectedExerciseForFrame === 'fondos')
         && exerciseStartedRef.current
-        && (!frameCameraReady || !rowTechniqueReady)
+        && (!frameCameraReady || !rowTechniqueReady || !dipTechniqueReady)
       ) {
         const resetTracker = createExerciseRepTracker();
         exerciseRepTrackerRef.current = resetTracker;
@@ -3342,11 +3396,25 @@ function Home() {
                   <p>
                     {selectedExercise === 'jalon'
                       ? 'Solo cuenta cuando el ángulo entra entre 25° y 60° y vuelve a subir.'
+                      : selectedExercise === 'fondos'
+                        ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
                         ? 'Solo cuenta si mantienes la posición del remo durante todo el recorrido y completas la subida y la vuelta.'
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
+              )}
+              {selectedExercise === 'fondos' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado y deja visibles hombro, codo, muñeca y cadera.</li>
+                    <li><b>Torso:</b> inclínalo hacia delante entre 30° y 40° para enfatizar el pecho; mantén esa posición durante el recorrido.</li>
+                    <li><b>Profundidad:</b> baja hasta que el ángulo del codo esté entre 85° y 95°.</li>
+                    <li><b>Recorrido:</b> inicia con los brazos extendidos entre 150° y 180° y vuelve a subir con control.</li>
+                    <li><b>Repetición:</b> si pierdes la inclinación del torso o el encuadre, el contador reinicia la repetición en curso.</li>
+                  </ul>
+                </details>
               )}
               {selectedExercise === 'jalon' && (
                 <details className="pulldown-instructions">
