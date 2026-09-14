@@ -298,7 +298,7 @@ const exercises: ExerciseDefinition[] = [
     id: 'flexiones',
     name: 'Flexiones de pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
-    angleLabel: 'Codo · torso · objetivo 45°',
+    angleLabel: 'Codo respecto al torso 45–90° · alineación 162–180°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
@@ -396,6 +396,11 @@ const PULLDOWN_TORSO_MIN_ANGLE = 10;
 const PULLDOWN_TORSO_MAX_ANGLE = 30;
 const PULLDOWN_ELBOW_MIN_ANGLE = 80;
 const PULLDOWN_ELBOW_MAX_ANGLE = 120;
+const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 45;
+const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 90;
+const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
+const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
+const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -1365,6 +1370,51 @@ const defaultSquatFeedback: TechniqueFeedback = {
   detail: 'La inclinación, escala y altura de la cámara no cambian la medición.',
 };
 
+function calculatePushupTechniqueAngles(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) {
+    return {
+      elbowTorsoAngle: null,
+      bodyLineAngle: null,
+    };
+  }
+
+  const indexes = sideKeypoints[side];
+  return {
+    elbowTorsoAngle: calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    ),
+    bodyLineAngle: calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.ankle],
+    ),
+  };
+}
+
+function isPushupTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(keypoints, side);
+  return elbowTorsoAngle !== null
+    && bodyLineAngle !== null
+    && isWithinAngle(
+      elbowTorsoAngle,
+      PUSHUP_ELBOW_TORSO_MIN_ANGLE,
+      PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE,
+    )
+    && isWithinAngle(
+      bodyLineAngle,
+      PUSHUP_BODY_LINE_MIN_ANGLE,
+      PUSHUP_BODY_LINE_MAX_ANGLE,
+    );
+}
+
 function getPushupTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -1379,8 +1429,7 @@ function getPushupTechniqueFeedback(
   const wrist = keypoints[indexes.wrist];
   const hip = keypoints[indexes.hip];
   const ankle = keypoints[indexes.ankle];
-  const elbowTorsoAngle = calculateAngle(hip, shoulder, elbow);
-  const bodyLineAngle = calculateAngle(shoulder, hip, ankle);
+  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(keypoints, side);
   const neckAngle = calculateAngle(nose, shoulder, hip);
 
   if (
@@ -1404,21 +1453,23 @@ function getPushupTechniqueFeedback(
       ) / torsoLength
     : 1;
   const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
-  const elbowMinAngle = variant === 'declined' ? 30 : 25;
-  const elbowMaxAngle = variant === 'declined' ? 60 : 65;
+  const elbowMinAngle = variant === 'declined' ? 30 : PUSHUP_ELBOW_TORSO_MIN_ANGLE;
+  const elbowMaxAngle = variant === 'declined'
+    ? 60
+    : PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE;
 
   if (elbowTorsoAngle > elbowMaxAngle) {
     return {
       tone: 'warning',
       message: 'Acerca los codos al torso',
-      detail: `Están a ${elbowTorsoAngle}°. Busca aproximadamente 45° y desciende con control.`,
+       detail: `Están a ${elbowTorsoAngle}°. Busca ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE}° y desciende con control.`,
     };
   }
   if (elbowTorsoAngle < elbowMinAngle) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado los codos',
-      detail: `Están a ${elbowTorsoAngle}°. Sepáralos suavemente hasta formar unos 45° con el torso.`,
+       detail: `Están a ${elbowTorsoAngle}°. Sepáralos suavemente hasta formar ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE}° con el torso.`,
     };
   }
   if (wristOffset > 0.38) {
@@ -2644,6 +2695,8 @@ function Home() {
   const [pulldownElbowAngle, setPulldownElbowAngle] = useState<number | null>(null);
   const [rowTorsoAngle, setRowTorsoAngle] = useState<number | null>(null);
   const [rowElbowRiseAngle, setRowElbowRiseAngle] = useState<number | null>(null);
+  const [pushupElbowTorsoAngle, setPushupElbowTorsoAngle] = useState<number | null>(null);
+  const [pushupBodyLineAngle, setPushupBodyLineAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2681,6 +2734,8 @@ function Home() {
   const pulldownElbowSamplesRef = useRef<number[]>([]);
   const rowTorsoSamplesRef = useRef<number[]>([]);
   const rowElbowRiseSamplesRef = useRef<number[]>([]);
+  const pushupElbowTorsoSamplesRef = useRef<number[]>([]);
+  const pushupBodyLineSamplesRef = useRef<number[]>([]);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
@@ -2879,6 +2934,9 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].elbow],
           )
         : null;
+      const pushupTechniqueAnglesForFrame = selectedExerciseForFrame === 'flexiones'
+        ? calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide)
+        : { elbowTorsoAngle: null, bodyLineAngle: null };
       const displayPulldownTorsoAngle = smoothAngleReading(
         pulldownTorsoAngleForFrame,
         pulldownTorsoSamplesRef,
@@ -2895,12 +2953,22 @@ function Home() {
         rowElbowRiseAngleForFrame,
         rowElbowRiseSamplesRef,
       );
+      const displayPushupElbowTorsoAngle = smoothAngleReading(
+        pushupTechniqueAnglesForFrame.elbowTorsoAngle,
+        pushupElbowTorsoSamplesRef,
+      );
+      const displayPushupBodyLineAngle = smoothAngleReading(
+        pushupTechniqueAnglesForFrame.bodyLineAngle,
+        pushupBodyLineSamplesRef,
+      );
       setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
       setDipTorsoAngle(dipTorsoAngleForFrame);
       setPulldownTorsoAngle(displayPulldownTorsoAngle);
       setPulldownElbowAngle(displayPulldownElbowAngle);
       setRowTorsoAngle(displayRowTorsoAngle);
       setRowElbowRiseAngle(displayRowElbowRiseAngle);
+      setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
+      setPushupBodyLineAngle(displayPushupBodyLineAngle);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -3007,6 +3075,8 @@ function Home() {
         || isDipTechniqueValid(pose?.keypoints, nextDominantSide);
       const pulldownTechniqueReady = selectedExerciseForFrame !== 'jalon'
         || isLatPulldownTechniqueValid(pose?.keypoints, nextDominantSide);
+      const pushupTechniqueReady = selectedExerciseForFrame !== 'flexiones'
+        || isPushupTechniqueValid(pose?.keypoints, nextDominantSide);
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -3017,6 +3087,7 @@ function Home() {
         && rowTechniqueReady
         && dipTechniqueReady
         && pulldownTechniqueReady
+        && pushupTechniqueReady
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
@@ -3041,6 +3112,7 @@ function Home() {
           || !rowTechniqueReady
           || !dipTechniqueReady
           || !pulldownTechniqueReady
+          || !pushupTechniqueReady
         )
       ) {
         const resetTracker = createExerciseRepTracker();
@@ -3204,10 +3276,14 @@ function Home() {
     setPulldownElbowAngle(null);
     setRowTorsoAngle(null);
     setRowElbowRiseAngle(null);
+    setPushupElbowTorsoAngle(null);
+    setPushupBodyLineAngle(null);
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
     rowTorsoSamplesRef.current = [];
     rowElbowRiseSamplesRef.current = [];
+    pushupElbowTorsoSamplesRef.current = [];
+    pushupBodyLineSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3337,10 +3413,14 @@ function Home() {
     setPulldownElbowAngle(null);
     setRowTorsoAngle(null);
     setRowElbowRiseAngle(null);
+    setPushupElbowTorsoAngle(null);
+    setPushupBodyLineAngle(null);
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
     rowTorsoSamplesRef.current = [];
     rowElbowRiseSamplesRef.current = [];
+    pushupElbowTorsoSamplesRef.current = [];
+    pushupBodyLineSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3415,6 +3495,8 @@ function Home() {
   const pulldownElbowLabel = pulldownElbowAngle === null ? '—' : `${pulldownElbowAngle}°`;
   const rowTorsoLabel = rowTorsoAngle === null ? '—' : `${rowTorsoAngle}°`;
   const rowElbowRiseLabel = rowElbowRiseAngle === null ? '—' : `${rowElbowRiseAngle}°`;
+  const pushupElbowTorsoLabel = pushupElbowTorsoAngle === null ? '—' : `${pushupElbowTorsoAngle}°`;
+  const pushupBodyLineLabel = pushupBodyLineAngle === null ? '—' : `${pushupBodyLineAngle}°`;
   const dipElbowIsValid = dipElbowAngle !== null
     && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
   const dipTorsoIsValid = dipTorsoAngle !== null
@@ -3443,6 +3525,18 @@ function Home() {
     );
   const rowElbowIsValid = angle !== null
     && isWithinAngle(angle, 70, 115);
+  const pushupElbowTorsoIsValid = pushupElbowTorsoAngle !== null
+    && isWithinAngle(
+      pushupElbowTorsoAngle,
+      PUSHUP_ELBOW_TORSO_MIN_ANGLE,
+      PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE,
+    );
+  const pushupBodyLineIsValid = pushupBodyLineAngle !== null
+    && isWithinAngle(
+      pushupBodyLineAngle,
+      PUSHUP_BODY_LINE_MIN_ANGLE,
+      PUSHUP_BODY_LINE_MAX_ANGLE,
+    );
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
@@ -3744,6 +3838,8 @@ function Home() {
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
                         ? `Solo cuenta si mantienes el torso entre ${ROW_TORSO_MIN_ANGLE}° y ${ROW_TORSO_MAX_ANGLE}°, elevas los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° y completas el recorrido del codo.`
+                      : selectedExercise === 'flexiones'
+                        ? `Solo cuenta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°, además de completar el recorrido del codo.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
@@ -3954,6 +4050,19 @@ function Home() {
                         <span className="dip-angle-label">Flexión</span>
                         <strong>{angleLabel}</strong>
                         <small>Objetivo 70–115°</small>
+                      </div>
+                    </div>
+                  ) : selectedExercise === 'flexiones' ? (
+                    <div className="dip-angle-hud pushup-angle-hud" aria-label="Ángulos importantes de las flexiones de pecho" aria-live="polite">
+                      <div className={`dip-angle-reading ${pushupElbowTorsoIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Codo / torso</span>
+                        <strong>{pushupElbowTorsoLabel}</strong>
+                        <small>Objetivo {PUSHUP_ELBOW_TORSO_MIN_ANGLE}–{PUSHUP_ELBOW_TORSO_MAX_ANGLE}° · margen +{PUSHUP_ELBOW_TORSO_TOLERANCE}°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${pushupBodyLineIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Alineación</span>
+                        <strong>{pushupBodyLineLabel}</strong>
+                        <small>Recta {PUSHUP_BODY_LINE_MIN_ANGLE}–{PUSHUP_BODY_LINE_MAX_ANGLE}°</small>
                       </div>
                     </div>
                   ) : (

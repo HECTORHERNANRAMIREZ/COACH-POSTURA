@@ -1072,6 +1072,10 @@
   width: min(14rem, calc(100% - 1.6rem));
 }
 
+.pushup-angle-hud {
+  width: min(12rem, calc(100% - 1.6rem));
+}
+
 .dip-angle-reading {
   display: grid;
   justify-items: center;
