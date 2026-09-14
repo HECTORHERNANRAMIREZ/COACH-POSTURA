@@ -289,7 +289,7 @@ const exercises: ExerciseDefinition[] = [
     name: 'Muscle-up',
     description: 'Observa la transición sobre la barra y controla el balanceo de las piernas.',
     angleLabel: 'Codos · rodillas · tobillos',
-    cameraNote: 'Nota: vista lateral; deja el cuerpo completo y la barra dentro del encuadre.',
+    cameraNote: 'Nota: vista en semiperfil (30°–45°); separa brazos y piernas y deja el cuerpo completo y la barra dentro del encuadre.',
   },
   {
     id: 'jalon',
@@ -1228,7 +1228,7 @@ function getCameraGuidance(
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
         : exercise === 'muscle-up'
-          ? 'Ponte de lado y deja visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
+          ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
@@ -1367,7 +1367,7 @@ function getCameraGuidance(
     tone: 'ready',
     message: 'Encuadre válido',
     detail: exercise === 'muscle-up'
-      ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles; todavía no se juzga el balanceo.'
+      ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles en semiperfil; todavía no se juzga el balanceo.'
       : exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
       : 'Los puntos necesarios están visibles. Puedes iniciar aunque el móvil esté bajo o inclinado.',
