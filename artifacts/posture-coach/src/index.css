@@ -1076,6 +1076,25 @@
   width: min(12rem, calc(100% - 1.6rem));
 }
 
+.muscle-up-angle-hud {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.24rem;
+  width: min(17.5rem, calc(100% - 1.6rem));
+}
+
+.muscle-up-angle-hud .dip-angle-reading {
+  padding-inline: 0.18rem;
+}
+
+.muscle-up-angle-hud .dip-angle-label {
+  font-size: 0.38rem;
+  letter-spacing: 0.04em;
+}
+
+.muscle-up-angle-hud .dip-angle-reading strong {
+  font-size: clamp(0.9rem, 3.8vw, 1.16rem);
+}
+
 .dip-angle-reading {
   display: grid;
   justify-items: center;

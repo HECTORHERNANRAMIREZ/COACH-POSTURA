@@ -133,7 +133,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -145,6 +145,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
   dominadas: pullupImage,
   'dominadas-supinas': supinePullupImage,
+  'muscle-up': pullupImage,
   jalon: pulldownImage,
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
@@ -259,6 +260,8 @@ type CameraGuidance = {
   message: string;
   detail: string;
 };
+type MuscleUpAngleKey = 'leftElbow' | 'rightElbow' | 'leftKnee' | 'rightKnee' | 'leftAnkle' | 'rightAnkle';
+type MuscleUpAngles = Record<MuscleUpAngleKey, number | null>;
 
 const exercises: ExerciseDefinition[] = [
   {
@@ -279,6 +282,13 @@ const exercises: ExerciseDefinition[] = [
     name: 'Dominadas supinas',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
+  },
+  {
+    id: 'muscle-up',
+    name: 'Muscle-up',
+    description: 'Observa la transición sobre la barra y controla el balanceo de las piernas.',
+    angleLabel: 'Codos · rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja el cuerpo completo y la barra dentro del encuadre.',
   },
   {
     id: 'jalon',
@@ -436,6 +446,44 @@ const MAX_FRONT_VIEW_RATIO = 0.95;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
 const CAMERA_FRAME_MARGIN = 0.02;
+const MUSCLE_UP_ANGLE_KEYS: MuscleUpAngleKey[] = [
+  'leftElbow',
+  'rightElbow',
+  'leftKnee',
+  'rightKnee',
+  'leftAnkle',
+  'rightAnkle',
+];
+const MUSCLE_UP_FOOT_INDEX: Record<PoseSide, number> = {
+  left: 31,
+  right: 32,
+};
+
+function createMuscleUpAngles(): MuscleUpAngles {
+  return {
+    leftElbow: null,
+    rightElbow: null,
+    leftKnee: null,
+    rightKnee: null,
+    leftAnkle: null,
+    rightAnkle: null,
+  };
+}
+
+function calculateMuscleUpAngles(keypoints: PosePoint[] | undefined): MuscleUpAngles {
+  if (!keypoints) return createMuscleUpAngles();
+
+  const left = sideKeypoints.left;
+  const right = sideKeypoints.right;
+  return {
+    leftElbow: calculateAngle(keypoints[left.shoulder], keypoints[left.elbow], keypoints[left.wrist]),
+    rightElbow: calculateAngle(keypoints[right.shoulder], keypoints[right.elbow], keypoints[right.wrist]),
+    leftKnee: calculateAngle(keypoints[left.hip], keypoints[left.knee], keypoints[left.ankle]),
+    rightKnee: calculateAngle(keypoints[right.hip], keypoints[right.knee], keypoints[right.ankle]),
+    leftAnkle: calculateAngle(keypoints[left.knee], keypoints[left.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.left]),
+    rightAnkle: calculateAngle(keypoints[right.knee], keypoints[right.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.right]),
+  };
+}
 
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   fondos: {
@@ -1178,6 +1226,8 @@ function getCameraGuidance(
       message: 'Ajustando la cámara',
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
+        : exercise === 'muscle-up'
+          ? 'Ponte de lado y deja visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
@@ -1206,11 +1256,28 @@ function getCameraGuidance(
     knee: 'rodilla',
     ankle: 'tobillo',
   };
-  const requiredPoints = requiredJoints.map((joint) => ({
-    joint,
-    label: jointLabels[joint],
-    point: keypoints[indexes[joint]],
-  }));
+  const requiredPoints: Array<{
+    joint?: keyof typeof indexes;
+    label: string;
+    point: PosePoint | undefined;
+  }> = exercise === 'muscle-up'
+    ? [
+        { label: 'codo izquierdo', point: keypoints[sideKeypoints.left.elbow] },
+        { label: 'codo derecho', point: keypoints[sideKeypoints.right.elbow] },
+        { label: 'muñeca izquierda', point: keypoints[sideKeypoints.left.wrist] },
+        { label: 'muñeca derecha', point: keypoints[sideKeypoints.right.wrist] },
+        { label: 'rodilla izquierda', point: keypoints[sideKeypoints.left.knee] },
+        { label: 'rodilla derecha', point: keypoints[sideKeypoints.right.knee] },
+        { label: 'tobillo izquierdo', point: keypoints[sideKeypoints.left.ankle] },
+        { label: 'tobillo derecho', point: keypoints[sideKeypoints.right.ankle] },
+        { label: 'pie izquierdo', point: keypoints[MUSCLE_UP_FOOT_INDEX.left] },
+        { label: 'pie derecho', point: keypoints[MUSCLE_UP_FOOT_INDEX.right] },
+      ]
+    : requiredJoints.map((joint) => ({
+        joint,
+        label: jointLabels[joint],
+        point: keypoints[indexes[joint]],
+      }));
   const missingLabels = requiredPoints
     .filter(({ joint, point }) => {
       const minimumScore = exercise === 'remo-barra'
@@ -1298,7 +1365,9 @@ function getCameraGuidance(
   return {
     tone: 'ready',
     message: 'Encuadre válido',
-    detail: exercise === 'press-militar'
+    detail: exercise === 'muscle-up'
+      ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles; todavía no se juzga el balanceo.'
+      : exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
       : 'Los puntos necesarios están visibles. Puedes iniciar aunque el móvil esté bajo o inclinado.',
   };
@@ -1368,6 +1437,12 @@ const defaultSquatFeedback: TechniqueFeedback = {
   tone: 'checking',
   message: 'Ángulo normalizado',
   detail: 'La inclinación, escala y altura de la cámara no cambian la medición.',
+};
+
+const muscleUpReferenceFeedback: TechniqueFeedback = {
+  tone: 'checking',
+  message: 'Lecturas de referencia activas',
+  detail: 'Observa codos, rodillas y tobillos. Definiremos los rangos después de revisar tu ejecución correcta.',
 };
 
 function calculatePushupTechniqueAngles(
@@ -2571,6 +2646,14 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
     ],
+    'muscle-up': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
     jalon: [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
@@ -2697,6 +2780,7 @@ function Home() {
   const [rowElbowRiseAngle, setRowElbowRiseAngle] = useState<number | null>(null);
   const [pushupElbowTorsoAngle, setPushupElbowTorsoAngle] = useState<number | null>(null);
   const [pushupBodyLineAngle, setPushupBodyLineAngle] = useState<number | null>(null);
+  const [muscleUpAngles, setMuscleUpAngles] = useState<MuscleUpAngles>(createMuscleUpAngles);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2736,6 +2820,14 @@ function Home() {
   const rowElbowRiseSamplesRef = useRef<number[]>([]);
   const pushupElbowTorsoSamplesRef = useRef<number[]>([]);
   const pushupBodyLineSamplesRef = useRef<number[]>([]);
+  const muscleUpAngleSamplesRef = useRef<Record<MuscleUpAngleKey, number[]>>({
+    leftElbow: [],
+    rightElbow: [],
+    leftKnee: [],
+    rightKnee: [],
+    leftAnkle: [],
+    rightAnkle: [],
+  });
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
@@ -2937,6 +3029,18 @@ function Home() {
       const pushupTechniqueAnglesForFrame = selectedExerciseForFrame === 'flexiones'
         ? calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide)
         : { elbowTorsoAngle: null, bodyLineAngle: null };
+      const muscleUpAnglesForFrame = selectedExerciseForFrame === 'muscle-up'
+        ? calculateMuscleUpAngles(pose?.keypoints)
+        : createMuscleUpAngles();
+      const displayMuscleUpAngles = MUSCLE_UP_ANGLE_KEYS.reduce<MuscleUpAngles>(
+        (readings, key) => {
+          const samplesRef = { current: muscleUpAngleSamplesRef.current[key] };
+          const value = smoothAngleReading(muscleUpAnglesForFrame[key], samplesRef);
+          muscleUpAngleSamplesRef.current[key] = samplesRef.current;
+          return { ...readings, [key]: value };
+        },
+        createMuscleUpAngles(),
+      );
       const displayPulldownTorsoAngle = smoothAngleReading(
         pulldownTorsoAngleForFrame,
         pulldownTorsoSamplesRef,
@@ -2969,6 +3073,7 @@ function Home() {
       setRowElbowRiseAngle(displayRowElbowRiseAngle);
       setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
+      setMuscleUpAngles(displayMuscleUpAngles);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -3278,12 +3383,16 @@ function Home() {
     setRowElbowRiseAngle(null);
     setPushupElbowTorsoAngle(null);
     setPushupBodyLineAngle(null);
+    setMuscleUpAngles(createMuscleUpAngles());
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
     rowTorsoSamplesRef.current = [];
     rowElbowRiseSamplesRef.current = [];
     pushupElbowTorsoSamplesRef.current = [];
     pushupBodyLineSamplesRef.current = [];
+    MUSCLE_UP_ANGLE_KEYS.forEach((key) => {
+      muscleUpAngleSamplesRef.current[key] = [];
+    });
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3415,12 +3524,16 @@ function Home() {
     setRowElbowRiseAngle(null);
     setPushupElbowTorsoAngle(null);
     setPushupBodyLineAngle(null);
+    setMuscleUpAngles(createMuscleUpAngles());
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
     rowTorsoSamplesRef.current = [];
     rowElbowRiseSamplesRef.current = [];
     pushupElbowTorsoSamplesRef.current = [];
     pushupBodyLineSamplesRef.current = [];
+    MUSCLE_UP_ANGLE_KEYS.forEach((key) => {
+      muscleUpAngleSamplesRef.current[key] = [];
+    });
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3497,6 +3610,10 @@ function Home() {
   const rowElbowRiseLabel = rowElbowRiseAngle === null ? '—' : `${rowElbowRiseAngle}°`;
   const pushupElbowTorsoLabel = pushupElbowTorsoAngle === null ? '—' : `${pushupElbowTorsoAngle}°`;
   const pushupBodyLineLabel = pushupBodyLineAngle === null ? '—' : `${pushupBodyLineAngle}°`;
+  const muscleUpAngleLabel = (key: MuscleUpAngleKey) => {
+    const value = muscleUpAngles[key];
+    return value === null ? '—' : `${value}°`;
+  };
   const dipElbowIsValid = dipElbowAngle !== null
     && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
   const dipTorsoIsValid = dipTorsoAngle !== null
@@ -3544,6 +3661,8 @@ function Home() {
     ? squatFeedback
     : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
       ? pullupFeedback
+      : selectedExercise === 'muscle-up'
+        ? muscleUpReferenceFeedback
       : techniqueFeedback;
   const angleIsGood = exerciseStarted && cameraReady && angleFeedback.tone === 'success';
   const diagnosisTone = cameraReady
@@ -3557,6 +3676,8 @@ function Home() {
       ? 'AJUSTAR CÁMARA'
       : !exerciseStarted
         ? 'LISTO PARA INICIAR'
+        : selectedExercise === 'muscle-up'
+          ? 'CALIBRACIÓN PENDIENTE'
         : angle === null
       ? 'ESPERANDO'
       : angleFeedback.tone === 'success'
@@ -3638,6 +3759,7 @@ function Home() {
                   const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
                     || exercise.id === 'dominadas-supinas'
+                    || exercise.id === 'muscle-up'
                     || exercise.id === 'jalon'
                     || exercise.id === 'remo-barra'
                     || exercise.id === 'flexiones'
@@ -3821,6 +3943,17 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'muscle-up' && (
+                <details className="pulldown-instructions" open>
+                  <summary>Lecturas de referencia del muscle-up</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> usa una vista lateral y deja dentro de la imagen la barra, las manos, la cabeza y todo el cuerpo.</li>
+                    <li><b>Medición:</b> se muestran los ángulos de ambos codos, rodillas y tobillos mientras te mueves.</li>
+                    <li><b>Balanceo:</b> por ahora solo registramos los valores; no marcamos un rango correcto hasta calibrarlo con tu ejecución de referencia.</li>
+                    <li><b>Seguridad:</b> si estás empezando, practica con asistencia y prioriza un recorrido controlado, sin forzar hombros, codos o muñecas.</li>
+                  </ul>
+                </details>
+              )}
               {getRepetitionConfig(selectedExercise) && (
                 <div className="squat-summary" aria-label={`Contador de ${activeExercise?.name ?? 'ejercicio'}`}>
                   <div className="squat-summary-stat">
@@ -3988,6 +4121,7 @@ function Home() {
                       || selectedExercise === 'fondos'
                       || selectedExercise === 'dominadas'
                       || selectedExercise === 'dominadas-supinas'
+                      || selectedExercise === 'muscle-up'
                       || selectedExercise === 'zancadas'
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
@@ -4003,7 +4137,40 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
-                  {selectedExercise === 'fondos' ? (
+                  {selectedExercise === 'muscle-up' ? (
+                    <div className="dip-angle-hud muscle-up-angle-hud" aria-label="Ángulos de referencia del muscle-up" aria-live="polite">
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Codo izq.</span>
+                        <strong>{muscleUpAngleLabel('leftElbow')}</strong>
+                        <small>Medición</small>
+                      </div>
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Codo der.</span>
+                        <strong>{muscleUpAngleLabel('rightElbow')}</strong>
+                        <small>Medición</small>
+                      </div>
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Rodilla izq.</span>
+                        <strong>{muscleUpAngleLabel('leftKnee')}</strong>
+                        <small>Balanceo</small>
+                      </div>
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Rodilla der.</span>
+                        <strong>{muscleUpAngleLabel('rightKnee')}</strong>
+                        <small>Balanceo</small>
+                      </div>
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Tobillo izq.</span>
+                        <strong>{muscleUpAngleLabel('leftAnkle')}</strong>
+                        <small>Balanceo</small>
+                      </div>
+                      <div className="dip-angle-reading">
+                        <span className="dip-angle-label">Tobillo der.</span>
+                        <strong>{muscleUpAngleLabel('rightAnkle')}</strong>
+                        <small>Balanceo</small>
+                      </div>
+                    </div>
+                  ) : selectedExercise === 'fondos' ? (
                     <div className="dip-angle-hud" aria-label="Ángulos importantes de fondos" aria-live="polite">
                       <div className={`dip-angle-reading ${dipElbowIsValid ? 'is-valid' : ''}`}>
                         <span className="dip-angle-label">Codo</span>
@@ -4124,6 +4291,8 @@ function Home() {
                 </div>
                 {diagnosisStatus === 'AJUSTAR CÁMARA' ? (
                   <p>{cameraGuidance.detail}</p>
+                ) : diagnosisStatus === 'CALIBRACIÓN PENDIENTE' ? (
+                  <p>Los valores se muestran como referencia. Aún no se marca el balanceo como correcto o incorrecto.</p>
                 ) : diagnosisStatus === 'AJUSTAR' && angle !== null ? (
                   <p>{angleFeedback.message}</p>
                 ) : null}
