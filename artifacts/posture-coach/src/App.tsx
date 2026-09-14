@@ -274,7 +274,7 @@ const exercises: ExerciseDefinition[] = [
     name: 'Fondos en barra',
     description: 'Inclina el torso hacia delante y desciende hasta 90° de codo para enfatizar el pecho.',
     angleLabel: 'Torso 30–40° · codo 85–95°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'dominadas',
@@ -293,35 +293,35 @@ const exercises: ExerciseDefinition[] = [
     name: 'Jalón al pecho en polea',
     description: 'Lleva el ángulo cadera–hombro–codo a 25°–60° y vuelve a subir.',
     angleLabel: 'Cadera–hombro–codo · objetivo 25°–60°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'remo-barra',
     name: 'Remo con barra',
     description: 'Haz una bisagra de cadera, mantén la espalda neutra y lleva la barra al cuerpo con control.',
     angleLabel: 'Torso 45–75° · codo 70–115° · rodilla 150–180°',
-    cameraNote: 'Nota: debe grabarse de lado y mostrar todo el cuerpo.',
+    cameraNote: 'Nota: vista lateral, incluso desde el suelo; muestra todo el cuerpo.',
   },
   {
     id: 'flexiones',
     name: 'Flexiones de pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
     angleLabel: 'Codo · torso · objetivo 45°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'flexiones-declinadas',
     name: 'Flexiones declinadas',
     description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
     angleLabel: 'Codo 30–60° · cuerpo 162–180°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'flexiones-pica',
     name: 'Flexiones en pica',
     description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
     angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'press-militar',
@@ -334,42 +334,42 @@ const exercises: ExerciseDefinition[] = [
     name: 'Extensiones de tríceps en polea alta',
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'curl-biceps',
     name: 'Curl de bíceps',
     description: 'Sube las manos casi hasta el pecho y baja sin extender por completo.',
     angleLabel: 'Codo · objetivo 30–60°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'sentadillas',
     name: 'Sentadillas',
     description: 'Mide la profundidad y el control de tus piernas.',
     angleLabel: 'Cadera · rodilla · tobillo',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'zancadas',
     name: 'Zancadas dinámicas',
     description: 'Baja con control hasta formar 90° en las piernas.',
     angleLabel: 'Rodilla delantera · objetivo 90°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'zancada-banco',
     name: 'Zancada en banco',
     description: 'Eleva el pie trasero y controla la rodilla delantera.',
     angleLabel: 'Rodilla 80–100° · torso 15–20°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
     id: 'plancha',
     name: 'Plancha',
     description: 'Mantén la cadera alineada y el cuerpo recto.',
     angleLabel: 'Codo · objetivo 90°',
-    cameraNote: 'Nota: debe grabarse de lado.',
+    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
 ];
 
@@ -428,7 +428,9 @@ const FACE_POINT_MIN_SCORE = 0.3;
 const CAMERA_POINT_MIN_SCORE = 0.45;
 const ROW_ARM_POINT_MIN_SCORE = 0.28;
 const ROW_STALE_POINT_FRAMES = 4;
-const CAMERA_FRAME_MARGIN = 0.06;
+// Solo advertimos si una articulación está prácticamente cortada por el borde.
+// La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
+const CAMERA_FRAME_MARGIN = 0.02;
 
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   fondos: {
@@ -1143,8 +1145,8 @@ function getCameraGuidance(
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
         : exercise === 'fondos'
-          ? 'Ponte de lado y muestra hombro, codo, muñeca y cadera durante todo el movimiento.'
-        : 'Mantén una sola persona dentro del encuadre para poder seguir tu postura.',
+          ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
+        : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
 
@@ -1192,7 +1194,7 @@ function getCameraGuidance(
     return {
       tone: 'warning',
       message: 'No veo todos los puntos necesarios',
-      detail: `Deja visibles ${visibleLabels}. Aleja o gira un poco el móvil sin tapar las articulaciones.`,
+      detail: `Deja visibles ${visibleLabels}. Puedes mover o inclinar el móvil como quieras, pero no tapes esas articulaciones.`,
     };
   }
 
@@ -1213,16 +1215,16 @@ function getCameraGuidance(
       message: 'Deja más espacio alrededor de tu cuerpo',
       detail: exercise === 'press-militar'
         ? 'Las muñecas pueden salir del encuadre al subir. Aleja el móvil y deja margen sobre la cabeza.'
-        : 'Aleja un poco el móvil para que las articulaciones no queden pegadas al borde.',
+        : 'Solo una articulación está demasiado cerca del borde. Ajusta un poco el encuadre sin necesidad de nivelar la cámara.',
     };
   }
 
   return {
     tone: 'ready',
-    message: 'Cámara bien alineada',
+    message: 'Encuadre válido',
     detail: exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
-      : 'Los puntos necesarios están visibles. Puedes iniciar el ejercicio.',
+      : 'Los puntos necesarios están visibles. Puedes iniciar aunque el móvil esté bajo o inclinado.',
   };
 }
 
