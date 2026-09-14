@@ -2478,6 +2478,8 @@ function Home() {
   ]);
   const [errorCount, setErrorCount] = useState(0);
   const [angle, setAngle] = useState<number | null>(null);
+  const [dipElbowAngle, setDipElbowAngle] = useState<number | null>(null);
+  const [dipTorsoAngle, setDipTorsoAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2662,6 +2664,14 @@ function Home() {
           nextDominantSide,
         )
         : null;
+      const dipTorsoAngleForFrame = selectedExerciseForFrame === 'fondos' && nextDominantSide
+        ? calculateForwardLeanAngle(
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
+          )
+        : null;
+      setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
+      setDipTorsoAngle(dipTorsoAngleForFrame);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -2951,6 +2961,8 @@ function Home() {
     errorCountRef.current = 0;
     setErrorCount(0);
     setAngle(null);
+    setDipElbowAngle(null);
+    setDipTorsoAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3074,6 +3086,8 @@ function Home() {
     });
     setErrorMessage('');
     setAngle(null);
+    setDipElbowAngle(null);
+    setDipTorsoAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3137,6 +3151,12 @@ function Home() {
     ? `${sideLabel} · ${sideConfidence.toFixed(2)}`
     : `${sideLabel} · —`;
   const angleLabel = angle === null ? '—' : `${angle}°`;
+  const dipElbowLabel = dipElbowAngle === null ? '—' : `${dipElbowAngle}°`;
+  const dipTorsoLabel = dipTorsoAngle === null ? '—' : `${dipTorsoAngle}°`;
+  const dipElbowIsValid = dipElbowAngle !== null
+    && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
+  const dipTorsoIsValid = dipTorsoAngle !== null
+    && isWithinAngle(dipTorsoAngle, DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE);
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
@@ -3617,14 +3637,29 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
-                  <div className="angle-hud" aria-live="polite">
-                    <span className="angle-hud-label">Ángulo</span>
-                    <strong>{angle === null ? '—' : `${angle}°`}</strong>
-                    <small>{activeExercise?.angleLabel ?? 'Esperando puntos'}</small>
-                    {angleIsGood && angle !== null && (
-                      <span className="angle-hud-status">¡Lo estás haciendo bien!</span>
-                    )}
-                  </div>
+                  {selectedExercise === 'fondos' ? (
+                    <div className="dip-angle-hud" aria-label="Ángulos importantes de fondos" aria-live="polite">
+                      <div className={`dip-angle-reading ${dipElbowIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Codo</span>
+                        <strong>{dipElbowLabel}</strong>
+                        <small>Objetivo 85–95°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${dipTorsoIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Torso</span>
+                        <strong>{dipTorsoLabel}</strong>
+                        <small>Objetivo 30–40°</small>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="angle-hud" aria-live="polite">
+                      <span className="angle-hud-label">Ángulo</span>
+                      <strong>{angle === null ? '—' : `${angle}°`}</strong>
+                      <small>{activeExercise?.angleLabel ?? 'Esperando puntos'}</small>
+                      {angleIsGood && angle !== null && (
+                        <span className="angle-hud-status">¡Lo estás haciendo bien!</span>
+                      )}
+                    </div>
+                  )}
                 {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
