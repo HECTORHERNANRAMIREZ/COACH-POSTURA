@@ -3753,14 +3753,18 @@ function Home() {
                     <span>Total válidas</span>
                     <strong>{exerciseRepetitions}</strong>
                   </div>
-                  <div className="squat-summary-stat">
-                    <span>Fase</span>
-                    <strong>{exerciseRepPhaseLabel}</strong>
-                  </div>
-                  <div className="squat-summary-stat">
-                    <span>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</span>
-                    <strong>{exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}</strong>
-                  </div>
+                  {selectedExercise !== 'remo-barra' && (
+                    <>
+                      <div className="squat-summary-stat">
+                        <span>Fase</span>
+                        <strong>{exerciseRepPhaseLabel}</strong>
+                      </div>
+                      <div className="squat-summary-stat">
+                        <span>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</span>
+                        <strong>{exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}</strong>
+                      </div>
+                    </>
+                  )}
                   <p>
                     {selectedExercise === 'jalon'
                       ? `Solo cuenta si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
@@ -3801,9 +3805,9 @@ function Home() {
                   <summary>Condiciones para una repetición correcta</summary>
                   <ul>
                     <li><b>Encuadre:</b> colócate de lado y deja visibles hombro, codo, muñeca, cadera, rodilla y tobillo durante toda la serie.</li>
-                    <li><b>Posición:</b> lleva la cadera atrás, inclina el torso ${ROW_TORSO_MIN_ANGLE}°–${ROW_TORSO_MAX_ANGLE}° respecto a la vertical y mantén la espalda neutra; no redondees ni balancees el cuerpo.</li>
+                    <li><b>Posición:</b> lleva la cadera atrás, inclina el torso {ROW_TORSO_MIN_ANGLE}°–{ROW_TORSO_MAX_ANGLE}° respecto a la vertical y mantén la espalda neutra; no redondees ni balancees el cuerpo.</li>
                     <li><b>Rodillas:</b> mantenlas desbloqueadas, aproximadamente entre 150° y 180°, con los pies firmes en el suelo.</li>
-                    <li><b>Tirón:</b> eleva los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso y dirige la barra hacia el abdomen o las costillas bajas.</li>
+                    <li><b>Tirón:</b> eleva los codos entre {ROW_ELBOW_TORSO_MIN_ANGLE}° y {ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso y dirige la barra hacia el abdomen o las costillas bajas.</li>
                     <li><b>Recorrido:</b> empieza con los brazos extendidos entre 145° y 180°, tira hasta que el codo llegue a 70°–115° y regresa lentamente al inicio.</li>
                     <li><b>Repetición:</b> el contador se reinicia si pierdes la inclinación, cambias la posición de las rodillas o la elevación de los codos sale del rango.</li>
                   </ul>
@@ -4127,16 +4131,20 @@ function Home() {
                         <dt>Total válidas</dt>
                         <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
                       </div>
-                      <div className="diagnostic-row">
-                         <dt>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</dt>
-                        <dd className="diagnostic-value">
-                          {exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}
-                        </dd>
-                      </div>
-                      <div className="diagnostic-row">
-                        <dt>Fase</dt>
-                        <dd className="diagnostic-value">{exerciseRepPhaseLabel}</dd>
-                      </div>
+                      {selectedExercise !== 'remo-barra' && (
+                        <>
+                          <div className="diagnostic-row">
+                            <dt>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</dt>
+                            <dd className="diagnostic-value">
+                              {exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}
+                            </dd>
+                          </div>
+                          <div className="diagnostic-row">
+                            <dt>Fase</dt>
+                            <dd className="diagnostic-value">{exerciseRepPhaseLabel}</dd>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                   <div className="diagnostic-row">
