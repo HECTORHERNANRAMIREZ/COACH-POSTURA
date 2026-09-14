@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "Coach de postura"
-description = "A mobile-first browser app that uses the front camera and TensorFlow.js MoveNet pose detection to show a real-time posture skeleton, entirely on-device."
+description = "A mobile-first browser app that uses the front camera and MediaPipe Pose Landmarker with BlazePose 3D world landmarks to analyze posture locally, without storing images or video."
 version = "1.0.0"
 id = "artifacts/posture-coach"
 router = "path"

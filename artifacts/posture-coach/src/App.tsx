@@ -47,6 +47,15 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import {
+  POSE_LANDMARK_COUNT,
+  POSE_MODEL_NAME,
+  createPoseDetector,
+  skeletonConnections,
+  type Pose,
+  type PoseDetector,
+  type PosePoint,
+} from '@/pose3d';
+import {
   Route,
   Switch,
   useLocation,
@@ -123,18 +132,6 @@ const clerkAppearance = {
   },
 };
 const GREEN = '#39ff6a';
-const SCRIPT_URLS = {
-  tensorflow: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js',
-  poseDetection:
-    'https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js',
-};
-
-const skeletonConnections: Array<[number, number]> = [
-  [0, 1], [0, 2], [1, 3], [2, 4],
-  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-  [5, 11], [6, 12], [11, 12],
-  [11, 13], [13, 15], [12, 14], [14, 16],
-];
 
 type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
@@ -164,12 +161,6 @@ const exerciseImages: Record<ExerciseId, string> = {
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
 type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
-type PosePoint = { x: number; y: number; score?: number };
-type Pose = { keypoints?: PosePoint[] };
-type PoseDetector = {
-  estimatePoses: (video: HTMLVideoElement, options?: { flipHorizontal?: boolean }) => Promise<Pose[]>;
-  dispose?: () => void;
-};
 type PoseCandidate = {
   pose: Pose;
   centerX: number;
@@ -252,6 +243,7 @@ type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
   y: number | null;
+  z: number | null;
 };
 type DominantSideResult = {
   side: PoseSide;
@@ -434,6 +426,8 @@ const ROW_ARM_POINT_MIN_SCORE = 0.28;
 const POSE_STALE_POINT_FRAMES = 6;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
 const POSE_LOCK_MIN_AREA_RATIO = 0.25;
+const MAX_CAMERA_ROLL_DEGREES = 34;
+const MAX_FRONT_VIEW_RATIO = 0.95;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
 const CAMERA_FRAME_MARGIN = 0.02;
@@ -858,41 +852,6 @@ function advancePullupTracker(
   return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
 }
 
-type BrowserGlobals = Window & {
-  poseDetection?: {
-    SupportedModels: { MoveNet: unknown };
-    movenet: {
-      modelType: {
-        SINGLEPOSE_LIGHTNING: unknown;
-        MULTIPOSE_LIGHTNING: unknown;
-      };
-    };
-    createDetector: (
-      model: unknown,
-      config: { modelType: unknown },
-    ) => Promise<PoseDetector>;
-  };
-};
-
-function loadScript(url: string, id: string) {
-  const existing = document.getElementById(id) as HTMLScriptElement | null;
-  if (existing?.dataset.loaded === 'true') return Promise.resolve();
-  if (existing) existing.remove();
-
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.id = id;
-    script.src = url;
-    script.async = true;
-    script.onload = () => {
-      script.dataset.loaded = 'true';
-      resolve();
-    };
-    script.onerror = () => reject(new Error('No se pudo cargar el análisis de postura.'));
-    document.head.appendChild(script);
-  });
-}
-
 function drawSkeleton(
   canvas: HTMLCanvasElement,
   video: HTMLVideoElement,
@@ -957,8 +916,8 @@ function selectMostConfident(
 }
 
 const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle', number>> = {
-  left: { shoulder: 5, elbow: 7, wrist: 9, hip: 11, knee: 13, ankle: 15 },
-  right: { shoulder: 6, elbow: 8, wrist: 10, hip: 12, knee: 14, ankle: 16 },
+  left: { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 },
+  right: { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 },
 };
 
 function getPoseCandidate(
@@ -979,7 +938,7 @@ function getPoseCandidate(
     (sum, point) => sum + (point.score ?? 0),
     0,
   ) / visiblePoints.length;
-  const visibilityRatio = visiblePoints.length / Math.max(17, pose.keypoints?.length ?? 0);
+  const visibilityRatio = visiblePoints.length / Math.max(POSE_LANDMARK_COUNT, pose.keypoints?.length ?? 0);
 
   return {
     pose,
@@ -1152,15 +1111,23 @@ function stabilizePosePoints(
   memory: PosePointMemoryMap,
 ) {
   const stabilized = [...(keypoints ?? [])];
-  Array.from({ length: 17 }, (_, index) => index).forEach((index) => {
+  Array.from({ length: POSE_LANDMARK_COUNT }, (_, index) => index).forEach((index) => {
     const current = keypoints?.[index];
     const previous = memory[index];
     if (current && (current.score ?? 0) >= 0.2) {
+      const world = current.world && previous?.point.world
+        ? {
+            x: current.world.x * 0.72 + previous.point.world.x * 0.28,
+            y: current.world.y * 0.72 + previous.point.world.y * 0.28,
+            z: current.world.z * 0.72 + previous.point.world.z * 0.28,
+          }
+        : current.world;
       const point = previous
         ? {
             ...current,
             x: current.x * 0.72 + previous.point.x * 0.28,
             y: current.y * 0.72 + previous.point.y * 0.28,
+            world,
           }
         : current;
       stabilized[index] = point;
@@ -1281,6 +1248,48 @@ function getCameraGuidance(
     };
   }
 
+  const leftShoulder = keypoints[sideKeypoints.left.shoulder];
+  const rightShoulder = keypoints[sideKeypoints.right.shoulder];
+  const leftHip = keypoints[sideKeypoints.left.hip];
+  const rightHip = keypoints[sideKeypoints.right.hip];
+  const shouldersAreVisible = [leftShoulder, rightShoulder, leftHip, rightHip]
+    .every((point) => (point?.score ?? 0) >= CAMERA_POINT_MIN_SCORE);
+
+  if (shouldersAreVisible) {
+    const shoulderWidth = Math.hypot(
+      rightShoulder.x - leftShoulder.x,
+      rightShoulder.y - leftShoulder.y,
+    );
+    const torsoLength = Math.max(
+      Math.hypot(leftShoulder.x - leftHip.x, leftShoulder.y - leftHip.y),
+      Math.hypot(rightShoulder.x - rightHip.x, rightShoulder.y - rightHip.y),
+    );
+    const cameraRoll = Math.atan2(
+      Math.abs(rightShoulder.y - leftShoulder.y),
+      Math.abs(rightShoulder.x - leftShoulder.x),
+    ) * (180 / Math.PI);
+
+    if (cameraRoll > MAX_CAMERA_ROLL_DEGREES) {
+      return {
+        tone: 'warning',
+        message: 'Endereza un poco el móvil',
+        detail: 'La inclinación actual es demasiado extrema para separar el movimiento de la cámara. Una inclinación moderada sí funciona.',
+      };
+    }
+
+    if (
+      exercise !== 'press-militar'
+      && torsoLength > 0
+      && shoulderWidth / torsoLength > MAX_FRONT_VIEW_RATIO
+    ) {
+      return {
+        tone: 'warning',
+        message: 'Ponte principalmente de lado',
+        detail: 'Este ejercicio necesita una vista lateral para distinguir el recorrido. Deja visibles las articulaciones sin quedar completamente de frente.',
+      };
+    }
+  }
+
   return {
     tone: 'ready',
     message: 'Encuadre válido',
@@ -1288,6 +1297,21 @@ function getCameraGuidance(
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
       : 'Los puntos necesarios están visibles. Puedes iniciar aunque el móvil esté bajo o inclinado.',
   };
+}
+
+function getMeasurementCoordinates(point: PosePoint): { x: number; y: number; z: number } {
+  return point.world ?? { x: point.x, y: point.y, z: point.z ?? 0 };
+}
+
+function distanceBetweenPoints(first: PosePoint | undefined, second: PosePoint | undefined) {
+  if (!first || !second) return null;
+  const firstCoordinates = getMeasurementCoordinates(first);
+  const secondCoordinates = getMeasurementCoordinates(second);
+  return Math.hypot(
+    firstCoordinates.x - secondCoordinates.x,
+    firstCoordinates.y - secondCoordinates.y,
+    firstCoordinates.z - secondCoordinates.z,
+  );
 }
 
 function calculateAngle(
@@ -1298,23 +1322,32 @@ function calculateAngle(
   if (!first || !vertex || !last) return null;
   if ((first.score ?? 0) < 0.2 || (vertex.score ?? 0) < 0.2 || (last.score ?? 0) < 0.2) return null;
 
+  const firstCoordinates = getMeasurementCoordinates(first);
+  const vertexCoordinates = getMeasurementCoordinates(vertex);
+  const lastCoordinates = getMeasurementCoordinates(last);
   const firstVector = {
-    x: first.x - vertex.x,
-    y: first.y - vertex.y,
+    x: firstCoordinates.x - vertexCoordinates.x,
+    y: firstCoordinates.y - vertexCoordinates.y,
+    z: firstCoordinates.z - vertexCoordinates.z,
   };
   const lastVector = {
-    x: last.x - vertex.x,
-    y: last.y - vertex.y,
+    x: lastCoordinates.x - vertexCoordinates.x,
+    y: lastCoordinates.y - vertexCoordinates.y,
+    z: lastCoordinates.z - vertexCoordinates.z,
   };
-  const firstLength = Math.hypot(firstVector.x, firstVector.y);
-  const lastLength = Math.hypot(lastVector.x, lastVector.y);
+  const firstLength = Math.hypot(firstVector.x, firstVector.y, firstVector.z);
+  const lastLength = Math.hypot(lastVector.x, lastVector.y, lastVector.z);
   if (!firstLength || !lastLength) return null;
 
   const cosine = Math.max(
     -1,
     Math.min(
       1,
-      (firstVector.x * lastVector.x + firstVector.y * lastVector.y) / (firstLength * lastLength),
+      (
+        firstVector.x * lastVector.x
+        + firstVector.y * lastVector.y
+        + firstVector.z * lastVector.z
+      ) / (firstLength * lastLength),
     ),
   );
   return Math.round(Math.acos(cosine) * (180 / Math.PI));
@@ -1361,9 +1394,14 @@ function getPushupTechniqueFeedback(
     return defaultTechniqueFeedback;
   }
 
-  const torsoLength = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+  const torsoLength = distanceBetweenPoints(shoulder, hip) ?? 0;
+  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
+  const wristCoordinates = getMeasurementCoordinates(wrist);
   const wristOffset = torsoLength > 0
-    ? Math.abs(wrist.x - shoulder.x) / torsoLength
+    ? Math.hypot(
+        wristCoordinates.x - shoulderCoordinates.x,
+        wristCoordinates.z - shoulderCoordinates.z,
+      ) / torsoLength
     : 1;
   const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
   const elbowMinAngle = variant === 'declined' ? 30 : 25;
@@ -1441,10 +1479,18 @@ function getPikePushupTechniqueFeedback(
     return defaultTechniqueFeedback;
   }
 
-  const torsoLength = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
-  const hipLiftRatio = torsoLength > 0 ? (shoulder.y - hip.y) / torsoLength : 0;
+  const torsoLength = distanceBetweenPoints(shoulder, hip) ?? 0;
+  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
+  const hipCoordinates = getMeasurementCoordinates(hip);
+  const wristCoordinates = getMeasurementCoordinates(wrist);
+  const hipLiftRatio = torsoLength > 0
+    ? (shoulderCoordinates.y - hipCoordinates.y) / torsoLength
+    : 0;
   const wristOffset = torsoLength > 0
-    ? Math.abs(wrist.x - shoulder.x) / torsoLength
+    ? Math.hypot(
+        wristCoordinates.x - shoulderCoordinates.x,
+        wristCoordinates.z - shoulderCoordinates.z,
+      ) / torsoLength
     : 1;
 
   if (hipLiftRatio < PIKE_MIN_HIP_LIFT_RATIO) {
@@ -1653,9 +1699,14 @@ function getLungeTechniqueFeedback(
     return defaultTechniqueFeedback;
   }
 
-  const shinLength = Math.hypot(frontKnee.x - frontAnkle.x, frontKnee.y - frontAnkle.y);
+  const shinLength = distanceBetweenPoints(frontKnee, frontAnkle) ?? 0;
+  const kneeCoordinates = getMeasurementCoordinates(frontKnee);
+  const ankleCoordinates = getMeasurementCoordinates(frontAnkle);
   const kneeAnkleOffset = shinLength > 0
-    ? Math.abs(frontKnee.x - frontAnkle.x) / shinLength
+    ? Math.hypot(
+        kneeCoordinates.x - ankleCoordinates.x,
+        kneeCoordinates.z - ankleCoordinates.z,
+      ) / shinLength
     : 1;
 
   if (frontKneeAngle > LUNGE_KNEE_MAX_ANGLE) {
@@ -1774,8 +1825,13 @@ function calculateForwardLeanAngle(
   if (!shoulder || !hip) return null;
   if ((shoulder.score ?? 0) < 0.2 || (hip.score ?? 0) < 0.2) return null;
 
-  const horizontalDistance = Math.abs(shoulder.x - hip.x);
-  const verticalDistance = Math.abs(shoulder.y - hip.y);
+  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
+  const hipCoordinates = getMeasurementCoordinates(hip);
+  const horizontalDistance = Math.hypot(
+    shoulderCoordinates.x - hipCoordinates.x,
+    shoulderCoordinates.z - hipCoordinates.z,
+  );
+  const verticalDistance = Math.abs(shoulderCoordinates.y - hipCoordinates.y);
   if (!horizontalDistance && !verticalDistance) return null;
 
   return Math.round(Math.atan2(horizontalDistance, verticalDistance) * (180 / Math.PI));
@@ -1790,7 +1846,9 @@ function isHeadOverWrists(
   const wrist = keypoints[sideKeypoints[side].wrist];
   if (!nose || !wrist) return false;
   if ((nose.score ?? 0) < 0.2 || (wrist.score ?? 0) < 0.2) return false;
-  return nose.y < wrist.y;
+  const noseCoordinates = getMeasurementCoordinates(nose);
+  const wristCoordinates = getMeasurementCoordinates(wrist);
+  return noseCoordinates.y < wristCoordinates.y;
 }
 
 function getDipTechniqueFeedback(
@@ -2196,22 +2254,37 @@ function calculateHipSagRatio(
     return null;
   }
 
+  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
+  const hipCoordinates = getMeasurementCoordinates(hip);
+  const ankleCoordinates = getMeasurementCoordinates(ankle);
   const bodyVector = {
-    x: ankle.x - shoulder.x,
-    y: ankle.y - shoulder.y,
+    x: ankleCoordinates.x - shoulderCoordinates.x,
+    y: ankleCoordinates.y - shoulderCoordinates.y,
+    z: ankleCoordinates.z - shoulderCoordinates.z,
   };
-  const bodyLengthSquared = bodyVector.x ** 2 + bodyVector.y ** 2;
+  const bodyLengthSquared = bodyVector.x ** 2 + bodyVector.y ** 2 + bodyVector.z ** 2;
   if (!bodyLengthSquared) return null;
 
   const hipVector = {
-    x: hip.x - shoulder.x,
-    y: hip.y - shoulder.y,
+    x: hipCoordinates.x - shoulderCoordinates.x,
+    y: hipCoordinates.y - shoulderCoordinates.y,
+    z: hipCoordinates.z - shoulderCoordinates.z,
   };
   const projection = (
-    (hipVector.x * bodyVector.x + hipVector.y * bodyVector.y) / bodyLengthSquared
+    (
+      hipVector.x * bodyVector.x
+      + hipVector.y * bodyVector.y
+      + hipVector.z * bodyVector.z
+    ) / bodyLengthSquared
   );
-  const expectedHipY = shoulder.y + projection * bodyVector.y;
-  return (hip.y - expectedHipY) / Math.sqrt(bodyLengthSquared);
+  const expectedHipY = shoulderCoordinates.y + projection * bodyVector.y;
+  const expectedHipX = shoulderCoordinates.x + projection * bodyVector.x;
+  const expectedHipZ = shoulderCoordinates.z + projection * bodyVector.z;
+  return Math.hypot(
+    hipCoordinates.x - expectedHipX,
+    hipCoordinates.y - expectedHipY,
+    hipCoordinates.z - expectedHipZ,
+  ) / Math.sqrt(bodyLengthSquared) * (hipCoordinates.y - expectedHipY < 0 ? -1 : 1);
 }
 
 function calculateAngleToFloor(
@@ -2221,8 +2294,13 @@ function calculateAngleToFloor(
   if (!first || !second) return null;
   if ((first.score ?? 0) < 0.2 || (second.score ?? 0) < 0.2) return null;
 
-  const horizontalDistance = Math.abs(first.x - second.x);
-  const verticalDistance = Math.abs(first.y - second.y);
+  const firstCoordinates = getMeasurementCoordinates(first);
+  const secondCoordinates = getMeasurementCoordinates(second);
+  const horizontalDistance = Math.hypot(
+    firstCoordinates.x - secondCoordinates.x,
+    firstCoordinates.z - secondCoordinates.z,
+  );
+  const verticalDistance = Math.abs(firstCoordinates.y - secondCoordinates.y);
   if (!horizontalDistance && !verticalDistance) return null;
 
   return Math.round(Math.atan2(verticalDistance, horizontalDistance) * (180 / Math.PI));
@@ -2515,6 +2593,7 @@ function getAngleDiagnosticPoints(
       label,
       x: point?.x ?? null,
       y: point?.y ?? null,
+      z: point?.world?.z ?? point?.z ?? null,
     };
   });
 }
@@ -2540,6 +2619,7 @@ function Home() {
   const [exerciseStarted, setExerciseStarted] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [detectionStable, setDetectionStable] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraGuidance, setCameraGuidance] = useState<CameraGuidance>({
     tone: 'checking',
@@ -2587,6 +2667,7 @@ function Home() {
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
+  const stabilityFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
@@ -2652,7 +2733,7 @@ function Home() {
     }
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    if (detectorRef.current?.dispose) detectorRef.current.dispose();
+    detectorRef.current?.close();
     detectorRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     if (canvasRef.current) {
@@ -2660,6 +2741,8 @@ function Home() {
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
     posePointMemoryRef.current = {};
+    stabilityFramesRef.current = 0;
+    setDetectionStable(false);
   }, []);
 
   const syncVideoSize = useCallback(() => {
@@ -2682,7 +2765,8 @@ function Home() {
     }
 
     try {
-      const poses = await detector.estimatePoses(video, { flipHorizontal: false });
+      const detectedResult = detector.detectForVideo(video, performance.now());
+      const poses = detectedResult ? [detectedResult] : [];
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
       const previousPoseTrack = primaryPoseTrackRef.current;
       const primaryPose = selectPrimaryPose(
@@ -2712,9 +2796,9 @@ function Home() {
         detectedPose?.keypoints,
         posePointMemoryRef.current,
       );
-      const pose = stabilizedKeypoints.length
+      const pose: Pose | undefined = detectedPose && stabilizedKeypoints.length
         ? {
-            ...(detectedPose ?? {}),
+            ...detectedPose,
             keypoints: stabilizedKeypoints,
           }
         : undefined;
@@ -2740,6 +2824,17 @@ function Home() {
           pose?.keypoints,
           nextDominantSide,
         );
+      const frameCanMeasure = Boolean(
+        frameCameraReady
+        && hasFreshPose
+        && rawAngle !== null
+        && visiblePoints >= 10,
+      );
+      stabilityFramesRef.current = frameCanMeasure
+        ? Math.min(8, stabilityFramesRef.current + 1)
+        : 0;
+      const frameDetectionStable = stabilityFramesRef.current >= 4;
+      setDetectionStable(frameDetectionStable);
       const repetitionConfig = getRepetitionConfig(selectedExerciseForFrame);
       const repetitionAngle = repetitionConfig
         ? calculateRepetitionAngle(
@@ -2784,6 +2879,7 @@ function Home() {
         exerciseStartedRef.current
         && hasFreshPose
         && frameCameraReady
+        && frameDetectionStable
         && selectedExerciseRef.current === 'sentadillas'
         && rawAngle !== null
       ) {
@@ -2827,6 +2923,7 @@ function Home() {
         && exerciseStartedRef.current
         && hasFreshPose
         && frameCameraReady
+        && frameDetectionStable
         && rawAngle !== null
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
@@ -2887,6 +2984,7 @@ function Home() {
         exerciseStartedRef.current
         && hasFreshPose
         && frameCameraReady
+        && frameDetectionStable
         && repetitionConfig
         && repetitionAngle !== null
         && rowTechniqueReady
@@ -2925,7 +3023,7 @@ function Home() {
         setExerciseRepPhase(resetTracker.phase);
         setExerciseMinimumAngle(resetTracker.endpointAngle);
       }
-      let displayAngle = nextAngle;
+      let displayAngle = frameDetectionStable ? nextAngle : null;
       if (nextAngle === null) {
         angleDisplaySamplesRef.current = [];
         angleDisplayRef.current = null;
@@ -3007,9 +3105,9 @@ function Home() {
       }
       previousSideRef.current = nextDominantSide;
       setConfidencePoints([
-        selectMostConfident(pose?.keypoints, 'Hombro', 5, 6),
-        selectMostConfident(pose?.keypoints, 'Cadera', 11, 12),
-        selectMostConfident(pose?.keypoints, 'Rodilla', 13, 14),
+        selectMostConfident(pose?.keypoints, 'Hombro', 11, 12),
+        selectMostConfident(pose?.keypoints, 'Cadera', 23, 24),
+        selectMostConfident(pose?.keypoints, 'Rodilla', 25, 26),
       ]);
       if (canvasRef.current) {
         drawSkeleton(
@@ -3023,6 +3121,7 @@ function Home() {
       if (activeRef.current) {
         incrementErrorCount();
         setPoseDetected(false);
+          setDetectionStable(false);
       }
     }
 
@@ -3031,16 +3130,7 @@ function Home() {
     }
   }, [incrementErrorCount]);
 
-  const loadDetector = useCallback(async () => {
-    await loadScript(SCRIPT_URLS.tensorflow, 'posture-tfjs');
-    await loadScript(SCRIPT_URLS.poseDetection, 'posture-pose-detection');
-    const browser = window as BrowserGlobals;
-    if (!browser.poseDetection) throw new Error('El análisis no está disponible.');
-    return browser.poseDetection.createDetector(
-      browser.poseDetection.SupportedModels.MoveNet,
-      { modelType: browser.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING },
-    );
-  }, []);
+  const loadDetector = useCallback(async () => createPoseDetector(), []);
 
   const startCamera = useCallback(async (
     exerciseId?: ExerciseId,
@@ -3060,6 +3150,8 @@ function Home() {
     stopResources();
     setPoseDetected(false);
     setFaceDetected(false);
+    setDetectionStable(false);
+    setDetectionStable(false);
     setCameraReady(false);
     setCameraGuidance({
       tone: 'checking',
@@ -3071,6 +3163,7 @@ function Home() {
     setVideoResolution({ width: 0, height: 0 });
     setFps(0);
     fpsFramesRef.current = 0;
+    stabilityFramesRef.current = 0;
     setConfidencePoints([
       { label: 'Hombro', score: null, side: '—' },
       { label: 'Cadera', score: null, side: '—' },
@@ -3139,7 +3232,7 @@ function Home() {
       setPhase('loading-model');
       const detector = await loadDetector();
       detectorRef.current = detector;
-      setModelStatus('Modelo cargado ✓');
+      setModelStatus(`${POSE_MODEL_NAME} cargado ✓`);
       activeRef.current = true;
       setPhase('tracking');
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
@@ -3260,7 +3353,9 @@ function Home() {
         : 'Buscando tu cara...'
       : poseDetected
         ? cameraReady
-          ? 'Cuerpo detectado ✓'
+          ? detectionStable
+            ? 'Encuadre válido · análisis 3D estable ✓'
+            : 'Mejorando detección'
           : cameraGuidance.message
         : 'Buscando tu cuerpo...';
   const modelStatusClass = modelStatus.includes('✓')
@@ -3451,7 +3546,7 @@ function Home() {
               </div>
               <p className="privacy-note">
                 <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
-                <span>La imagen se procesa solo en tu dispositivo.</span>
+                <span>La imagen se procesa solo en tu dispositivo; no se almacena.</span>
               </p>
             </section>
           )}
@@ -3487,9 +3582,11 @@ function Home() {
                 <div className="exercise-start-copy">
                   <strong>
                     {exerciseStarted
-                      ? cameraReady
-                        ? 'Ejercicio iniciado'
-                        : 'Ajusta la cámara para continuar'
+                      ? !cameraReady
+                        ? 'Ajusta la cámara para continuar'
+                        : !detectionStable
+                          ? 'Mejorando detección'
+                          : 'Ejercicio iniciado'
                       : faceDetected
                         ? cameraReady
                           ? '¿Ya estás listo?'
@@ -3498,9 +3595,11 @@ function Home() {
                   </strong>
                   <span>
                     {exerciseStarted
-                      ? cameraReady
-                        ? 'El contador está activo. Detén el curso cuando hayas terminado.'
-                        : cameraGuidance.detail
+                      ? !cameraReady
+                        ? cameraGuidance.detail
+                        : !detectionStable
+                          ? 'Mantén las articulaciones visibles; no se contará hasta estabilizar la pose 3D.'
+                          : 'El contador está activo. Detén el curso cuando hayas terminado.'
                       : faceDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
@@ -3984,12 +4083,12 @@ function Home() {
                     </dd>
                   </div>
                   <div className="diagnostic-row diagnostic-row--points">
-                    <dt>Puntos ángulo</dt>
+                     <dt>Puntos ángulo 3D</dt>
                     <dd className="diagnostic-angle-points">
                       {anglePoints.length
                         ? anglePoints.map((point) => (
                           <span key={point.label}>
-                            {point.label} ({formatCoordinate(point.x)}, {formatCoordinate(point.y)})
+                             {point.label} ({formatCoordinate(point.x)}, {formatCoordinate(point.y)}, {formatCoordinate(point.z)})
                           </span>
                         ))
                         : '—'}
@@ -4014,7 +4113,13 @@ function Home() {
                   <div className="diagnostic-row">
                     <dt>Persona</dt>
                     <dd className={`diagnostic-value ${faceDetected ? 'diagnostic-value--success' : ''}`}>
-                      {poseDetected ? 'Cuerpo detectado ✓' : faceDetected ? 'Rostro detectado ✓' : 'Sin detección'}
+                      {poseDetected
+                        ? detectionStable
+                          ? 'Pose 3D estable ✓'
+                          : 'Mejorando detección'
+                        : faceDetected
+                          ? 'Rostro detectado ✓'
+                          : 'Sin detección'}
                     </dd>
                   </div>
                   <div className="diagnostic-row diagnostic-row--confidence">
