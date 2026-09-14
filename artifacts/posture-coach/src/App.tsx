@@ -3689,14 +3689,6 @@ function Home() {
                     <span>Total evaluadas</span>
                     <strong>{squatRepetitions}</strong>
                   </div>
-                  <div className="squat-summary-stat">
-                    <span>Fase</span>
-                    <strong>{squatPhaseLabel}</strong>
-                  </div>
-                  <div className="squat-summary-stat">
-                    <span>Último mínimo</span>
-                    <strong>{squatMinimumAngle === null ? '—' : `${squatMinimumAngle}°`}</strong>
-                  </div>
                   <p>Rango objetivo 83–90° · ángulo compensado para la posición de la cámara.</p>
                 </div>
               )}
@@ -3709,14 +3701,6 @@ function Home() {
                   <div className="squat-summary-stat">
                     <span>Total evaluadas</span>
                     <strong>{pullupRepetitions}</strong>
-                  </div>
-                  <div className="squat-summary-stat">
-                    <span>Fase</span>
-                    <strong>{pullupPhaseLabel}</strong>
-                  </div>
-                  <div className="squat-summary-stat">
-                    <span>Ángulo mínimo</span>
-                    <strong>{pullupMinimumAngle === null ? '—' : `${pullupMinimumAngle}°`}</strong>
                   </div>
                   <p>
                     {selectedExercise === 'dominadas-supinas'
@@ -3753,18 +3737,6 @@ function Home() {
                     <span>Total válidas</span>
                     <strong>{exerciseRepetitions}</strong>
                   </div>
-                  {selectedExercise !== 'remo-barra' && (
-                    <>
-                      <div className="squat-summary-stat">
-                        <span>Fase</span>
-                        <strong>{exerciseRepPhaseLabel}</strong>
-                      </div>
-                      <div className="squat-summary-stat">
-                        <span>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</span>
-                        <strong>{exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}</strong>
-                      </div>
-                    </>
-                  )}
                   <p>
                     {selectedExercise === 'jalon'
                       ? `Solo cuenta si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
@@ -4131,20 +4103,6 @@ function Home() {
                         <dt>Total válidas</dt>
                         <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
                       </div>
-                      {selectedExercise !== 'remo-barra' && (
-                        <>
-                          <div className="diagnostic-row">
-                            <dt>{selectedExercise === 'jalon' ? 'Ángulo objetivo' : 'Ángulo final'}</dt>
-                            <dd className="diagnostic-value">
-                              {exerciseMinimumAngle === null ? '—' : `${exerciseMinimumAngle}°`}
-                            </dd>
-                          </div>
-                          <div className="diagnostic-row">
-                            <dt>Fase</dt>
-                            <dd className="diagnostic-value">{exerciseRepPhaseLabel}</dd>
-                          </div>
-                        </>
-                      )}
                     </>
                   )}
                   <div className="diagnostic-row">
