@@ -187,7 +187,7 @@ type PosePointMemory = {
   point: PosePoint;
   missingFrames: number;
 };
-type BarbellRowPointMemory = Partial<Record<number, PosePointMemory>>;
+type PosePointMemoryMap = Partial<Record<number, PosePointMemory>>;
 type DiagnosticPoint = {
   label: string;
   score: number | null;
@@ -427,7 +427,9 @@ const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
 const FACE_POINT_MIN_SCORE = 0.3;
 const CAMERA_POINT_MIN_SCORE = 0.45;
 const ROW_ARM_POINT_MIN_SCORE = 0.28;
-const ROW_STALE_POINT_FRAMES = 4;
+const POSE_STALE_POINT_FRAMES = 6;
+const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
+const POSE_LOCK_MIN_AREA_RATIO = 0.25;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
 const CAMERA_FRAME_MARGIN = 0.02;
@@ -984,18 +986,43 @@ function getPoseContinuityBonus(candidate: PoseCandidate, previousTrack: PoseTra
   return (1 - distance / 0.28) * areaSimilarity * 0.2;
 }
 
+function isPoseContinuous(candidate: PoseCandidate, previousTrack: PoseTrack) {
+  return isPoseTrackContinuous(candidate, previousTrack);
+}
+
+function isPoseTrackContinuous(
+  candidate: Pick<PoseTrack, 'centerX' | 'centerY' | 'area'>,
+  previousTrack: PoseTrack,
+) {
+  const distance = Math.hypot(
+    candidate.centerX - previousTrack.centerX,
+    candidate.centerY - previousTrack.centerY,
+  );
+  const largerArea = Math.max(candidate.area, previousTrack.area, 0.001);
+  const areaRatio = Math.min(candidate.area, previousTrack.area) / largerArea;
+
+  return distance <= POSE_LOCK_MAX_CENTER_DISTANCE
+    && areaRatio >= POSE_LOCK_MIN_AREA_RATIO;
+}
+
 function selectPrimaryPose(
   poses: Pose[],
   videoWidth: number,
   videoHeight: number,
   previousTrack: PoseTrack | null,
+  lockToPrevious: boolean,
 ) {
   const candidates = poses
     .map((pose) => getPoseCandidate(pose, videoWidth, videoHeight))
     .filter((candidate): candidate is PoseCandidate => candidate !== null);
   if (!candidates.length) return null;
 
-  const best = candidates
+  const eligibleCandidates = lockToPrevious && previousTrack
+    ? candidates.filter((candidate) => isPoseContinuous(candidate, previousTrack))
+    : candidates;
+  if (!eligibleCandidates.length) return null;
+
+  const best = eligibleCandidates
     .map((candidate) => ({
       candidate,
       score: candidate.prominence + getPoseContinuityBonus(candidate, previousTrack),
@@ -1013,7 +1040,10 @@ function selectPrimaryPose(
   };
 }
 
-function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult | null {
+function getDominantSide(
+  keypoints: PosePoint[] | undefined,
+  previousSide: PoseSide | null = null,
+): DominantSideResult | null {
   if (!keypoints) return null;
   const sides: PoseSide[] = ['left', 'right'];
   const scores = sides.map((side) => {
@@ -1027,8 +1057,22 @@ function getDominantSide(keypoints: PosePoint[] | undefined): DominantSideResult
       count: visible.length,
     };
   });
-  const best = scores.sort((first, second) => second.average - first.average)[0];
-  return best.count ? { side: best.side, average: best.average } : null;
+  const strongest = [...scores].sort((first, second) => second.average - first.average)[0];
+  if (!strongest?.count) return null;
+
+  const previous = previousSide
+    ? scores.find((candidate) => candidate.side === previousSide)
+    : null;
+  const shouldKeepPreviousSide = Boolean(
+    previous
+    && previous.count >= 3
+    && previous.average >= 0.3
+    && strongest.side !== previous.side
+    && strongest.average - previous.average < 0.18,
+  );
+  const selected = shouldKeepPreviousSide && previous ? previous : strongest;
+
+  return { side: selected.side, average: selected.average };
 }
 
 function getBarbellRowDominantSide(
@@ -1083,15 +1127,13 @@ function getBarbellRowDominantSide(
     : null;
 }
 
-function stabilizeBarbellRowArmPoints(
+function stabilizePosePoints(
   keypoints: PosePoint[] | undefined,
-  memory: BarbellRowPointMemory,
+  memory: PosePointMemoryMap,
 ) {
-  if (!keypoints) return undefined;
-
-  const stabilized = [...keypoints];
-  [7, 8, 9, 10].forEach((index) => {
-    const current = keypoints[index];
+  const stabilized = [...(keypoints ?? [])];
+  Array.from({ length: 17 }, (_, index) => index).forEach((index) => {
+    const current = keypoints?.[index];
     const previous = memory[index];
     if (current && (current.score ?? 0) >= 0.2) {
       const point = previous
@@ -1106,10 +1148,10 @@ function stabilizeBarbellRowArmPoints(
       return;
     }
 
-    if (previous && previous.missingFrames < ROW_STALE_POINT_FRAMES) {
+    if (previous && previous.missingFrames < POSE_STALE_POINT_FRAMES) {
       const point = {
         ...previous.point,
-        score: Math.max(ROW_ARM_POINT_MIN_SCORE, (previous.point.score ?? 0.3) * 0.86),
+        score: Math.max(0.2, (previous.point.score ?? 0.3) * 0.86),
       };
       stabilized[index] = point;
       memory[index] = {
@@ -2464,7 +2506,7 @@ function Home() {
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
-  const barbellRowPointMemoryRef = useRef<BarbellRowPointMemory>({});
+  const posePointMemoryRef = useRef<PosePointMemoryMap>({});
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -2531,7 +2573,7 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
-    barbellRowPointMemoryRef.current = {};
+    posePointMemoryRef.current = {};
   }, []);
 
   const syncVideoSize = useCallback(() => {
@@ -2555,37 +2597,46 @@ function Home() {
 
     try {
       const poses = await detector.estimatePoses(video, { flipHorizontal: false });
+      const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
+      const previousPoseTrack = primaryPoseTrackRef.current;
       const primaryPose = selectPrimaryPose(
         poses,
         video.videoWidth,
         video.videoHeight,
         primaryPoseTrackRef.current,
+        exerciseStartedRef.current,
       );
       const detectedPose = primaryPose?.pose;
       if (primaryPose) {
+        if (
+          previousPoseTrack
+          && !exerciseStartedRef.current
+          && !isPoseTrackContinuous(primaryPose.track, previousPoseTrack)
+        ) {
+          posePointMemoryRef.current = {};
+        }
         primaryPoseTrackRef.current = primaryPose.track;
       } else if (primaryPoseTrackRef.current) {
         const nextLostFrames = primaryPoseTrackRef.current.lostFrames + 1;
-        primaryPoseTrackRef.current = nextLostFrames >= 8
+        primaryPoseTrackRef.current = nextLostFrames >= 8 && !exerciseStartedRef.current
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
-      const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
-      const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
-        ? getBarbellRowDominantSide(detectedPose?.keypoints, previousSideRef.current)
-        : getDominantSide(detectedPose?.keypoints);
-      const nextDominantSide = nextDominantSideResult?.side ?? null;
-      const pose = detectedPose
+      const stabilizedKeypoints = stabilizePosePoints(
+        detectedPose?.keypoints,
+        posePointMemoryRef.current,
+      );
+      const pose = stabilizedKeypoints.length
         ? {
-            ...detectedPose,
-            keypoints: selectedExerciseForFrame === 'remo-barra'
-              ? stabilizeBarbellRowArmPoints(
-                  detectedPose.keypoints,
-                  barbellRowPointMemoryRef.current,
-                )
-              : detectedPose.keypoints,
+            ...(detectedPose ?? {}),
+            keypoints: stabilizedKeypoints,
           }
         : undefined;
+      const hasFreshPose = Boolean(detectedPose);
+      const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
+        ? getBarbellRowDominantSide(pose?.keypoints, previousSideRef.current)
+        : getDominantSide(pose?.keypoints, previousSideRef.current);
+      const nextDominantSide = nextDominantSideResult?.side ?? null;
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const nextCameraGuidance = getCameraGuidance(
@@ -2614,6 +2665,7 @@ function Home() {
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
+        && hasFreshPose
         && frameCameraReady
         && selectedExerciseRef.current === 'sentadillas'
         && rawAngle !== null
@@ -2656,6 +2708,7 @@ function Home() {
         (selectedExerciseRef.current === 'dominadas'
           || selectedExerciseRef.current === 'dominadas-supinas')
         && exerciseStartedRef.current
+        && hasFreshPose
         && frameCameraReady
         && rawAngle !== null
       ) {
@@ -2713,6 +2766,7 @@ function Home() {
         || isDipTechniqueValid(pose?.keypoints, nextDominantSide);
       if (
         exerciseStartedRef.current
+        && hasFreshPose
         && frameCameraReady
         && repetitionConfig
         && repetitionAngle !== null
@@ -2734,7 +2788,7 @@ function Home() {
       } else if (
         (selectedExerciseForFrame === 'remo-barra' || selectedExerciseForFrame === 'fondos')
         && exerciseStartedRef.current
-        && (!frameCameraReady || !rowTechniqueReady || !dipTechniqueReady)
+        && (!hasFreshPose || !frameCameraReady || !rowTechniqueReady || !dipTechniqueReady)
       ) {
         const resetTracker = createExerciseRepTracker();
         exerciseRepTrackerRef.current = resetTracker;
