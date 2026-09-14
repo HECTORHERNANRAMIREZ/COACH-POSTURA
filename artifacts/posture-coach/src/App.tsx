@@ -402,6 +402,8 @@ const PULLDOWN_ANGLE_MIN = 25;
 const PULLDOWN_ANGLE_MAX = 60;
 const PULLDOWN_TORSO_MIN_ANGLE = 10;
 const PULLDOWN_TORSO_MAX_ANGLE = 30;
+const PULLDOWN_ELBOW_MIN_ANGLE = 80;
+const PULLDOWN_ELBOW_MAX_ANGLE = 120;
 const ROW_TORSO_MIN_ANGLE = 45;
 const ROW_TORSO_MAX_ANGLE = 75;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -1202,7 +1204,7 @@ function getCameraGuidance(
       : exercise === 'sentadillas' || exercise === 'zancadas' || exercise === 'zancada-banco'
         ? ['hip', 'knee', 'ankle']
         : exercise === 'jalon'
-          ? ['hip', 'shoulder', 'elbow']
+          ? ['hip', 'shoulder', 'elbow', 'wrist']
           : exercise === 'remo-barra'
             ? ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle']
             : exercise === 'plancha'
@@ -1950,10 +1952,14 @@ function getLatPulldownTechniqueFeedback(
   const hip = keypoints[indexes.hip];
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
   const pulldownAngle = calculateAngle(hip, shoulder, elbow);
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
   const torsoLean = calculateForwardLeanAngle(shoulder, hip);
 
-  if (pulldownAngle === null || torsoLean === null) return defaultTechniqueFeedback;
+  if (pulldownAngle === null || elbowAngle === null || torsoLean === null) {
+    return defaultTechniqueFeedback;
+  }
 
   if (torsoLean < PULLDOWN_TORSO_MIN_ANGLE) {
     return {
@@ -1984,11 +1990,25 @@ function getLatPulldownTechniqueFeedback(
       detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe mantenerse entre 25° y 60°.`,
     };
   }
+  if (elbowAngle < PULLDOWN_ELBOW_MIN_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'No cierres demasiado los codos',
+      detail: `El codo está a ${elbowAngle}°. En la parte baja del jalón busca aproximadamente ${PULLDOWN_ELBOW_MIN_ANGLE}°–${PULLDOWN_ELBOW_MAX_ANGLE}°.`,
+    };
+  }
+  if (elbowAngle > PULLDOWN_ELBOW_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Baja un poco más los codos',
+      detail: `El codo está a ${elbowAngle}°. Lleva la barra hacia el pecho y busca ${PULLDOWN_ELBOW_MIN_ANGLE}°–${PULLDOWN_ELBOW_MAX_ANGLE}°.`,
+    };
+  }
 
   return {
     tone: 'success',
     message: 'Rango correcto',
-    detail: `Torso ${torsoLean}° · cadera–hombro–codo ${pulldownAngle}°. Vuelve a subir para contar la repetición.`,
+    detail: `Torso ${torsoLean}° · codo ${elbowAngle}° · tirón ${pulldownAngle}°. Vuelve a subir para contar la repetición.`,
   };
 }
 
@@ -2003,6 +2023,7 @@ function isLatPulldownTechniqueValid(
     keypoints[indexes.hip],
     keypoints[indexes.shoulder],
     keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
   ];
   if (requiredPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)) {
     return false;
@@ -2409,6 +2430,7 @@ function getAngleDiagnosticPoints(
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
     ],
     'remo-barra': [
       { label: 'Cadera', joint: 'hip' },
@@ -2523,6 +2545,7 @@ function Home() {
   const [dipElbowAngle, setDipElbowAngle] = useState<number | null>(null);
   const [dipTorsoAngle, setDipTorsoAngle] = useState<number | null>(null);
   const [pulldownTorsoAngle, setPulldownTorsoAngle] = useState<number | null>(null);
+  const [pulldownElbowAngle, setPulldownElbowAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2719,9 +2742,17 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
           )
         : null;
+      const pulldownElbowAngleForFrame = selectedExerciseForFrame === 'jalon' && nextDominantSide
+        ? calculateAngle(
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].elbow],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].wrist],
+          )
+        : null;
       setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
       setDipTorsoAngle(dipTorsoAngleForFrame);
       setPulldownTorsoAngle(pulldownTorsoAngleForFrame);
+      setPulldownElbowAngle(pulldownElbowAngleForFrame);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -3025,6 +3056,7 @@ function Home() {
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
+    setPulldownElbowAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3151,6 +3183,7 @@ function Home() {
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
+    setPulldownElbowAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3217,6 +3250,7 @@ function Home() {
   const dipElbowLabel = dipElbowAngle === null ? '—' : `${dipElbowAngle}°`;
   const dipTorsoLabel = dipTorsoAngle === null ? '—' : `${dipTorsoAngle}°`;
   const pulldownTorsoLabel = pulldownTorsoAngle === null ? '—' : `${pulldownTorsoAngle}°`;
+  const pulldownElbowLabel = pulldownElbowAngle === null ? '—' : `${pulldownElbowAngle}°`;
   const dipElbowIsValid = dipElbowAngle !== null
     && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
   const dipTorsoIsValid = dipTorsoAngle !== null
@@ -3226,6 +3260,14 @@ function Home() {
       pulldownTorsoAngle,
       PULLDOWN_TORSO_MIN_ANGLE,
       PULLDOWN_TORSO_MAX_ANGLE,
+    );
+  const pulldownElbowIsValid = angle !== null
+    && angle <= PULLDOWN_ANGLE_MAX
+    && pulldownElbowAngle !== null
+    && isWithinAngle(
+      pulldownElbowAngle,
+      PULLDOWN_ELBOW_MIN_ANGLE,
+      PULLDOWN_ELBOW_MAX_ANGLE,
     );
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
@@ -3568,6 +3610,7 @@ function Home() {
                   <ul>
                     <li><b>Movimiento:</b> tira de la barra hacia el pecho.</li>
                     <li><b>Torso:</b> mantenlo erguido, con una inclinación de {PULLDOWN_TORSO_MIN_ANGLE}°–{PULLDOWN_TORSO_MAX_ANGLE}° respecto a la vertical; evita balancearte.</li>
+                    <li><b>Codos:</b> al llevar la barra al pecho, busca aproximadamente {PULLDOWN_ELBOW_MIN_ANGLE}°–{PULLDOWN_ELBOW_MAX_ANGLE}°; mantenlos dirigidos hacia abajo.</li>
                     <li><b>Rango:</b> el ángulo cadera–hombro–codo debe bajar y entrar entre {PULLDOWN_ANGLE_MIN}° y {PULLDOWN_ANGLE_MAX}°.</li>
                     <li><b>Repetición:</b> solo cuenta cuando cumples el rango del torso, el ángulo entra en el objetivo y vuelves a subir.</li>
                   </ul>
@@ -3722,11 +3765,16 @@ function Home() {
                       </div>
                     </div>
                   ) : selectedExercise === 'jalon' ? (
-                    <div className="dip-angle-hud" aria-label="Ángulos importantes del jalón al pecho" aria-live="polite">
+                    <div className="dip-angle-hud pulldown-angle-hud" aria-label="Ángulos importantes del jalón al pecho" aria-live="polite">
                       <div className={`dip-angle-reading ${pulldownTorsoIsValid ? 'is-valid' : ''}`}>
                         <span className="dip-angle-label">Torso</span>
                         <strong>{pulldownTorsoLabel}</strong>
                         <small>Objetivo 10–30°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${pulldownElbowIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Codo</span>
+                        <strong>{pulldownElbowLabel}</strong>
+                        <small>Objetivo 80–120°</small>
                       </div>
                       <div className={`dip-angle-reading ${angleIsGood ? 'is-valid' : ''}`}>
                         <span className="dip-angle-label">Tirón</span>
