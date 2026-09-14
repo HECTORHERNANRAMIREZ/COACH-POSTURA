@@ -106,9 +106,9 @@ export async function createPoseDetector(): Promise<PoseDetector> {
       },
       runningMode: 'VIDEO',
       numPoses: 1,
-      minPoseDetectionConfidence: 0.55,
-      minPosePresenceConfidence: 0.55,
-      minTrackingConfidence: 0.5,
+      minPoseDetectionConfidence: 0.45,
+      minPosePresenceConfidence: 0.45,
+      minTrackingConfidence: 0.4,
     });
   } catch {
     landmarker = await PoseLandmarker.createFromOptions(vision, {
@@ -118,9 +118,9 @@ export async function createPoseDetector(): Promise<PoseDetector> {
       },
       runningMode: 'VIDEO',
       numPoses: 1,
-      minPoseDetectionConfidence: 0.55,
-      minPosePresenceConfidence: 0.55,
-      minTrackingConfidence: 0.5,
+      minPoseDetectionConfidence: 0.45,
+      minPosePresenceConfidence: 0.45,
+      minTrackingConfidence: 0.4,
     });
   }
 

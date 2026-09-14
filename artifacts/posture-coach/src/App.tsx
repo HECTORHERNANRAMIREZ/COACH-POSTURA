@@ -420,12 +420,12 @@ const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
 const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
 const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
-const FACE_POINT_MIN_SCORE = 0.3;
-const CAMERA_POINT_MIN_SCORE = 0.45;
-const ROW_ARM_POINT_MIN_SCORE = 0.28;
+const FACE_POINT_MIN_SCORE = 0.22;
+const CAMERA_POINT_MIN_SCORE = 0.38;
+const ROW_ARM_POINT_MIN_SCORE = 0.24;
 const POSE_STALE_POINT_FRAMES = 6;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
-const POSE_LOCK_MIN_AREA_RATIO = 0.25;
+const POSE_LOCK_MIN_AREA_RATIO = 0.1;
 const MAX_CAMERA_ROLL_DEGREES = 34;
 const MAX_FRONT_VIEW_RATIO = 0.95;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
@@ -2828,7 +2828,7 @@ function Home() {
         frameCameraReady
         && hasFreshPose
         && rawAngle !== null
-        && visiblePoints >= 10,
+        && visiblePoints >= 5,
       );
       stabilityFramesRef.current = frameCanMeasure
         ? Math.min(8, stabilityFramesRef.current + 1)
@@ -3121,7 +3121,7 @@ function Home() {
       if (activeRef.current) {
         incrementErrorCount();
         setPoseDetected(false);
-          setDetectionStable(false);
+        setDetectionStable(false);
       }
     }
 
@@ -3150,7 +3150,6 @@ function Home() {
     stopResources();
     setPoseDetected(false);
     setFaceDetected(false);
-    setDetectionStable(false);
     setDetectionStable(false);
     setCameraReady(false);
     setCameraGuidance({
@@ -3218,8 +3217,8 @@ function Home() {
         audio: false,
         video: {
           facingMode: cameraFacingModeRef.current,
-          width: { ideal: 1280 },
-          height: { ideal: 1280 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         },
       });
       streamRef.current = stream;
@@ -3277,13 +3276,13 @@ function Home() {
       return;
     }
 
-    if (!faceDetected) return;
+    if (!faceDetected && !poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
-  }, [faceDetected, phase]);
+  }, [faceDetected, phase, poseDetected]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -3343,14 +3342,17 @@ function Home() {
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
   const activeExercise = getExercise(selectedExercise);
+  const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? faceDetected
+      ? personDetected
         ? cameraReady
           ? 'Colócate en posición y pulsa Iniciar ejercicio'
-          : 'Rostro detectado ✓ · puedes iniciar'
-        : 'Buscando tu cara...'
+          : poseDetected
+            ? 'Cuerpo detectado ✓ · puedes iniciar'
+            : 'Rostro detectado ✓ · puedes iniciar'
+        : 'Buscando tu cuerpo...'
       : poseDetected
         ? cameraReady
           ? detectionStable
@@ -3587,11 +3589,13 @@ function Home() {
                         : !detectionStable
                           ? 'Mejorando detección'
                           : 'Ejercicio iniciado'
-                      : faceDetected
+                      : personDetected
                         ? cameraReady
                           ? '¿Ya estás listo?'
-                          : 'Rostro detectado ✓'
-                        : 'Buscando tu cara...'}
+                          : poseDetected
+                            ? 'Cuerpo detectado ✓'
+                            : 'Rostro detectado ✓'
+                        : 'Buscando tu cuerpo...'}
                   </strong>
                   <span>
                     {exerciseStarted
@@ -3600,25 +3604,25 @@ function Home() {
                         : !detectionStable
                           ? 'Mantén las articulaciones visibles; no se contará hasta estabilizar la pose 3D.'
                           : 'El contador está activo. Detén el curso cuando hayas terminado.'
-                      : faceDetected
+                      : personDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
                           : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
-                        : 'Mantén tu cara visible para habilitar el inicio.'}
+                        : 'Aléjate lo suficiente para que se vea tu cuerpo completo y mantén las articulaciones visibles.'}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="exercise-start-button"
-                  disabled={phase !== 'tracking' || (!faceDetected && !exerciseStarted)}
+                  disabled={phase !== 'tracking' || (!personDetected && !exerciseStarted)}
                   aria-pressed={exerciseStarted}
                   onClick={toggleExercise}
                 >
                   {exerciseStarted
                     ? 'Detener curso'
-                      : faceDetected
+                      : personDetected
                         ? 'Iniciar ejercicio'
-                        : 'Buscando usuario'}
+                        : 'Buscando cuerpo'}
                 </button>
               </div>
               {angleIsGood && angle !== null && (
