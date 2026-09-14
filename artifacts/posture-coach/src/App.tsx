@@ -291,8 +291,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
-    description: 'Lleva el ángulo cadera–hombro–codo a 25°–60° y vuelve a subir.',
-    angleLabel: 'Cadera–hombro–codo · objetivo 25°–60°',
+    description: 'Mantén el torso erguido entre 10° y 30° mientras llevas la barra al pecho.',
+    angleLabel: 'Torso 10°–30° · cadera–hombro–codo 25°–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
   },
   {
@@ -400,6 +400,8 @@ const PLANK_ELBOW_MIN_ANGLE = 80;
 const PLANK_ELBOW_MAX_ANGLE = 100;
 const PULLDOWN_ANGLE_MIN = 25;
 const PULLDOWN_ANGLE_MAX = 60;
+const PULLDOWN_TORSO_MIN_ANGLE = 10;
+const PULLDOWN_TORSO_MAX_ANGLE = 30;
 const ROW_TORSO_MIN_ANGLE = 45;
 const ROW_TORSO_MAX_ANGLE = 75;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -1949,8 +1951,24 @@ function getLatPulldownTechniqueFeedback(
   const shoulder = keypoints[indexes.shoulder];
   const elbow = keypoints[indexes.elbow];
   const pulldownAngle = calculateAngle(hip, shoulder, elbow);
+  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
 
-  if (pulldownAngle === null) return defaultTechniqueFeedback;
+  if (pulldownAngle === null || torsoLean === null) return defaultTechniqueFeedback;
+
+  if (torsoLean < PULLDOWN_TORSO_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Inclina un poco el torso',
+      detail: `El torso está a ${torsoLean}°. Para el jalón, mantén una inclinación erguida de ${PULLDOWN_TORSO_MIN_ANGLE}°–${PULLDOWN_TORSO_MAX_ANGLE}° respecto a la vertical.`,
+    };
+  }
+  if (torsoLean > PULLDOWN_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'danger',
+      message: 'Endereza el torso',
+      detail: `El torso está a ${torsoLean}°. No te balancees; vuelve al rango erguido de ${PULLDOWN_TORSO_MIN_ANGLE}°–${PULLDOWN_TORSO_MAX_ANGLE}°.`,
+    };
+  }
 
   if (pulldownAngle > PULLDOWN_ANGLE_MAX) {
     return {
@@ -1970,8 +1988,32 @@ function getLatPulldownTechniqueFeedback(
   return {
     tone: 'success',
     message: 'Rango correcto',
-    detail: `Ángulo cadera–hombro–codo: ${pulldownAngle}°. Vuelve a subir para contar la repetición.`,
+    detail: `Torso ${torsoLean}° · cadera–hombro–codo ${pulldownAngle}°. Vuelve a subir para contar la repetición.`,
   };
+}
+
+function isLatPulldownTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  const requiredPoints = [
+    keypoints[indexes.hip],
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+  ];
+  if (requiredPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)) {
+    return false;
+  }
+
+  const torsoLean = calculateForwardLeanAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+  );
+  return torsoLean !== null
+    && isWithinAngle(torsoLean, PULLDOWN_TORSO_MIN_ANGLE, PULLDOWN_TORSO_MAX_ANGLE);
 }
 
 function getBarbellRowTechniqueFeedback(
@@ -2480,6 +2522,7 @@ function Home() {
   const [angle, setAngle] = useState<number | null>(null);
   const [dipElbowAngle, setDipElbowAngle] = useState<number | null>(null);
   const [dipTorsoAngle, setDipTorsoAngle] = useState<number | null>(null);
+  const [pulldownTorsoAngle, setPulldownTorsoAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2670,8 +2713,15 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
           )
         : null;
+      const pulldownTorsoAngleForFrame = selectedExerciseForFrame === 'jalon' && nextDominantSide
+        ? calculateForwardLeanAngle(
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
+          )
+        : null;
       setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
       setDipTorsoAngle(dipTorsoAngleForFrame);
+      setPulldownTorsoAngle(pulldownTorsoAngleForFrame);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -2774,6 +2824,8 @@ function Home() {
         || isBarbellRowTechniqueValid(pose?.keypoints, nextDominantSide);
       const dipTechniqueReady = selectedExerciseForFrame !== 'fondos'
         || isDipTechniqueValid(pose?.keypoints, nextDominantSide);
+      const pulldownTechniqueReady = selectedExerciseForFrame !== 'jalon'
+        || isLatPulldownTechniqueValid(pose?.keypoints, nextDominantSide);
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -2782,6 +2834,7 @@ function Home() {
         && repetitionAngle !== null
         && rowTechniqueReady
         && dipTechniqueReady
+        && pulldownTechniqueReady
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
@@ -2796,9 +2849,17 @@ function Home() {
           exerciseRepUpdate.tracker.endpointAngle ?? exerciseRepUpdate.completedEndpointAngle,
         );
       } else if (
-        (selectedExerciseForFrame === 'remo-barra' || selectedExerciseForFrame === 'fondos')
+        (selectedExerciseForFrame === 'remo-barra'
+          || selectedExerciseForFrame === 'fondos'
+          || selectedExerciseForFrame === 'jalon')
         && exerciseStartedRef.current
-        && (!hasFreshPose || !frameCameraReady || !rowTechniqueReady || !dipTechniqueReady)
+        && (
+          !hasFreshPose
+          || !frameCameraReady
+          || !rowTechniqueReady
+          || !dipTechniqueReady
+          || !pulldownTechniqueReady
+        )
       ) {
         const resetTracker = createExerciseRepTracker();
         exerciseRepTrackerRef.current = resetTracker;
@@ -2963,6 +3024,7 @@ function Home() {
     setAngle(null);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
+    setPulldownTorsoAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3088,6 +3150,7 @@ function Home() {
     setAngle(null);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
+    setPulldownTorsoAngle(null);
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3153,10 +3216,17 @@ function Home() {
   const angleLabel = angle === null ? '—' : `${angle}°`;
   const dipElbowLabel = dipElbowAngle === null ? '—' : `${dipElbowAngle}°`;
   const dipTorsoLabel = dipTorsoAngle === null ? '—' : `${dipTorsoAngle}°`;
+  const pulldownTorsoLabel = pulldownTorsoAngle === null ? '—' : `${pulldownTorsoAngle}°`;
   const dipElbowIsValid = dipElbowAngle !== null
     && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
   const dipTorsoIsValid = dipTorsoAngle !== null
     && isWithinAngle(dipTorsoAngle, DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE);
+  const pulldownTorsoIsValid = pulldownTorsoAngle !== null
+    && isWithinAngle(
+      pulldownTorsoAngle,
+      PULLDOWN_TORSO_MIN_ANGLE,
+      PULLDOWN_TORSO_MAX_ANGLE,
+    );
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
@@ -3471,7 +3541,7 @@ function Home() {
                   </div>
                   <p>
                     {selectedExercise === 'jalon'
-                      ? 'Solo cuenta cuando el ángulo entra entre 25° y 60° y vuelve a subir.'
+                      ? `Solo cuenta si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
                       : selectedExercise === 'fondos'
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
@@ -3497,8 +3567,9 @@ function Home() {
                   <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Movimiento:</b> tira de la barra hacia el pecho.</li>
-                    <li><b>Rango:</b> el ángulo cadera–hombro–codo debe bajar y entrar entre 25° y 60°.</li>
-                    <li><b>Repetición:</b> cuando el ángulo entre en ese rango y vuelva a subir, se suma una repetición.</li>
+                    <li><b>Torso:</b> mantenlo erguido, con una inclinación de {PULLDOWN_TORSO_MIN_ANGLE}°–{PULLDOWN_TORSO_MAX_ANGLE}° respecto a la vertical; evita balancearte.</li>
+                    <li><b>Rango:</b> el ángulo cadera–hombro–codo debe bajar y entrar entre {PULLDOWN_ANGLE_MIN}° y {PULLDOWN_ANGLE_MAX}°.</li>
+                    <li><b>Repetición:</b> solo cuenta cuando cumples el rango del torso, el ángulo entra en el objetivo y vuelves a subir.</li>
                   </ul>
                 </details>
               )}
@@ -3648,6 +3719,19 @@ function Home() {
                         <span className="dip-angle-label">Torso</span>
                         <strong>{dipTorsoLabel}</strong>
                         <small>Objetivo 30–40°</small>
+                      </div>
+                    </div>
+                  ) : selectedExercise === 'jalon' ? (
+                    <div className="dip-angle-hud" aria-label="Ángulos importantes del jalón al pecho" aria-live="polite">
+                      <div className={`dip-angle-reading ${pulldownTorsoIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Torso</span>
+                        <strong>{pulldownTorsoLabel}</strong>
+                        <small>Objetivo 10–30°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${angleIsGood ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Tirón</span>
+                        <strong>{angleLabel}</strong>
+                        <small>Objetivo 25–60°</small>
                       </div>
                     </div>
                   ) : (
