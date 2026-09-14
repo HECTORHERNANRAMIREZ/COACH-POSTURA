@@ -1068,6 +1068,10 @@
   width: min(12.5rem, calc(100% - 1.6rem));
 }
 
+.row-angle-hud {
+  width: min(14rem, calc(100% - 1.6rem));
+}
+
 .dip-angle-reading {
   display: grid;
   justify-items: center;

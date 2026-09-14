@@ -291,7 +291,7 @@ const exercises: ExerciseDefinition[] = [
     id: 'remo-barra',
     name: 'Remo con barra',
     description: 'Haz una bisagra de cadera, mantén la espalda neutra y lleva la barra al cuerpo con control.',
-    angleLabel: 'Torso 45–75° · codo 70–115° · rodilla 150–180°',
+    angleLabel: 'Torso 30–45° · codos 15–30° · codo 70–115°',
     cameraNote: 'Nota: vista lateral, incluso desde el suelo; muestra todo el cuerpo.',
   },
   {
@@ -396,12 +396,12 @@ const PULLDOWN_TORSO_MIN_ANGLE = 10;
 const PULLDOWN_TORSO_MAX_ANGLE = 30;
 const PULLDOWN_ELBOW_MIN_ANGLE = 80;
 const PULLDOWN_ELBOW_MAX_ANGLE = 120;
-const ROW_TORSO_MIN_ANGLE = 45;
-const ROW_TORSO_MAX_ANGLE = 75;
+const ROW_TORSO_MIN_ANGLE = 30;
+const ROW_TORSO_MAX_ANGLE = 45;
 const ROW_KNEE_MIN_ANGLE = 150;
 const ROW_KNEE_MAX_ANGLE = 180;
-const ROW_ELBOW_TORSO_MIN_ANGLE = 20;
-const ROW_ELBOW_TORSO_MAX_ANGLE = 60;
+const ROW_ELBOW_TORSO_MIN_ANGLE = 15;
+const ROW_ELBOW_TORSO_MAX_ANGLE = 30;
 const PIKE_ELBOW_BODY_MIN_ANGLE = 45;
 const PIKE_ELBOW_BODY_MAX_ANGLE = 60;
 const PIKE_WRIST_SHOULDER_MIN_ANGLE = 75;
@@ -2143,14 +2143,14 @@ function getBarbellRowTechniqueFeedback(
     return {
       tone: 'warning',
       message: 'Inclina más el torso',
-      detail: `Tu torso está a ${torsoLean}°. Busca una inclinación de 45°–75° respecto a la vertical.`,
+      detail: `Tu torso está a ${torsoLean}°. Busca una inclinación de ${ROW_TORSO_MIN_ANGLE}°–${ROW_TORSO_MAX_ANGLE}° respecto a la vertical.`,
     };
   }
   if (torsoLean > ROW_TORSO_MAX_ANGLE) {
     return {
       tone: 'danger',
-      message: 'No bajes tanto el torso',
-      detail: `Tu torso está a ${torsoLean}°. Mantén la espalda neutra y no te acerques a la horizontal.`,
+      message: 'Sube un poco el torso',
+      detail: `Tu torso está a ${torsoLean}°. Mantén la espalda neutra dentro del rango ${ROW_TORSO_MIN_ANGLE}°–${ROW_TORSO_MAX_ANGLE}°.`,
     };
   }
   if (kneeAngle !== null && kneeAngle < ROW_KNEE_MIN_ANGLE) {
@@ -2170,22 +2170,22 @@ function getBarbellRowTechniqueFeedback(
   if (elbowTorsoAngle > ROW_ELBOW_TORSO_MAX_ANGLE) {
     return {
       tone: 'warning',
-      message: 'Acerca los codos al cuerpo',
-      detail: `El codo está a ${elbowTorsoAngle}° respecto al torso. Llévalo cerca del cuerpo, entre 20° y 60°.`,
+      message: 'Baja un poco los codos',
+      detail: `La elevación del codo está a ${elbowTorsoAngle}°. Mantén los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso.`,
     };
   }
   if (elbowTorsoAngle < ROW_ELBOW_TORSO_MIN_ANGLE) {
     return {
       tone: 'warning',
-      message: 'No cierres demasiado los codos',
-      detail: `El codo está a ${elbowTorsoAngle}° respecto al torso. Sepáralo suavemente hasta 20°–60°.`,
+      message: 'Sube un poco los codos',
+      detail: `La elevación del codo está a ${elbowTorsoAngle}°. Llévalos suavemente al rango ${ROW_ELBOW_TORSO_MIN_ANGLE}°–${ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso.`,
     };
   }
 
   return {
     tone: 'success',
     message: 'Remo con barra correcto',
-    detail: `Torso ${torsoLean}° · codo ${elbowAngle}°. Mantén la espalda neutra y lleva la barra hacia el cuerpo.`,
+    detail: `Torso ${torsoLean}° · codos ${elbowTorsoAngle}° · flexión del codo ${elbowAngle}°. Mantén la espalda neutra y lleva la barra hacia el cuerpo.`,
   };
 }
 
@@ -2642,6 +2642,8 @@ function Home() {
   const [dipTorsoAngle, setDipTorsoAngle] = useState<number | null>(null);
   const [pulldownTorsoAngle, setPulldownTorsoAngle] = useState<number | null>(null);
   const [pulldownElbowAngle, setPulldownElbowAngle] = useState<number | null>(null);
+  const [rowTorsoAngle, setRowTorsoAngle] = useState<number | null>(null);
+  const [rowElbowRiseAngle, setRowElbowRiseAngle] = useState<number | null>(null);
   const [dominantSide, setDominantSide] = useState<PoseSide | null>(null);
   const [sideConfidence, setSideConfidence] = useState<number | null>(null);
   const [sideSwitches, setSideSwitches] = useState(0);
@@ -2677,6 +2679,8 @@ function Home() {
   const lastAngleDisplayAtRef = useRef(0);
   const pulldownTorsoSamplesRef = useRef<number[]>([]);
   const pulldownElbowSamplesRef = useRef<number[]>([]);
+  const rowTorsoSamplesRef = useRef<number[]>([]);
+  const rowElbowRiseSamplesRef = useRef<number[]>([]);
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
@@ -2862,6 +2866,19 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].wrist],
           )
         : null;
+      const rowTorsoAngleForFrame = selectedExerciseForFrame === 'remo-barra' && nextDominantSide
+        ? calculateForwardLeanAngle(
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
+          )
+        : null;
+      const rowElbowRiseAngleForFrame = selectedExerciseForFrame === 'remo-barra' && nextDominantSide
+        ? calculateAngle(
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].hip],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+            pose?.keypoints?.[sideKeypoints[nextDominantSide].elbow],
+          )
+        : null;
       const displayPulldownTorsoAngle = smoothAngleReading(
         pulldownTorsoAngleForFrame,
         pulldownTorsoSamplesRef,
@@ -2870,10 +2887,20 @@ function Home() {
         pulldownElbowAngleForFrame,
         pulldownElbowSamplesRef,
       );
+      const displayRowTorsoAngle = smoothAngleReading(
+        rowTorsoAngleForFrame,
+        rowTorsoSamplesRef,
+      );
+      const displayRowElbowRiseAngle = smoothAngleReading(
+        rowElbowRiseAngleForFrame,
+        rowElbowRiseSamplesRef,
+      );
       setDipElbowAngle(selectedExerciseForFrame === 'fondos' ? repetitionAngle : null);
       setDipTorsoAngle(dipTorsoAngleForFrame);
       setPulldownTorsoAngle(displayPulldownTorsoAngle);
       setPulldownElbowAngle(displayPulldownElbowAngle);
+      setRowTorsoAngle(displayRowTorsoAngle);
+      setRowElbowRiseAngle(displayRowElbowRiseAngle);
       let nextAngle = rawAngle;
       if (
         exerciseStartedRef.current
@@ -3175,8 +3202,12 @@ function Home() {
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
     setPulldownElbowAngle(null);
+    setRowTorsoAngle(null);
+    setRowElbowRiseAngle(null);
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
+    rowTorsoSamplesRef.current = [];
+    rowElbowRiseSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3304,8 +3335,12 @@ function Home() {
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
     setPulldownElbowAngle(null);
+    setRowTorsoAngle(null);
+    setRowElbowRiseAngle(null);
     pulldownTorsoSamplesRef.current = [];
     pulldownElbowSamplesRef.current = [];
+    rowTorsoSamplesRef.current = [];
+    rowElbowRiseSamplesRef.current = [];
     angleDisplaySamplesRef.current = [];
     angleDisplayRef.current = null;
     lastAngleDisplayAtRef.current = 0;
@@ -3378,6 +3413,8 @@ function Home() {
   const dipTorsoLabel = dipTorsoAngle === null ? '—' : `${dipTorsoAngle}°`;
   const pulldownTorsoLabel = pulldownTorsoAngle === null ? '—' : `${pulldownTorsoAngle}°`;
   const pulldownElbowLabel = pulldownElbowAngle === null ? '—' : `${pulldownElbowAngle}°`;
+  const rowTorsoLabel = rowTorsoAngle === null ? '—' : `${rowTorsoAngle}°`;
+  const rowElbowRiseLabel = rowElbowRiseAngle === null ? '—' : `${rowElbowRiseAngle}°`;
   const dipElbowIsValid = dipElbowAngle !== null
     && isWithinAngle(dipElbowAngle, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE);
   const dipTorsoIsValid = dipTorsoAngle !== null
@@ -3396,6 +3433,16 @@ function Home() {
       PULLDOWN_ELBOW_MIN_ANGLE,
       PULLDOWN_ELBOW_MAX_ANGLE,
     );
+  const rowTorsoIsValid = rowTorsoAngle !== null
+    && isWithinAngle(rowTorsoAngle, ROW_TORSO_MIN_ANGLE, ROW_TORSO_MAX_ANGLE);
+  const rowElbowRiseIsValid = rowElbowRiseAngle !== null
+    && isWithinAngle(
+      rowElbowRiseAngle,
+      ROW_ELBOW_TORSO_MIN_ANGLE,
+      ROW_ELBOW_TORSO_MAX_ANGLE,
+    );
+  const rowElbowIsValid = angle !== null
+    && isWithinAngle(angle, 70, 115);
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
@@ -3720,7 +3767,7 @@ function Home() {
                       : selectedExercise === 'fondos'
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
-                        ? 'Solo cuenta si mantienes la posición del remo durante todo el recorrido y completas la subida y la vuelta.'
+                        ? `Solo cuenta si mantienes el torso entre ${ROW_TORSO_MIN_ANGLE}° y ${ROW_TORSO_MAX_ANGLE}°, elevas los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° y completas el recorrido del codo.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
@@ -3754,11 +3801,11 @@ function Home() {
                   <summary>Condiciones para una repetición correcta</summary>
                   <ul>
                     <li><b>Encuadre:</b> colócate de lado y deja visibles hombro, codo, muñeca, cadera, rodilla y tobillo durante toda la serie.</li>
-                    <li><b>Posición:</b> lleva la cadera atrás, inclina el torso 45°–75° respecto a la vertical y mantén la espalda neutra; no redondees ni balancees el cuerpo.</li>
+                    <li><b>Posición:</b> lleva la cadera atrás, inclina el torso ${ROW_TORSO_MIN_ANGLE}°–${ROW_TORSO_MAX_ANGLE}° respecto a la vertical y mantén la espalda neutra; no redondees ni balancees el cuerpo.</li>
                     <li><b>Rodillas:</b> mantenlas desbloqueadas, aproximadamente entre 150° y 180°, con los pies firmes en el suelo.</li>
-                    <li><b>Tirón:</b> lleva los codos cerca del cuerpo, entre 20° y 60° respecto al torso, y dirige la barra hacia el abdomen o las costillas bajas.</li>
+                    <li><b>Tirón:</b> eleva los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso y dirige la barra hacia el abdomen o las costillas bajas.</li>
                     <li><b>Recorrido:</b> empieza con los brazos extendidos entre 145° y 180°, tira hasta que el codo llegue a 70°–115° y regresa lentamente al inicio.</li>
-                    <li><b>Repetición:</b> el contador se reinicia si pierdes la inclinación, cambias la posición de las rodillas o abres demasiado los codos.</li>
+                    <li><b>Repetición:</b> el contador se reinicia si pierdes la inclinación, cambias la posición de las rodillas o la elevación de los codos sale del rango.</li>
                   </ul>
                 </details>
               )}
@@ -3913,6 +3960,24 @@ function Home() {
                         <span className="dip-angle-label">Tirón</span>
                         <strong>{angleLabel}</strong>
                         <small>Objetivo 25–60°</small>
+                      </div>
+                    </div>
+                  ) : selectedExercise === 'remo-barra' ? (
+                    <div className="dip-angle-hud pulldown-angle-hud row-angle-hud" aria-label="Ángulos importantes del remo con barra" aria-live="polite">
+                      <div className={`dip-angle-reading ${rowTorsoIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Torso</span>
+                        <strong>{rowTorsoLabel}</strong>
+                        <small>Objetivo {ROW_TORSO_MIN_ANGLE}–{ROW_TORSO_MAX_ANGLE}°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${rowElbowRiseIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Codos</span>
+                        <strong>{rowElbowRiseLabel}</strong>
+                        <small>Subida {ROW_ELBOW_TORSO_MIN_ANGLE}–{ROW_ELBOW_TORSO_MAX_ANGLE}°</small>
+                      </div>
+                      <div className={`dip-angle-reading ${rowElbowIsValid ? 'is-valid' : ''}`}>
+                        <span className="dip-angle-label">Flexión</span>
+                        <strong>{angleLabel}</strong>
+                        <small>Objetivo 70–115°</small>
                       </div>
                     </div>
                   ) : (
