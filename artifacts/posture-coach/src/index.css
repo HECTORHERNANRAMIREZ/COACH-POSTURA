@@ -140,6 +140,92 @@
     linear-gradient(145deg, #101c31 0%, #091221 45%, #080e19 100%);
 }
 
+.app-intro {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 620ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app-intro--move {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-intro-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(68vw, 25rem);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  transition:
+    top 620ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left 620ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 620ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app-intro--move .app-intro-logo {
+  top: 1.15rem;
+  left: max(1.25rem, calc((100vw - 72rem) / 2 + 1rem));
+  width: 3rem;
+  transform: translate(0, -0.08rem) scale(0.88);
+}
+
+.app-intro-video {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 1.2rem;
+  object-fit: cover;
+  background: #000;
+}
+
+.app-intro-fallback-mark {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 22%;
+  transform: translate(-50%, -50%);
+}
+
+.app-intro-fallback-mark::before,
+.app-intro-fallback-mark::after {
+  position: absolute;
+  content: "";
+}
+
+.app-intro-fallback-mark::before {
+  top: 5%;
+  left: 14%;
+  width: 16%;
+  height: 90%;
+  border-radius: 999px;
+  background: #f04d5d;
+  box-shadow: 0 0 1.5rem rgba(240, 77, 93, 0.5);
+  transform: rotate(13deg);
+}
+
+.app-intro-fallback-mark::after {
+  top: 26%;
+  right: 12%;
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #39ff6a;
+  box-shadow: 0 0 1.8rem rgba(57, 255, 106, 0.7);
+}
+
 .posture-app::before {
   position: fixed;
   z-index: -1;
@@ -205,8 +291,36 @@
 }
 
 .wordmark-mark {
-  width: 0.46rem;
-  height: 0.46rem;
+  position: relative;
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 0.9rem;
+  border-radius: 0;
+  background: transparent;
+}
+
+.wordmark-mark::before,
+.wordmark-mark::after {
+  position: absolute;
+  content: "";
+}
+
+.wordmark-mark::before {
+  top: 0;
+  left: 0.12rem;
+  width: 0.2rem;
+  height: 0.78rem;
+  border-radius: 999px;
+  background: #f04d5d;
+  box-shadow: 0 0 0.65rem rgba(240, 77, 93, 0.55);
+  transform: rotate(13deg);
+}
+
+.wordmark-mark::after {
+  top: 0.2rem;
+  right: 0.08rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border-radius: 50%;
   background: #39ff6a;
   box-shadow: 0 0 13px rgba(57, 255, 106, 0.65);
