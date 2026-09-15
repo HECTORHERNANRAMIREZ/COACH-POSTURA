@@ -283,6 +283,120 @@ type LiveAngleReading = {
   min?: number;
   max?: number;
 };
+type ReferenceSample = {
+  elapsedMs: number;
+  readings: Array<{
+    label: string;
+    value: number;
+    target: string;
+  }>;
+};
+type CalibrationMetric = {
+  label: string;
+  observedMin: number;
+  observedMax: number;
+  recommendedMin: number;
+  recommendedMax: number;
+  samples: number;
+  target: string;
+};
+type CalibrationSummary = {
+  version: 1;
+  exerciseId: ExerciseId;
+  exerciseName: string;
+  capturedAt: string;
+  durationMs: number;
+  sampleCount: number;
+  metrics: CalibrationMetric[];
+};
+
+const REFERENCE_SAMPLE_INTERVAL_MS = 120;
+
+function buildCalibrationSummary(
+  exercise: ExerciseDefinition,
+  samples: ReferenceSample[],
+  durationMs: number,
+): CalibrationSummary | null {
+  const metricMap = new Map<string, {
+    min: number;
+    max: number;
+    samples: number;
+    target: string;
+  }>();
+
+  samples.forEach((sample) => {
+    sample.readings.forEach((reading) => {
+      const existing = metricMap.get(reading.label);
+      if (!existing) {
+        metricMap.set(reading.label, {
+          min: reading.value,
+          max: reading.value,
+          samples: 1,
+          target: reading.target,
+        });
+        return;
+      }
+      existing.min = Math.min(existing.min, reading.value);
+      existing.max = Math.max(existing.max, reading.value);
+      existing.samples += 1;
+    });
+  });
+
+  const metrics = Array.from(metricMap.entries()).map(([label, metric]) => {
+    const span = metric.max - metric.min;
+    const margin = Math.max(3, Math.min(8, Math.ceil(span * 0.08)));
+    return {
+      label,
+      observedMin: Math.round(metric.min),
+      observedMax: Math.round(metric.max),
+      recommendedMin: Math.max(0, Math.floor(metric.min - margin)),
+      recommendedMax: Math.min(180, Math.ceil(metric.max + margin)),
+      samples: metric.samples,
+      target: metric.target,
+    };
+  });
+
+  if (!metrics.length) return null;
+
+  return {
+    version: 1,
+    exerciseId: exercise.id,
+    exerciseName: exercise.name,
+    capturedAt: new Date().toISOString(),
+    durationMs: Math.round(durationMs),
+    sampleCount: samples.length,
+    metrics,
+  };
+}
+
+function createCalibrationPrompt(
+  exercise: ExerciseDefinition,
+  summary: CalibrationSummary,
+  samples: ReferenceSample[],
+) {
+  return `Analiza esta ejecución de referencia correcta para calibrar el ejercicio "${exercise.name}".
+
+Reglas:
+- La ejecución fue realizada correctamente de principio a fin.
+- Usa únicamente las articulaciones y ángulos definidos para este ejercicio.
+- Distingue entre rango observado, rango de tolerancia recomendado y umbrales de inicio/final.
+- No conviertas automáticamente el rango observado en una tolerancia amplia: revisa compensaciones, ruido de cámara y la diferencia entre fase inicial, recorrido y final.
+- Devuelve una configuración concreta por ángulo con mínimo, máximo, margen y explicación breve.
+- Indica qué capturas o tramos de la secuencia fueron insuficientes para calibrar.
+
+Definición de seguimiento:
+${JSON.stringify({
+    joints: exercise.trackedJoints,
+    bothSides: Boolean(exercise.trackBothSides),
+    angleLabels: exercise.trackedAngleLabels,
+  }, null, 2)}
+
+Resumen calculado por la app:
+${JSON.stringify(summary, null, 2)}
+
+Secuencia temporal completa:
+${JSON.stringify(samples, null, 2)}`;
+}
 
 const exercises: ExerciseDefinition[] = [
   {
@@ -3450,12 +3564,20 @@ function Home() {
   const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
   const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
+  const [referenceRecording, setReferenceRecording] = useState(false);
+  const [referenceSampleCount, setReferenceSampleCount] = useState(0);
+  const [referenceMessage, setReferenceMessage] = useState('Graba una ejecución correcta para calibrar este ejercicio.');
+  const [referenceSummary, setReferenceSummary] = useState<CalibrationSummary | null>(null);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const stabilityFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
+  const referenceRecordingRef = useRef(false);
+  const referenceStartedAtRef = useRef<number | null>(null);
+  const referenceLastSampleAtRef = useRef(0);
+  const referenceSamplesRef = useRef<ReferenceSample[]>([]);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
   const posePointMemoryRef = useRef<PosePointMemoryMap>({});
@@ -3539,9 +3661,13 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
+    referenceRecordingRef.current = false;
+    referenceStartedAtRef.current = null;
+    referenceLastSampleAtRef.current = 0;
     posePointMemoryRef.current = {};
     stabilityFramesRef.current = 0;
     setDetectionStable(false);
+    setReferenceRecording(false);
   }, []);
 
   const syncVideoSize = useCallback(() => {
@@ -3914,11 +4040,31 @@ function Home() {
       setDominantSide(nextDominantSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
       setAngle(displayAngle);
-      setLiveAngleReadings(calculateLiveAngleReadings(
+      const nextLiveAngleReadings = calculateLiveAngleReadings(
         selectedExerciseForFrame,
         pose?.keypoints,
         nextDominantSide,
-      ));
+      );
+      setLiveAngleReadings(nextLiveAngleReadings);
+      if (
+        referenceRecordingRef.current
+        && frameCameraReady
+        && frameDetectionStable
+        && performance.now() - referenceLastSampleAtRef.current >= REFERENCE_SAMPLE_INTERVAL_MS
+      ) {
+        const readings = nextLiveAngleReadings
+          .filter((reading): reading is LiveAngleReading & { value: number } => reading.value !== null)
+          .map(({ label, value, target }) => ({ label, value, target }));
+        if (readings.length > 0) {
+          const now = performance.now();
+          referenceSamplesRef.current.push({
+            elapsedMs: Math.round(now - (referenceStartedAtRef.current ?? now)),
+            readings,
+          });
+          referenceLastSampleAtRef.current = now;
+          setReferenceSampleCount(referenceSamplesRef.current.length);
+        }
+      }
       setAnglePoints(getAngleDiagnosticPoints(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
@@ -4015,6 +4161,14 @@ function Home() {
     setSelectedExercise(activeExercise);
     exerciseStartedRef.current = preserveExerciseStarted;
     setExerciseStarted(preserveExerciseStarted);
+    referenceRecordingRef.current = false;
+    referenceStartedAtRef.current = null;
+    referenceLastSampleAtRef.current = 0;
+    referenceSamplesRef.current = [];
+    setReferenceRecording(false);
+    setReferenceSampleCount(0);
+    setReferenceSummary(null);
+    setReferenceMessage('Graba una ejecución correcta para calibrar este ejercicio.');
     stopResources();
     setPoseDetected(false);
     setFaceDetected(false);
@@ -4236,6 +4390,66 @@ function Home() {
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
   const activeExercise = getExercise(selectedExercise);
+  const startReferenceCapture = useCallback(() => {
+    if (!activeExercise || phase !== 'tracking' || !cameraReady || referenceRecordingRef.current) return;
+    referenceSamplesRef.current = [];
+    referenceStartedAtRef.current = performance.now();
+    referenceLastSampleAtRef.current = 0;
+    referenceRecordingRef.current = true;
+    setReferenceRecording(true);
+    setReferenceSampleCount(0);
+    setReferenceSummary(null);
+    setReferenceMessage('Referencia activa: ejecuta el movimiento completo y correctamente.');
+  }, [activeExercise, cameraReady, phase]);
+  const finishReferenceCapture = useCallback(() => {
+    if (!activeExercise || !referenceRecordingRef.current) return;
+    referenceRecordingRef.current = false;
+    setReferenceRecording(false);
+
+    const samples = referenceSamplesRef.current;
+    const durationMs = performance.now() - (referenceStartedAtRef.current ?? performance.now());
+    const summary = buildCalibrationSummary(activeExercise, samples, durationMs);
+    if (!summary || samples.length < 5) {
+      setReferenceSummary(null);
+      setReferenceMessage('Se necesitan al menos 5 muestras estables. Repite la referencia con todo el cuerpo visible.');
+      return;
+    }
+
+    setReferenceSummary(summary);
+    setReferenceMessage('Referencia lista. Descarga el paquete y envíalo a la IA para revisar la tolerancia.');
+    localStorage.setItem(
+      `posture-coach-reference-${activeExercise.id}`,
+      JSON.stringify({ summary, samples }),
+    );
+  }, [activeExercise]);
+  const downloadReferencePacket = useCallback(() => {
+    if (!activeExercise || !referenceSummary) return;
+    const samples = referenceSamplesRef.current;
+    const prompt = createCalibrationPrompt(activeExercise, referenceSummary, samples);
+    const packet = {
+      prompt,
+      exercise: activeExercise,
+      summary: referenceSummary,
+      samples,
+    };
+    const blob = new Blob([JSON.stringify(packet, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `referencia-${activeExercise.id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [activeExercise, referenceSummary]);
+  const copyCalibrationPrompt = useCallback(async () => {
+    if (!activeExercise || !referenceSummary) return;
+    const prompt = createCalibrationPrompt(activeExercise, referenceSummary, referenceSamplesRef.current);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setReferenceMessage('Prompt copiado. Puedes pegarlo junto al archivo JSON en la IA.');
+    } catch {
+      setReferenceMessage('No se pudo copiar automáticamente. Descarga el paquete JSON para compartirlo.');
+    }
+  }, [activeExercise, referenceSummary]);
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
@@ -4616,6 +4830,85 @@ function Home() {
                         : 'Buscando cuerpo'}
                 </button>
               </div>
+              <section className={`reference-calibration ${referenceRecording ? 'is-recording' : ''}`} aria-labelledby="reference-title">
+                <div className="reference-calibration-heading">
+                  <div>
+                    <span className="reference-eyebrow">Calibración por referencia</span>
+                    <h2 id="reference-title">Graba una ejecución correcta</h2>
+                  </div>
+                  <span className="reference-state">
+                    {referenceRecording ? 'REC' : referenceSummary ? 'LISTA' : '—'}
+                  </span>
+                </div>
+                <p>{referenceMessage}</p>
+                <div className="reference-actions">
+                  {!referenceRecording ? (
+                    <button
+                      type="button"
+                      className="reference-primary-button"
+                      disabled={phase !== 'tracking' || !cameraReady}
+                      onClick={startReferenceCapture}
+                    >
+                      <Activity size={14} strokeWidth={2} aria-hidden="true" />
+                      Iniciar referencia
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="reference-primary-button reference-primary-button--stop"
+                      onClick={finishReferenceCapture}
+                    >
+                      <Square size={13} fill="currentColor" strokeWidth={2} aria-hidden="true" />
+                      Finalizar y analizar
+                    </button>
+                  )}
+                  {referenceSummary && (
+                    <>
+                      <button
+                        type="button"
+                        className="reference-secondary-button"
+                        onClick={downloadReferencePacket}
+                      >
+                        Descargar paquete IA
+                      </button>
+                      <button
+                        type="button"
+                        className="reference-secondary-button"
+                        onClick={() => void copyCalibrationPrompt()}
+                      >
+                        Copiar prompt
+                      </button>
+                    </>
+                  )}
+                </div>
+                {referenceRecording && (
+                  <div className="reference-progress" role="status" aria-live="polite">
+                    <span className="reference-recording-dot" aria-hidden="true" />
+                    <span>{referenceSampleCount} muestras estables guardadas</span>
+                    <small>Haz una repetición completa, desde el inicio hasta el final.</small>
+                  </div>
+                )}
+                {referenceSummary && (
+                  <div className="reference-results">
+                    <div className="reference-results-header">
+                      <strong>Rangos observados</strong>
+                      <span>{referenceSummary.sampleCount} muestras · {Math.round(referenceSummary.durationMs / 1000)} s</span>
+                    </div>
+                    <div className="reference-metric-grid">
+                      {referenceSummary.metrics.map((metric) => (
+                        <div className="reference-metric" key={metric.label}>
+                          <span>{metric.label}</span>
+                          <strong>{metric.observedMin}°–{metric.observedMax}°</strong>
+                          <small>Sugerido para revisar: {metric.recommendedMin}°–{metric.recommendedMax}°</small>
+                        </div>
+                      ))}
+                    </div>
+                    <small className="reference-disclaimer">
+                      La propuesta añade un margen inicial para ruido de cámara; la IA debe validar las fases del movimiento antes de convertirla en regla.
+                    </small>
+                  </div>
+                )}
+              </section>
               {angleIsGood && angle !== null && (
                 <div className="exercise-good-message" role="status" aria-live="polite">
                   <span aria-hidden="true">✓</span>

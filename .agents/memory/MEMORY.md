@@ -4,3 +4,4 @@
 - [Webhooks de Lemon](lemon-webhook-preview.md) — los dominios de preview cambian; un webhook antiguo puede devolver 404 aunque Lemon haya creado el pago y el comprobante.
 - [Alineación de cámara](camera-alignment-guidance.md) — el conteo debe validar las articulaciones necesarias y el margen del encuadre, no solo detectar una persona.
 - [Calibración del muscle-up](muscle-up-calibration.md) — no marcar el balanceo como correcto hasta revisar una ejecución de referencia del usuario.
+- [Calibración por referencia](reference-calibration.md) — los rangos deben partir de una ejecución correcta completa y revisarse con sus muestras temporales.
