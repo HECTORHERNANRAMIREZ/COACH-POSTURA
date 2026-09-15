@@ -686,6 +686,115 @@ function getRepetitionConfig(exercise: ExerciseId | null) {
   return exercise ? repetitionConfigs[exercise] ?? null : null;
 }
 
+function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
+  if (!exercise) return ['Esperando ejercicio'];
+
+  switch (exercise) {
+    case 'sentadillas':
+      return [
+        `Inicio arriba: ≥${SQUAT_TOP_THRESHOLD}°`,
+        `Profundidad válida: ${SQUAT_VALID_MIN_ANGLE}–${SQUAT_VALID_MAX_ANGLE}°`,
+        `Regreso arriba: >${SQUAT_RISE_THRESHOLD}°`,
+      ];
+    case 'dominadas':
+    case 'dominadas-supinas':
+      return [
+        `Inicio / regreso: codo ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°`,
+        `Activación: codo <${PULLUP_NO_LOCKOUT_ANGLE}°`,
+        'Parte alta: cabeza por encima de las muñecas',
+      ];
+    case 'muscle-up':
+      return [
+        'Codos, rodillas y tobillos: rango pendiente',
+        'Recorrido: registrar inicio y final',
+        'No se marca el balanceo hasta calibrar la referencia',
+      ];
+    case 'fondos':
+      return [
+        `Inicio / regreso: codo 150–180°`,
+        `Profundidad: codo ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°`,
+        `Torso durante el recorrido: ${DIP_TORSO_MIN_ANGLE}–${DIP_TORSO_MAX_ANGLE}°`,
+      ];
+    case 'jalon':
+      return [
+        'Inicio / regreso: ángulo de recorrido 150–180°',
+        `Final: recorrido ${PULLDOWN_ANGLE_MIN}–${PULLDOWN_ANGLE_MAX}°`,
+        `Torso ${PULLDOWN_TORSO_MIN_ANGLE}–${PULLDOWN_TORSO_MAX_ANGLE}° · codo ${PULLDOWN_ELBOW_MIN_ANGLE}–${PULLDOWN_ELBOW_MAX_ANGLE}°`,
+      ];
+    case 'remo-barra':
+      return [
+        'Inicio / regreso: codo 145–180°',
+        'Final: flexión de codo 70–115°',
+        `Torso ${ROW_TORSO_MIN_ANGLE}–${ROW_TORSO_MAX_ANGLE}° · rodilla ${ROW_KNEE_MIN_ANGLE}–${ROW_KNEE_MAX_ANGLE}°`,
+        `Elevación de codos ${ROW_ELBOW_TORSO_MIN_ANGLE}–${ROW_ELBOW_TORSO_MAX_ANGLE}°`,
+      ];
+    case 'flexiones':
+      return [
+        'Inicio / regreso: codo 150–180°',
+        'Final: codo 70–105°',
+        `Codo / torso ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° · cuerpo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
+      ];
+    case 'flexiones-declinadas':
+      return [
+        'Inicio / regreso: codo 150–180°',
+        'Final: codo 70–105°',
+        `Codo / torso 30–60° · cuerpo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
+      ];
+    case 'flexiones-pica':
+      return [
+        'Inicio / regreso: codo 145–180°',
+        'Final: codo 70–110°',
+        `Codo / cuerpo ${PIKE_ELBOW_BODY_MIN_ANGLE}–${PIKE_ELBOW_BODY_MAX_ANGLE}° · muñeca / hombro ${PIKE_WRIST_SHOULDER_MIN_ANGLE}–${PIKE_WRIST_SHOULDER_MAX_ANGLE}°`,
+      ];
+    case 'press-militar':
+      return [
+        'Inicio / regreso: codo 145–180°',
+        `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+        'Codos aproximadamente 45° respecto al torso',
+      ];
+    case 'triceps-polea-alta':
+      return [
+        'Inicio: codo 70–120°',
+        'Activación: extensión >135°',
+        'Final / extensión: codo 145–180°',
+      ];
+    case 'curl-biceps':
+      return [
+        'Inicio / regreso: codo 85–135°',
+        'Activación: flexión <70°',
+        'Final: codo 30–60°',
+      ];
+    case 'zancadas':
+      return [
+        'Inicio / regreso: rodilla 145–180°',
+        'Activación: rodilla <130°',
+        `Final: rodilla ${LUNGE_KNEE_MIN_ANGLE}–${LUNGE_KNEE_MAX_ANGLE}° · cadera ${LUNGE_HIP_MIN_ANGLE}–${LUNGE_HIP_MAX_ANGLE}°`,
+      ];
+    case 'zancada-banco':
+      return [
+        'Inicio / regreso: rodilla 145–180°',
+        'Activación: rodilla <130°',
+        `Final: rodilla ${BENCH_LUNGE_KNEE_MIN_ANGLE}–${BENCH_LUNGE_KNEE_MAX_ANGLE}° · torso ${BENCH_LUNGE_TORSO_MIN_LEAN}–${BENCH_LUNGE_TORSO_MAX_LEAN}°`,
+      ];
+    case 'plancha':
+      return [
+        `Sostener: codo ${PLANK_ELBOW_MIN_ANGLE}–${PLANK_ELBOW_MAX_ANGLE}°`,
+        `Brazo respecto al suelo: ${PLANK_ARM_FLOOR_MIN_ANGLE}–${PLANK_ARM_FLOOR_MAX_ANGLE}°`,
+        `Línea corporal: ${PLANK_MIN_BODY_LINE_ANGLE}–180°`,
+      ];
+    default: {
+      const config = getRepetitionConfig(exercise);
+      return config
+        ? [
+            `Inicio: ${config.startMinAngle}–${config.startMaxAngle}°`,
+            `Activación: ${config.direction === 'decrease' ? '<' : '>'}${config.activationAngle}°`,
+            `Final: ${config.endMinAngle}–${config.endMaxAngle}°`,
+          ]
+        : ['Rangos técnicos visibles en el panel'];
+    }
+  }
+}
+
 function createSquatTracker(): SquatTracker {
   return {
     phase: 'esperando arriba',
@@ -3726,6 +3835,33 @@ function Home() {
       : exerciseRepPhase === 'en movimiento'
         ? 'En movimiento'
         : 'Repetición válida';
+  const conditionRows = getExerciseConditionRows(selectedExercise);
+  const hasEvaluationCounter = selectedExercise === 'sentadillas'
+    || selectedExercise === 'dominadas'
+    || selectedExercise === 'dominadas-supinas'
+    || Boolean(getRepetitionConfig(selectedExercise));
+  const evaluatedRepetitions = selectedExercise === 'sentadillas'
+    ? squatRepetitions
+    : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+      ? pullupRepetitions
+      : exerciseRepetitions;
+  const correctRepetitions = selectedExercise === 'sentadillas'
+    ? squatGoodRepetitions
+    : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+      ? pullupGoodRepetitions
+      : exerciseGoodRepetitions;
+  const evaluationPhase = selectedExercise === 'sentadillas'
+    ? squatPhaseLabel
+    : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+      ? pullupPhaseLabel
+      : exerciseRepPhaseLabel;
+  const evaluationLabel = selectedExercise === 'muscle-up'
+    ? 'Pendiente de calibración'
+    : selectedExercise === 'plancha'
+      ? 'Sostener posición'
+      : hasEvaluationCounter
+        ? `${correctRepetitions} / ${evaluatedRepetitions}`
+        : 'Pendiente';
 
   return (
     <div className="posture-app">
@@ -4279,6 +4415,23 @@ function Home() {
                       )}
                     </div>
                   )}
+                  <div className="rep-condition-hud" aria-label="Condiciones para contar una repetición" aria-live="polite">
+                    <div className="rep-condition-heading">
+                      <span>Condición para contar</span>
+                      <strong>{evaluationLabel}</strong>
+                    </div>
+                    <div className="rep-condition-list">
+                      {conditionRows.map((condition) => (
+                        <span key={condition}>{condition}</span>
+                      ))}
+                    </div>
+                    <div className="rep-condition-footer">
+                      <span>
+                        {hasEvaluationCounter ? 'Correctas / evaluadas' : 'Estado'}
+                      </span>
+                      <strong>{hasEvaluationCounter ? evaluationLabel : evaluationPhase}</strong>
+                    </div>
+                  </div>
                 {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
