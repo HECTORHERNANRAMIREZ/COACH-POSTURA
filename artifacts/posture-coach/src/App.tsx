@@ -138,12 +138,20 @@ const clerkAppearance = {
 const GREEN = '#39ff6a';
 
 type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
+type TrackedJointDefinition = {
+  joint: TrackedJoint;
+  label: string;
+};
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
   description: string;
   angleLabel: string;
   cameraNote?: string;
+  trackedJoints: TrackedJointDefinition[];
+  trackBothSides?: boolean;
+  trackedAngleLabels: string[];
 };
 const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
@@ -283,6 +291,13 @@ const exercises: ExerciseDefinition[] = [
     description: 'Inclina el torso hacia delante y desciende hasta 90° de codo para enfatizar el pecho.',
     angleLabel: 'Torso 30–40° · codo 85–95°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: ['Codo: inicio 150–180°, activación <135°, final 85–95°', 'Torso: 30–40°'],
   },
   {
     id: 'dominadas',
@@ -290,6 +305,13 @@ const exercises: ExerciseDefinition[] = [
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
     cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Codo: inicio/regreso 160–180°', 'Altura: cabeza por encima de las muñecas'],
   },
   {
     id: 'dominadas-supinas',
@@ -297,6 +319,13 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
     cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Codo: inicio/regreso 160–180°', 'Altura: cabeza por encima de las muñecas'],
   },
   {
     id: 'muscle-up',
@@ -304,6 +333,17 @@ const exercises: ExerciseDefinition[] = [
     description: 'Observa la transición sobre la barra y controla el balanceo de las piernas.',
     angleLabel: 'Codos · rodillas · tobillos',
     cameraNote: 'Nota: vista en semiperfil (30°–45°); separa brazos y piernas y deja el cuerpo completo y la barra dentro del encuadre.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+      { joint: 'foot', label: 'pies' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Codos: lectura izquierda y derecha', 'Rodillas: lectura izquierda y derecha', 'Tobillos: lectura izquierda y derecha', 'Balanceo: solo referencia hasta calibrar'],
   },
   {
     id: 'jalon',
@@ -311,6 +351,13 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mantén el torso erguido entre 10° y 30° mientras llevas la barra al pecho.',
     angleLabel: 'Torso 10°–30° · cadera–hombro–codo 25°–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: ['Torso: 10–30°', 'Codo: 80–120°', 'Tirón cadera–hombro–codo: final 25–60°'],
   },
   {
     id: 'remo-barra',
@@ -318,6 +365,15 @@ const exercises: ExerciseDefinition[] = [
     description: 'Haz una bisagra de cadera, mantén la espalda neutra y lleva la barra al cuerpo con control.',
     angleLabel: 'Torso 30–45° · codos 15–30° · codo 70–115°',
     cameraNote: 'Nota: vista lateral, incluso desde el suelo; muestra todo el cuerpo.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'knee', label: 'rodilla' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Torso: 30–45°', 'Rodilla: 150–180°', 'Elevación del codo: 15–30°', 'Flexión del codo: final 70–115°'],
   },
   {
     id: 'flexiones',
@@ -325,6 +381,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
     angleLabel: 'Codo respecto al torso 45–90° · alineación 162–180°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Codo respecto al torso: 45–100°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
   },
   {
     id: 'flexiones-declinadas',
@@ -332,6 +396,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
     angleLabel: 'Codo 30–60° · cuerpo 162–180°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Codo respecto al torso: 30–60°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
   },
   {
     id: 'flexiones-pica',
@@ -339,12 +411,28 @@ const exercises: ExerciseDefinition[] = [
     description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
     angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Codo respecto al cuerpo: 45–60°', 'Muñeca–hombro respecto al suelo: 75–105°', 'Pliegue de cadera: 45–125°'],
   },
   {
     id: 'press-militar',
     name: 'Press militar con mancuernas',
     description: 'Baja los codos hasta 85°–110° y vuelve a extenderlos con control.',
     angleLabel: 'Codo al bajar · objetivo 85°–110°',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'cadera' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Codo: final 85–110°', 'Codo respecto al torso: 30–60°'],
   },
   {
     id: 'triceps-polea-alta',
@@ -352,6 +440,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Codo: inicio 70–120°, extensión final 145–180°', 'Línea corporal: 160–180°'],
   },
   {
     id: 'extension-horizontal-barra',
@@ -359,6 +455,12 @@ const exercises: ExerciseDefinition[] = [
     description: 'Túmbate, mantén los brazos estables y lleva la barra hacia la frente con control.',
     angleLabel: 'Codo · objetivo 70–105°',
     cameraNote: 'Nota: vista lateral; coloca el móvil bajo o a la altura del banco.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: ['Codo: inicio 150–180°, activación <135°, final 70–105°'],
   },
   {
     id: 'curl-biceps',
@@ -366,6 +468,12 @@ const exercises: ExerciseDefinition[] = [
     description: 'Sube las manos casi hasta el pecho y baja sin extender por completo.',
     angleLabel: 'Codo · objetivo 30–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: ['Codo: inicio 85–135°, activación <70°, final 30–60°'],
   },
   {
     id: 'sentadillas',
@@ -373,6 +481,12 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mide la profundidad y el control de tus piernas.',
     angleLabel: 'Cadera · rodilla · tobillo',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'knee', label: 'rodilla' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Rodilla: inicio ≥140°, regreso >115°, fondo 83–90°'],
   },
   {
     id: 'zancadas',
@@ -380,6 +494,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Baja con control hasta formar 90° en las piernas.',
     angleLabel: 'Rodilla delantera · objetivo 90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Rodilla delantera: 80–100°', 'Rodilla trasera: 80–100°', 'Cadera: 80–100°', 'Torso respecto al suelo: 75–80°'],
   },
   {
     id: 'zancada-banco',
@@ -387,6 +509,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Eleva el pie trasero y controla la rodilla delantera.',
     angleLabel: 'Rodilla 80–100° · torso 15–20°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Rodilla delantera: 80–100°', 'Torso: inclinación 15–20°'],
   },
   {
     id: 'plancha',
@@ -394,6 +524,14 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mantén la cadera alineada y el cuerpo recto.',
     angleLabel: 'Codo · objetivo 90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'ankle', label: 'tobillo' },
+    ],
+    trackedAngleLabels: ['Codo: 80–100°', 'Brazo respecto al suelo: 80–100°', 'Línea hombro–cadera–tobillo: 162–180°'],
   },
 ];
 
@@ -1364,6 +1502,33 @@ function hasFaceDetected(keypoints: PosePoint[] | undefined) {
   ));
 }
 
+function getTrackedPointsForExercise(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  dominantSide: PoseSide | null,
+) {
+  const definition = getExercise(exercise);
+  if (!definition || !keypoints) return [];
+
+  const sides: PoseSide[] = definition.trackBothSides
+    ? ['left', 'right']
+    : dominantSide
+      ? [dominantSide]
+      : [];
+
+  return sides.flatMap((side) => definition.trackedJoints.map(({ joint, label }) => {
+    const index = joint === 'foot'
+      ? MUSCLE_UP_FOOT_INDEX[side]
+      : sideKeypoints[side][joint];
+    return {
+      label: definition.trackBothSides
+        ? `${label} (${side === 'left' ? 'izq.' : 'der.'})`
+        : label,
+      point: keypoints[index],
+    };
+  }));
+}
+
 function getCameraGuidance(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -1387,54 +1552,11 @@ function getCameraGuidance(
     };
   }
 
-  const indexes = sideKeypoints[side];
-  const requiredJoints: Array<keyof typeof indexes> = exercise === 'press-militar'
-    ? ['shoulder', 'elbow', 'wrist', 'hip']
-    : exercise === 'fondos'
-      ? ['shoulder', 'elbow', 'wrist', 'hip']
-      : exercise === 'sentadillas' || exercise === 'zancadas' || exercise === 'zancada-banco'
-        ? ['hip', 'knee', 'ankle']
-        : exercise === 'jalon'
-          ? ['hip', 'shoulder', 'elbow', 'wrist']
-          : exercise === 'remo-barra'
-            ? ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle']
-            : exercise === 'plancha'
-              ? ['shoulder', 'elbow', 'wrist', 'hip', 'ankle']
-              : ['shoulder', 'elbow', 'wrist'];
-  const jointLabels: Record<keyof typeof indexes, string> = {
-    shoulder: 'hombro',
-    elbow: 'codo',
-    wrist: 'muñeca',
-    hip: 'cadera',
-    knee: 'rodilla',
-    ankle: 'tobillo',
-  };
-  const requiredPoints: Array<{
-    joint?: keyof typeof indexes;
-    label: string;
-    point: PosePoint | undefined;
-  }> = exercise === 'muscle-up'
-    ? [
-        { label: 'codo izquierdo', point: keypoints[sideKeypoints.left.elbow] },
-        { label: 'codo derecho', point: keypoints[sideKeypoints.right.elbow] },
-        { label: 'muñeca izquierda', point: keypoints[sideKeypoints.left.wrist] },
-        { label: 'muñeca derecha', point: keypoints[sideKeypoints.right.wrist] },
-        { label: 'rodilla izquierda', point: keypoints[sideKeypoints.left.knee] },
-        { label: 'rodilla derecha', point: keypoints[sideKeypoints.right.knee] },
-        { label: 'tobillo izquierdo', point: keypoints[sideKeypoints.left.ankle] },
-        { label: 'tobillo derecho', point: keypoints[sideKeypoints.right.ankle] },
-        { label: 'pie izquierdo', point: keypoints[MUSCLE_UP_FOOT_INDEX.left] },
-        { label: 'pie derecho', point: keypoints[MUSCLE_UP_FOOT_INDEX.right] },
-      ]
-    : requiredJoints.map((joint) => ({
-        joint,
-        label: jointLabels[joint],
-        point: keypoints[indexes[joint]],
-      }));
+  const requiredPoints = getTrackedPointsForExercise(exercise, keypoints, side);
   const missingLabels = requiredPoints
-    .filter(({ joint, point }) => {
+    .filter(({ label, point }) => {
       const minimumScore = exercise === 'remo-barra'
-        && (joint === 'elbow' || joint === 'wrist')
+        && (label.startsWith('codo') || label.startsWith('muñeca'))
         ? ROW_ARM_POINT_MIN_SCORE
         : CAMERA_POINT_MIN_SCORE;
       return (point?.score ?? 0) < minimumScore;
@@ -2917,11 +3039,16 @@ function getAngleDiagnosticPoints(
     ],
   };
   const indexes = side ? sideKeypoints[side] : null;
+  const diagnosticJoints: TrackedJointDefinition[] = getExercise(exercise)?.trackedJoints
+    ?? labels[exercise];
 
-  return labels[exercise].map(({ label, joint }) => {
-    const point = indexes && keypoints?.[indexes[joint]];
+  return diagnosticJoints.map(({ label, joint }) => {
+    const pointIndex = joint === 'foot'
+      ? side ? MUSCLE_UP_FOOT_INDEX[side] : undefined
+      : indexes?.[joint];
+    const point = pointIndex === undefined ? undefined : keypoints?.[pointIndex];
     return {
-      label,
+      label: label.charAt(0).toUpperCase() + label.slice(1),
       x: point?.x ?? null,
       y: point?.y ?? null,
       z: point?.world?.z ?? point?.z ?? null,
@@ -4413,6 +4540,37 @@ function Home() {
                   <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
                 </div>
               </div>
+              {activeExercise && (
+                <details className="tracking-contract">
+                  <summary>
+                    <span>
+                      <Activity size={13} strokeWidth={1.9} aria-hidden="true" />
+                      Qué está siguiendo la cámara
+                    </span>
+                    <strong>{activeExercise.trackBothSides ? 'Ambos lados' : 'Lado más visible'}</strong>
+                  </summary>
+                  <div className="tracking-contract-body">
+                    <div className="tracking-contract-group">
+                      <span className="tracking-contract-label">Puntos necesarios</span>
+                      <div className="tracking-chip-list">
+                        {activeExercise.trackedJoints.map(({ joint, label }) => (
+                          <span className="tracking-chip" key={joint}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="tracking-contract-group">
+                      <span className="tracking-contract-label">Ángulos que cuentan</span>
+                      <ul className="tracking-angle-list">
+                        {activeExercise.trackedAngleLabels.map((trackedAngle) => (
+                          <li key={trackedAngle}>{trackedAngle}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </details>
+              )}
               <div className={`exercise-start-bar ${exerciseStarted ? 'is-started' : ''}`}>
                 <div className="exercise-start-copy">
                   <strong>
