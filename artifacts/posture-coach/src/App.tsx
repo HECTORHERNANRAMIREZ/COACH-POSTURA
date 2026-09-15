@@ -41,6 +41,7 @@ import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
+import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -153,7 +154,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
-  'extension-horizontal-barra': tricepsPushdownImage,
+  'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
