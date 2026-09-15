@@ -268,6 +268,13 @@ type CameraGuidance = {
 };
 type MuscleUpAngleKey = 'leftElbow' | 'rightElbow' | 'leftKnee' | 'rightKnee' | 'leftAnkle' | 'rightAnkle';
 type MuscleUpAngles = Record<MuscleUpAngleKey, number | null>;
+type LiveAngleReading = {
+  label: string;
+  value: number | null;
+  target: string;
+  min?: number;
+  max?: number;
+};
 
 const exercises: ExerciseDefinition[] = [
   {
@@ -1622,14 +1629,19 @@ function calculatePushupTechniqueAngles(
 function isPushupTechniqueValid(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  variant: 'regular' | 'declined' = 'regular',
 ) {
   const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(keypoints, side);
+  const elbowMin = variant === 'declined' ? 30 : PUSHUP_ELBOW_TORSO_MIN_ANGLE;
+  const elbowMax = variant === 'declined'
+    ? 60
+    : PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE;
   return elbowTorsoAngle !== null
     && bodyLineAngle !== null
     && isWithinAngle(
       elbowTorsoAngle,
-      PUSHUP_ELBOW_TORSO_MIN_ANGLE,
-      PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE,
+      elbowMin,
+      elbowMax,
     )
     && isWithinAngle(
       bodyLineAngle,
@@ -2917,6 +2929,208 @@ function getAngleDiagnosticPoints(
   });
 }
 
+function createLiveAngleReading(
+  label: string,
+  value: number | null,
+  target: string,
+  min?: number,
+  max?: number,
+): LiveAngleReading {
+  return { label, value, target, min, max };
+}
+
+function calculateLiveAngleReadings(
+  exercise: ExerciseId | null,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): LiveAngleReading[] {
+  const empty = (label: string, target: string) => createLiveAngleReading(label, null, target);
+  if (!exercise) return [empty('Esperando', 'Selecciona un ejercicio')];
+
+  const indexes = side ? sideKeypoints[side] : null;
+  const value = (calculator: () => number | null, label: string, target: string, min?: number, max?: number) => (
+    createLiveAngleReading(label, calculator(), target, min, max)
+  );
+
+  if (!keypoints || !indexes) {
+    switch (exercise) {
+      case 'muscle-up':
+        return [
+          empty('Codo izq.', 'Calibración'),
+          empty('Codo der.', 'Calibración'),
+          empty('Rodilla izq.', 'Calibración'),
+          empty('Rodilla der.', 'Calibración'),
+          empty('Tobillo izq.', 'Calibración'),
+          empty('Tobillo der.', 'Calibración'),
+        ];
+      case 'jalon':
+        return [empty('Torso', '10–30°'), empty('Codo', '80–120°'), empty('Tirón', '25–60°')];
+      case 'remo-barra':
+        return [empty('Torso', '30–45°'), empty('Rodilla', '150–180°'), empty('Codos', '15–30°'), empty('Flexión', '70–115°')];
+      case 'flexiones':
+      case 'flexiones-declinadas':
+        return [empty('Codo / torso', exercise === 'flexiones' ? '45–100°' : '30–60°'), empty('Alineación', '162–180°'), empty('Flexión', '70–105°')];
+      case 'flexiones-pica':
+        return [empty('Codo / cuerpo', '45–60°'), empty('Muñeca / hombro', '75–105°'), empty('Cadera', '45–125°')];
+      case 'press-militar':
+        return [empty('Codo', '85–110°'), empty('Codo / torso', '30–60°')];
+      case 'zancadas':
+        return [empty('Rodilla delantera', '80–100°'), empty('Rodilla trasera', '80–100°'), empty('Cadera', '80–100°'), empty('Torso', '75–80°')];
+      case 'zancada-banco':
+        return [empty('Rodilla', '80–100°'), empty('Torso', '15–20°')];
+      case 'plancha':
+        return [empty('Codo', '80–100°'), empty('Brazo / suelo', '80–100°'), empty('Cuerpo', '162–180°')];
+      default:
+        return [empty('Ángulo principal', getExercise(exercise)?.angleLabel ?? 'Esperando puntos')];
+    }
+  }
+
+  const elbow = () => calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  );
+  const torso = () => calculateForwardLeanAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+  );
+  const bodyLine = () => calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+    keypoints[indexes.ankle],
+  );
+  const knee = () => calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
+    keypoints[indexes.ankle],
+  );
+
+  switch (exercise) {
+    case 'fondos':
+      return [
+        value(elbow, 'Codo', '85–95°', DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE),
+        value(torso, 'Torso', '30–40°', DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE),
+      ];
+    case 'dominadas':
+    case 'dominadas-supinas':
+      return [
+        value(elbow, 'Codo', 'Inicio 160–180°', PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Codo / torso',
+          'Referencia visual',
+        ),
+      ];
+    case 'muscle-up': {
+      const left = sideKeypoints.left;
+      const right = sideKeypoints.right;
+      return [
+        value(() => calculateAngle(keypoints[left.shoulder], keypoints[left.elbow], keypoints[left.wrist]), 'Codo izq.', 'Calibración'),
+        value(() => calculateAngle(keypoints[right.shoulder], keypoints[right.elbow], keypoints[right.wrist]), 'Codo der.', 'Calibración'),
+        value(() => calculateAngle(keypoints[left.hip], keypoints[left.knee], keypoints[left.ankle]), 'Rodilla izq.', 'Calibración'),
+        value(() => calculateAngle(keypoints[right.hip], keypoints[right.knee], keypoints[right.ankle]), 'Rodilla der.', 'Calibración'),
+        value(() => calculateAngle(keypoints[left.knee], keypoints[left.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.left]), 'Tobillo izq.', 'Calibración'),
+        value(() => calculateAngle(keypoints[right.knee], keypoints[right.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.right]), 'Tobillo der.', 'Calibración'),
+      ];
+    }
+    case 'jalon':
+      return [
+        value(torso, 'Torso', '10–30°', PULLDOWN_TORSO_MIN_ANGLE, PULLDOWN_TORSO_MAX_ANGLE),
+        value(elbow, 'Codo', '80–120°', PULLDOWN_ELBOW_MIN_ANGLE, PULLDOWN_ELBOW_MAX_ANGLE),
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Tirón',
+          '25–60°',
+          PULLDOWN_ANGLE_MIN,
+          PULLDOWN_ANGLE_MAX,
+        ),
+      ];
+    case 'remo-barra':
+      return [
+        value(torso, 'Torso', '30–45°', ROW_TORSO_MIN_ANGLE, ROW_TORSO_MAX_ANGLE),
+        value(knee, 'Rodilla', '150–180°', ROW_KNEE_MIN_ANGLE, ROW_KNEE_MAX_ANGLE),
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Codos',
+          '15–30°',
+          ROW_ELBOW_TORSO_MIN_ANGLE,
+          ROW_ELBOW_TORSO_MAX_ANGLE,
+        ),
+        value(elbow, 'Flexión', '70–115°', 70, 115),
+      ];
+    case 'flexiones':
+    case 'flexiones-declinadas': {
+      const pushupAngles = calculatePushupTechniqueAngles(keypoints, side);
+      const elbowMin = exercise === 'flexiones' ? PUSHUP_ELBOW_TORSO_MIN_ANGLE : 30;
+      const elbowMax = exercise === 'flexiones'
+        ? PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE
+        : 60;
+      return [
+        createLiveAngleReading('Codo / torso', pushupAngles.elbowTorsoAngle, `${elbowMin}–${elbowMax}°`, elbowMin, elbowMax),
+        createLiveAngleReading('Alineación', pushupAngles.bodyLineAngle, '162–180°', PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE),
+        value(elbow, 'Flexión', '70–105°', 70, 105),
+      ];
+    }
+    case 'flexiones-pica':
+      return [
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Codo / cuerpo',
+          '45–60°',
+          PIKE_ELBOW_BODY_MIN_ANGLE,
+          PIKE_ELBOW_BODY_MAX_ANGLE,
+        ),
+        value(() => calculateAngleToFloor(keypoints[indexes.shoulder], keypoints[indexes.wrist]), 'Muñeca / hombro', '75–105°', PIKE_WRIST_SHOULDER_MIN_ANGLE, PIKE_WRIST_SHOULDER_MAX_ANGLE),
+        value(() => calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.ankle]), 'Cadera', '45–125°', PIKE_MIN_BODY_FOLD_ANGLE, PIKE_MAX_BODY_FOLD_ANGLE),
+      ];
+    case 'press-militar':
+      return [
+        value(elbow, 'Codo', '85–110°', MILITARY_PRESS_VALID_MIN_ANGLE, MILITARY_PRESS_VALID_MAX_ANGLE),
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Codo / torso',
+          '30–60°',
+          30,
+          60,
+        ),
+      ];
+    case 'triceps-polea-alta':
+      return [
+        value(elbow, 'Codo', '70–180°', 70, 180),
+        value(bodyLine, 'Torso', '160–180°', 160, 180),
+      ];
+    case 'extension-horizontal-barra':
+      return [value(elbow, 'Codo', '70–105°', 70, 105)];
+    case 'curl-biceps':
+      return [value(elbow, 'Codo', '30–60°', 30, 60)];
+    case 'sentadillas':
+      return [createLiveAngleReading('Rodilla', calculateSquatAngle(keypoints), '83–90°', SQUAT_VALID_MIN_ANGLE, SQUAT_VALID_MAX_ANGLE)];
+    case 'zancadas': {
+      const rearSide = side === 'left' ? 'right' : 'left';
+      const rear = sideKeypoints[rearSide];
+      return [
+        value(knee, 'Rodilla delantera', '80–100°', LUNGE_KNEE_MIN_ANGLE, LUNGE_KNEE_MAX_ANGLE),
+        createLiveAngleReading('Rodilla trasera', calculateAngle(keypoints[rear.hip], keypoints[rear.knee], keypoints[rear.ankle]), '80–100°', LUNGE_KNEE_MIN_ANGLE, LUNGE_KNEE_MAX_ANGLE),
+        createLiveAngleReading('Cadera', calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.knee]), '80–100°', LUNGE_HIP_MIN_ANGLE, LUNGE_HIP_MAX_ANGLE),
+        value(() => calculateAngleToFloor(keypoints[indexes.shoulder], keypoints[indexes.hip]), 'Torso', '75–80°', LUNGE_TORSO_MIN_ANGLE, LUNGE_TORSO_MAX_ANGLE),
+      ];
+    }
+    case 'zancada-banco':
+      return [
+        value(knee, 'Rodilla', '80–100°', BENCH_LUNGE_KNEE_MIN_ANGLE, BENCH_LUNGE_KNEE_MAX_ANGLE),
+        value(() => calculateForwardLeanAngle(keypoints[indexes.shoulder], keypoints[indexes.hip]), 'Torso', '15–20°', BENCH_LUNGE_TORSO_MIN_LEAN, BENCH_LUNGE_TORSO_MAX_LEAN),
+      ];
+    case 'plancha':
+      return [
+        value(elbow, 'Codo', '80–100°', PLANK_ELBOW_MIN_ANGLE, PLANK_ELBOW_MAX_ANGLE),
+        value(() => calculateAngleToFloor(keypoints[indexes.shoulder], keypoints[indexes.elbow]), 'Brazo / suelo', '80–100°', PLANK_ARM_FLOOR_MIN_ANGLE, PLANK_ARM_FLOOR_MAX_ANGLE),
+        value(bodyLine, 'Cuerpo', '162–180°', PLANK_MIN_BODY_LINE_ANGLE, 180),
+      ];
+    default:
+      return [value(elbow, 'Ángulo principal', getExercise(exercise)?.angleLabel ?? 'Rango técnico')];
+  }
+}
+
 function getExercise(exerciseId: ExerciseId | null) {
   return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
 }
@@ -3005,6 +3219,7 @@ function Home() {
   const [sideChangeNotice, setSideChangeNotice] = useState('Sin cambios');
   const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
+  const [liveAngleReadings, setLiveAngleReadings] = useState<LiveAngleReading[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [squatRepetitions, setSquatRepetitions] = useState(0);
   const [squatGoodRepetitions, setSquatGoodRepetitions] = useState(0);
@@ -3244,7 +3459,10 @@ function Home() {
             pose?.keypoints?.[sideKeypoints[nextDominantSide].elbow],
           )
         : null;
-      const pushupTechniqueAnglesForFrame = selectedExerciseForFrame === 'flexiones'
+      const pushupTechniqueAnglesForFrame = (
+        selectedExerciseForFrame === 'flexiones'
+        || selectedExerciseForFrame === 'flexiones-declinadas'
+      )
         ? calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide)
         : { elbowTorsoAngle: null, bodyLineAngle: null };
       const muscleUpAnglesForFrame = selectedExerciseForFrame === 'muscle-up'
@@ -3399,7 +3617,13 @@ function Home() {
       const pulldownTechniqueReady = selectedExerciseForFrame !== 'jalon'
         || isLatPulldownTechniqueValid(pose?.keypoints, nextDominantSide);
       const pushupTechniqueReady = selectedExerciseForFrame !== 'flexiones'
-        || isPushupTechniqueValid(pose?.keypoints, nextDominantSide);
+        && selectedExerciseForFrame !== 'flexiones-declinadas'
+        ? true
+        : isPushupTechniqueValid(
+          pose?.keypoints,
+          nextDominantSide,
+          selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
+        );
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -3475,6 +3699,11 @@ function Home() {
       setDominantSide(nextDominantSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
       setAngle(displayAngle);
+      setLiveAngleReadings(calculateLiveAngleReadings(
+        selectedExerciseForFrame,
+        pose?.keypoints,
+        nextDominantSide,
+      ));
       setAnglePoints(getAngleDiagnosticPoints(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
@@ -3595,6 +3824,7 @@ function Home() {
     errorCountRef.current = 0;
     setErrorCount(0);
     setAngle(null);
+    setLiveAngleReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -3736,6 +3966,7 @@ function Home() {
     });
     setErrorMessage('');
     setAngle(null);
+    setLiveAngleReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -4403,144 +4634,32 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
-                  {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') ? (
-                    <div className="dip-angle-hud pullup-angle-hud" aria-label="Ángulos y rangos de las dominadas" aria-live="polite">
-                      <div className={`dip-angle-reading ${pullupElbowIsExtended ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Codo actual</span>
-                        <strong>{angleLabel}</strong>
-                        <small>Lectura en vivo</small>
-                      </div>
-                      <div className={`dip-angle-reading ${pullupElbowIsExtended ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Inicio / regreso</span>
-                        <strong>{PULLUP_BOTTOM_MIN_ANGLE}–{PULLUP_BOTTOM_MAX_ANGLE}°</strong>
-                        <small>Extensión válida</small>
-                      </div>
-                      <div className={`dip-angle-reading ${pullupHasStarted ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Activación</span>
-                        <strong>&lt;{PULLUP_NO_LOCKOUT_ANGLE}°</strong>
-                        <small>Comienza la subida</small>
-                      </div>
+                  <div
+                    className={`live-angle-hud live-angle-hud--${liveAngleReadings.length > 3 ? 'wide' : 'compact'}`}
+                    aria-label={`Ángulos medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}
+                    aria-live="polite"
+                  >
+                    <div className="live-angle-hud-heading">
+                      <span>Medición en vivo</span>
+                      <strong>{cameraReady ? 'ACTIVA' : 'ESPERANDO CÁMARA'}</strong>
                     </div>
-                  ) : selectedExercise === 'muscle-up' ? (
-                    <div className="dip-angle-hud muscle-up-angle-hud" aria-label="Ángulos de referencia del muscle-up" aria-live="polite">
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Codo izq.</span>
-                        <strong>{muscleUpAngleLabel('leftElbow')}</strong>
-                        <small>Medición</small>
-                      </div>
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Codo der.</span>
-                        <strong>{muscleUpAngleLabel('rightElbow')}</strong>
-                        <small>Medición</small>
-                      </div>
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Rodilla izq.</span>
-                        <strong>{muscleUpAngleLabel('leftKnee')}</strong>
-                        <small>Balanceo</small>
-                      </div>
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Rodilla der.</span>
-                        <strong>{muscleUpAngleLabel('rightKnee')}</strong>
-                        <small>Balanceo</small>
-                      </div>
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Tobillo izq.</span>
-                        <strong>{muscleUpAngleLabel('leftAnkle')}</strong>
-                        <small>Balanceo</small>
-                      </div>
-                      <div className="dip-angle-reading">
-                        <span className="dip-angle-label">Tobillo der.</span>
-                        <strong>{muscleUpAngleLabel('rightAnkle')}</strong>
-                        <small>Balanceo</small>
-                      </div>
-                    </div>
-                  ) : selectedExercise === 'fondos' ? (
-                    <div className="dip-angle-hud" aria-label="Ángulos importantes de fondos" aria-live="polite">
-                      <div className={`dip-angle-reading ${dipElbowIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Codo</span>
-                        <strong>{dipElbowLabel}</strong>
-                        <small>Objetivo 85–95°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${dipTorsoIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Torso</span>
-                        <strong>{dipTorsoLabel}</strong>
-                        <small>Objetivo 30–40°</small>
-                      </div>
-                    </div>
-                  ) : selectedExercise === 'jalon' ? (
-                    <div className="dip-angle-hud pulldown-angle-hud" aria-label="Ángulos importantes del jalón al pecho" aria-live="polite">
-                      <div className={`dip-angle-reading ${pulldownTorsoIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Torso</span>
-                        <strong>{pulldownTorsoLabel}</strong>
-                        <small>Objetivo 10–30°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${pulldownElbowIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Codo</span>
-                        <strong>{pulldownElbowLabel}</strong>
-                        <small>Objetivo 80–120°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${angleIsGood ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Tirón</span>
-                        <strong>{angleLabel}</strong>
-                        <small>Objetivo 25–60°</small>
-                      </div>
-                    </div>
-                  ) : selectedExercise === 'remo-barra' ? (
-                    <div className="dip-angle-hud pulldown-angle-hud row-angle-hud" aria-label="Ángulos importantes del remo con barra" aria-live="polite">
-                      <div className={`dip-angle-reading ${rowTorsoIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Torso</span>
-                        <strong>{rowTorsoLabel}</strong>
-                        <small>Objetivo {ROW_TORSO_MIN_ANGLE}–{ROW_TORSO_MAX_ANGLE}°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${rowElbowRiseIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Codos</span>
-                        <strong>{rowElbowRiseLabel}</strong>
-                        <small>Subida {ROW_ELBOW_TORSO_MIN_ANGLE}–{ROW_ELBOW_TORSO_MAX_ANGLE}°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${rowElbowIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Flexión</span>
-                        <strong>{angleLabel}</strong>
-                        <small>Objetivo 70–115°</small>
-                      </div>
-                    </div>
-                  ) : selectedExercise === 'flexiones' ? (
-                    <div className="dip-angle-hud pushup-angle-hud" aria-label="Ángulos importantes de las flexiones de pecho" aria-live="polite">
-                      <div className={`dip-angle-reading ${pushupElbowTorsoIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Codo / torso</span>
-                        <strong>{pushupElbowTorsoLabel}</strong>
-                        <small>Objetivo {PUSHUP_ELBOW_TORSO_MIN_ANGLE}–{PUSHUP_ELBOW_TORSO_MAX_ANGLE}° · margen +{PUSHUP_ELBOW_TORSO_TOLERANCE}°</small>
-                      </div>
-                      <div className={`dip-angle-reading ${pushupBodyLineIsValid ? 'is-valid' : ''}`}>
-                        <span className="dip-angle-label">Alineación</span>
-                        <strong>{pushupBodyLineLabel}</strong>
-                        <small>Recta {PUSHUP_BODY_LINE_MIN_ANGLE}–{PUSHUP_BODY_LINE_MAX_ANGLE}°</small>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="angle-hud" aria-live="polite">
-                      <span className="angle-hud-label">Ángulo</span>
-                      <strong>{angle === null ? '—' : `${angle}°`}</strong>
-                      <small>{activeExercise?.angleLabel ?? 'Esperando puntos'}</small>
-                      {angleIsGood && angle !== null && (
-                        <span className="angle-hud-status">¡Lo estás haciendo bien!</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="rep-condition-hud" aria-label="Condiciones para contar una repetición" aria-live="polite">
-                    <div className="rep-condition-heading">
-                      <span>Condición para contar</span>
-                      <strong>{evaluationLabel}</strong>
-                    </div>
-                    <div className="rep-condition-list">
-                      {conditionRows.map((condition) => (
-                        <span key={condition}>{condition}</span>
-                      ))}
-                    </div>
-                    <div className="rep-condition-footer">
-                      <span>
-                        {hasEvaluationCounter ? 'Correctas / evaluadas' : 'Estado'}
-                      </span>
-                      <strong>{hasEvaluationCounter ? evaluationLabel : evaluationPhase}</strong>
+                    <div className="live-angle-grid">
+                      {liveAngleReadings.map((reading) => {
+                        const isValid = reading.value !== null
+                          && reading.min !== undefined
+                          && reading.max !== undefined
+                          && isWithinAngle(reading.value, reading.min, reading.max);
+                        return (
+                          <div
+                            key={`${reading.label}-${reading.target}`}
+                            className={`live-angle-reading ${isValid ? 'is-valid' : ''}`}
+                          >
+                            <span className="live-angle-label">{reading.label}</span>
+                            <strong>{reading.value === null ? '—' : `${reading.value}°`}</strong>
+                            <small>Objetivo {reading.target}</small>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 {phase !== 'tracking' && (
