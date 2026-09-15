@@ -44,7 +44,7 @@ import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_17
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
-import introLogoVideo from '@assets/PixVerse_V6_Image_Text_540P_Logo_draws_itself__1789458243689.mp4';
+import introLogoVideo from '@assets/Video_Project_3_1789458792926.mp4';
 import brandLogoImage from '@assets/ChatGPT_Image_15_sept_2026__02_39_33_a.m.-removebg-preview_1789458540404.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
