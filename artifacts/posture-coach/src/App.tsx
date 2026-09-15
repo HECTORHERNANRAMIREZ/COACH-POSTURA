@@ -134,7 +134,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -153,6 +153,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
+  'extension-horizontal-barra': tricepsPushdownImage,
   'remo-barra': barbellRowImage,
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
@@ -341,6 +342,13 @@ const exercises: ExerciseDefinition[] = [
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+  },
+  {
+    id: 'extension-horizontal-barra',
+    name: 'Extensión horizontal con barra',
+    description: 'Túmbate, mantén los brazos estables y lleva la barra hacia la frente con control.',
+    angleLabel: 'Codo · objetivo 70–105°',
+    cameraNote: 'Nota: vista lateral; coloca el móvil bajo o a la altura del banco.',
   },
   {
     id: 'curl-biceps',
@@ -563,6 +571,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: 180,
     endLabel: 'extensión entre 145–180°',
   },
+  'extension-horizontal-barra': {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 70,
+    endMaxAngle: 105,
+    endLabel: 'flexión de codo entre 70–105°',
+  },
   'curl-biceps': {
     direction: 'decrease',
     startMinAngle: 85,
@@ -757,6 +774,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio: codo 70–120°',
         'Activación: extensión >135°',
         'Final / extensión: codo 145–180°',
+      ];
+    case 'extension-horizontal-barra':
+      return [
+        'Inicio / regreso: codo 150–180°',
+        'Activación: flexión <135°',
+        'Final: codo 70–105° cerca de la frente',
       ];
     case 'curl-biceps':
       return [
@@ -1880,6 +1903,36 @@ function getTricepsPushdownTechniqueFeedback(
   };
 }
 
+function getHorizontalBarExtensionTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const elbowAngle = calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  );
+
+  if (elbowAngle === null) return defaultTechniqueFeedback;
+
+  if (elbowAngle < 65) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado el codo',
+      detail: `El codo está a ${elbowAngle}°. Acerca la barra a la frente sin comprimir demasiado la articulación.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Extensión horizontal controlada',
+    detail: `Codo ${elbowAngle}° · mantén los brazos estables y extiende la barra sin mover los hombros.`,
+  };
+}
+
 function getBicepsCurlTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -2652,6 +2705,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones-pica'
     || exercise === 'press-militar'
     || exercise === 'triceps-polea-alta'
+    || exercise === 'extension-horizontal-barra'
     || exercise === 'curl-biceps'
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
@@ -2812,6 +2866,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'triceps-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'extension-horizontal-barra': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -3396,6 +3455,8 @@ function Home() {
             ? getMilitaryPressTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'triceps-polea-alta'
             ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
+           : selectedExerciseRef.current === 'extension-horizontal-barra'
+             ? getHorizontalBarExtensionTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'curl-biceps'
             ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'fondos'
@@ -3920,6 +3981,7 @@ function Home() {
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
                     || exercise.id === 'triceps-polea-alta'
+                    || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -4212,6 +4274,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'extension-horizontal-barra' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Posición:</b> túmbate en un banco estable y sujeta la barra sobre el pecho con los brazos extendidos.</li>
+                    <li><b>Codos:</b> mantenlos apuntando hacia arriba y cerca de la línea de los hombros; evita abrirlos hacia los lados.</li>
+                    <li><b>Bajada:</b> flexiona solo los codos y lleva la barra hacia la frente con control, hasta unos 70°–105°.</li>
+                    <li><b>Subida:</b> extiende los codos sin mover los hombros ni bloquearlos bruscamente.</li>
+                    <li><b>Encuadre:</b> usa una vista lateral y deja visibles hombro, codo y muñeca durante todo el movimiento.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'curl-biceps' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -4270,6 +4344,7 @@ function Home() {
                       || selectedExercise === 'flexiones-pica'
                       || selectedExercise === 'press-militar'
                       || selectedExercise === 'triceps-polea-alta'
+                      || selectedExercise === 'extension-horizontal-barra'
                       || selectedExercise === 'curl-biceps'
                       || selectedExercise === 'fondos'
                        || selectedExercise === 'dominadas'
