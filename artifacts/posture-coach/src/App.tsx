@@ -278,12 +278,14 @@ const exercises: ExerciseDefinition[] = [
     name: 'Dominadas en barra',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
+    cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
   },
   {
     id: 'dominadas-supinas',
     name: 'Dominadas supinas',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
+    cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
   },
   {
     id: 'muscle-up',
@@ -1235,6 +1237,8 @@ function getCameraGuidance(
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
+        : exercise === 'dominadas' || exercise === 'dominadas-supinas'
+          ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
@@ -1358,6 +1362,8 @@ function getCameraGuidance(
 
     if (
       exercise !== 'press-militar'
+      && exercise !== 'dominadas'
+      && exercise !== 'dominadas-supinas'
       && torsoLength > 0
       && shoulderWidth / torsoLength > MAX_FRONT_VIEW_RATIO
     ) {
@@ -4130,15 +4136,17 @@ function Home() {
                       || selectedExercise === 'triceps-polea-alta'
                       || selectedExercise === 'curl-biceps'
                       || selectedExercise === 'fondos'
-                      || selectedExercise === 'dominadas'
-                      || selectedExercise === 'dominadas-supinas'
+                       || selectedExercise === 'dominadas'
+                       || selectedExercise === 'dominadas-supinas'
                       || selectedExercise === 'muscle-up'
                       || selectedExercise === 'zancadas'
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
                       || selectedExercise === 'remo-barra'
                       || selectedExercise === 'plancha'
-                      ? 'lateral'
+                       ? selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+                         ? 'trasera'
+                         : 'lateral'
                       : 'frontal'
                   }`}
                 />
