@@ -2954,6 +2954,17 @@ function calculateLiveAngleReadings(
 
   if (!keypoints || !indexes) {
     switch (exercise) {
+      case 'fondos':
+        return [
+          empty('Codo', 'Inicio 150–180° · activa <135° · final 85–95°'),
+          empty('Torso', '30–40°'),
+        ];
+      case 'dominadas':
+      case 'dominadas-supinas':
+        return [
+          empty('Codo', 'Inicio / regreso 160–180°'),
+          empty('Codo / activación', '<155° · arriba: cabeza sobre muñecas'),
+        ];
       case 'muscle-up':
         return [
           empty('Codo izq.', 'Calibración'),
@@ -2964,20 +2975,60 @@ function calculateLiveAngleReadings(
           empty('Tobillo der.', 'Calibración'),
         ];
       case 'jalon':
-        return [empty('Torso', '10–30°'), empty('Codo', '80–120°'), empty('Tirón', '25–60°')];
+        return [
+          empty('Torso', '10–30°'),
+          empty('Codo', '80–120°'),
+          empty('Tirón', 'Inicio 150–180° · activa <135° · final 25–60°'),
+        ];
       case 'remo-barra':
-        return [empty('Torso', '30–45°'), empty('Rodilla', '150–180°'), empty('Codos', '15–30°'), empty('Flexión', '70–115°')];
+        return [
+          empty('Torso', '30–45°'),
+          empty('Rodilla', '150–180°'),
+          empty('Codos', '15–30°'),
+          empty('Flexión', 'Inicio 145–180° · activa <130° · final 70–115°'),
+        ];
       case 'flexiones':
       case 'flexiones-declinadas':
-        return [empty('Codo / torso', exercise === 'flexiones' ? '45–100°' : '30–60°'), empty('Alineación', '162–180°'), empty('Flexión', '70–105°')];
+        return [
+          empty('Codo / torso', exercise === 'flexiones' ? '45–100°' : '30–60°'),
+          empty('Alineación', '162–180°'),
+          empty('Flexión', 'Inicio 150–180° · activa <135° · final 70–105°'),
+        ];
       case 'flexiones-pica':
-        return [empty('Codo / cuerpo', '45–60°'), empty('Muñeca / hombro', '75–105°'), empty('Cadera', '45–125°')];
+        return [
+          empty('Codo', 'Inicio 145–180° · activa <130° · final 70–110°'),
+          empty('Codo / cuerpo', '45–60°'),
+          empty('Muñeca / hombro', '75–105°'),
+          empty('Cadera', '45–125°'),
+        ];
       case 'press-militar':
-        return [empty('Codo', '85–110°'), empty('Codo / torso', '30–60°')];
+        return [
+          empty('Codo', 'Inicio 145–180° · activa <130° · final 85–110°'),
+          empty('Codo / torso', '30–60°'),
+        ];
+      case 'triceps-polea-alta':
+        return [
+          empty('Codo', 'Inicio 70–120° · activa >135° · final 145–180°'),
+          empty('Torso', '160–180°'),
+        ];
+      case 'extension-horizontal-barra':
+        return [empty('Codo', 'Inicio 150–180° · activa <135° · final 70–105°')];
+      case 'curl-biceps':
+        return [empty('Codo', 'Inicio 85–135° · activa <70° · final 30–60°')];
+      case 'sentadillas':
+        return [empty('Rodilla', 'Inicio ≥140° · regreso >115° · fondo 83–90°')];
       case 'zancadas':
-        return [empty('Rodilla delantera', '80–100°'), empty('Rodilla trasera', '80–100°'), empty('Cadera', '80–100°'), empty('Torso', '75–80°')];
+        return [
+          empty('Rodilla delantera', 'Inicio 145–180° · activa <130° · final 80–100°'),
+          empty('Rodilla trasera', '80–100°'),
+          empty('Cadera', '80–100°'),
+          empty('Torso', '75–80°'),
+        ];
       case 'zancada-banco':
-        return [empty('Rodilla', '80–100°'), empty('Torso', '15–20°')];
+        return [
+          empty('Rodilla', 'Inicio 145–180° · activa <130° · final 80–100°'),
+          empty('Torso', '15–20°'),
+        ];
       case 'plancha':
         return [empty('Codo', '80–100°'), empty('Brazo / suelo', '80–100°'), empty('Cuerpo', '162–180°')];
       default:
@@ -3008,17 +3059,29 @@ function calculateLiveAngleReadings(
   switch (exercise) {
     case 'fondos':
       return [
-        value(elbow, 'Codo', '85–95°', DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE),
+        value(
+          elbow,
+          'Codo',
+          'Inicio 150–180° · activa <135° · final 85–95°',
+          DIP_VALID_MIN_ANGLE,
+          DIP_VALID_MAX_ANGLE,
+        ),
         value(torso, 'Torso', '30–40°', DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE),
       ];
     case 'dominadas':
     case 'dominadas-supinas':
       return [
-        value(elbow, 'Codo', 'Inicio 160–180°', PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
+        value(
+          elbow,
+          'Codo',
+          'Inicio / regreso 160–180°',
+          PULLUP_BOTTOM_MIN_ANGLE,
+          PULLUP_BOTTOM_MAX_ANGLE,
+        ),
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
-          'Codo / torso',
-          'Referencia visual',
+          'Codo / activación',
+          '<155° · arriba: cabeza sobre muñecas',
         ),
       ];
     case 'muscle-up': {
@@ -3040,7 +3103,7 @@ function calculateLiveAngleReadings(
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
           'Tirón',
-          '25–60°',
+          'Inicio 150–180° · activa <135° · final 25–60°',
           PULLDOWN_ANGLE_MIN,
           PULLDOWN_ANGLE_MAX,
         ),
@@ -3056,7 +3119,7 @@ function calculateLiveAngleReadings(
           ROW_ELBOW_TORSO_MIN_ANGLE,
           ROW_ELBOW_TORSO_MAX_ANGLE,
         ),
-        value(elbow, 'Flexión', '70–115°', 70, 115),
+        value(elbow, 'Flexión', 'Inicio 145–180° · activa <130° · final 70–115°', 70, 115),
       ];
     case 'flexiones':
     case 'flexiones-declinadas': {
@@ -3068,11 +3131,12 @@ function calculateLiveAngleReadings(
       return [
         createLiveAngleReading('Codo / torso', pushupAngles.elbowTorsoAngle, `${elbowMin}–${elbowMax}°`, elbowMin, elbowMax),
         createLiveAngleReading('Alineación', pushupAngles.bodyLineAngle, '162–180°', PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE),
-        value(elbow, 'Flexión', '70–105°', 70, 105),
+        value(elbow, 'Flexión', 'Inicio 150–180° · activa <135° · final 70–105°', 70, 105),
       ];
     }
     case 'flexiones-pica':
       return [
+        value(elbow, 'Codo', 'Inicio 145–180° · activa <130° · final 70–110°', 70, 110),
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
           'Codo / cuerpo',
@@ -3085,7 +3149,13 @@ function calculateLiveAngleReadings(
       ];
     case 'press-militar':
       return [
-        value(elbow, 'Codo', '85–110°', MILITARY_PRESS_VALID_MIN_ANGLE, MILITARY_PRESS_VALID_MAX_ANGLE),
+        value(
+          elbow,
+          'Codo',
+          'Inicio 145–180° · activa <130° · final 85–110°',
+          MILITARY_PRESS_VALID_MIN_ANGLE,
+          MILITARY_PRESS_VALID_MAX_ANGLE,
+        ),
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
           'Codo / torso',
@@ -3096,20 +3166,32 @@ function calculateLiveAngleReadings(
       ];
     case 'triceps-polea-alta':
       return [
-        value(elbow, 'Codo', '70–180°', 70, 180),
+        value(elbow, 'Codo', 'Inicio 70–120° · activa >135° · final 145–180°', 145, 180),
         value(bodyLine, 'Torso', '160–180°', 160, 180),
       ];
     case 'extension-horizontal-barra':
-      return [value(elbow, 'Codo', '70–105°', 70, 105)];
+      return [value(elbow, 'Codo', 'Inicio 150–180° · activa <135° · final 70–105°', 70, 105)];
     case 'curl-biceps':
-      return [value(elbow, 'Codo', '30–60°', 30, 60)];
+      return [value(elbow, 'Codo', 'Inicio 85–135° · activa <70° · final 30–60°', 30, 60)];
     case 'sentadillas':
-      return [createLiveAngleReading('Rodilla', calculateSquatAngle(keypoints), '83–90°', SQUAT_VALID_MIN_ANGLE, SQUAT_VALID_MAX_ANGLE)];
+      return [createLiveAngleReading(
+        'Rodilla',
+        calculateSquatAngle(keypoints),
+        'Inicio ≥140° · regreso >115° · fondo 83–90°',
+        SQUAT_VALID_MIN_ANGLE,
+        SQUAT_VALID_MAX_ANGLE,
+      )];
     case 'zancadas': {
       const rearSide = side === 'left' ? 'right' : 'left';
       const rear = sideKeypoints[rearSide];
       return [
-        value(knee, 'Rodilla delantera', '80–100°', LUNGE_KNEE_MIN_ANGLE, LUNGE_KNEE_MAX_ANGLE),
+        value(
+          knee,
+          'Rodilla delantera',
+          'Inicio 145–180° · activa <130° · final 80–100°',
+          LUNGE_KNEE_MIN_ANGLE,
+          LUNGE_KNEE_MAX_ANGLE,
+        ),
         createLiveAngleReading('Rodilla trasera', calculateAngle(keypoints[rear.hip], keypoints[rear.knee], keypoints[rear.ankle]), '80–100°', LUNGE_KNEE_MIN_ANGLE, LUNGE_KNEE_MAX_ANGLE),
         createLiveAngleReading('Cadera', calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.knee]), '80–100°', LUNGE_HIP_MIN_ANGLE, LUNGE_HIP_MAX_ANGLE),
         value(() => calculateAngleToFloor(keypoints[indexes.shoulder], keypoints[indexes.hip]), 'Torso', '75–80°', LUNGE_TORSO_MIN_ANGLE, LUNGE_TORSO_MAX_ANGLE),
@@ -3117,7 +3199,13 @@ function calculateLiveAngleReadings(
     }
     case 'zancada-banco':
       return [
-        value(knee, 'Rodilla', '80–100°', BENCH_LUNGE_KNEE_MIN_ANGLE, BENCH_LUNGE_KNEE_MAX_ANGLE),
+        value(
+          knee,
+          'Rodilla',
+          'Inicio 145–180° · activa <130° · final 80–100°',
+          BENCH_LUNGE_KNEE_MIN_ANGLE,
+          BENCH_LUNGE_KNEE_MAX_ANGLE,
+        ),
         value(() => calculateForwardLeanAngle(keypoints[indexes.shoulder], keypoints[indexes.hip]), 'Torso', '15–20°', BENCH_LUNGE_TORSO_MIN_LEAN, BENCH_LUNGE_TORSO_MAX_LEAN),
       ];
     case 'plancha':

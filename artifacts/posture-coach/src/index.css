@@ -1359,13 +1359,11 @@
 }
 
 .live-angle-reading small {
-  overflow: hidden;
   margin-top: 0.2rem;
   color: rgba(255, 226, 161, 0.74);
   font-size: 0.39rem;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .dip-angle-reading {
