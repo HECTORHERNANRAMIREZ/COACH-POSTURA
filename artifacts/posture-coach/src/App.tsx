@@ -45,6 +45,7 @@ import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import introLogoVideo from '@assets/PixVerse_V6_Image_Text_540P_Logo_draws_itself__1789458243689.mp4';
+import brandLogoImage from '@assets/ChatGPT_Image_15_sept_2026__02_39_33_a.m.-removebg-preview_1789458540404.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -3977,7 +3978,7 @@ function Home() {
             </button>
           ) : (
             <div className="wordmark">
-              <span className="wordmark-mark" aria-hidden="true" />
+               <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
               <span>COACH / POSTURA</span>
             </div>
           )}
@@ -4840,7 +4841,7 @@ function PublicWelcome() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span className="wordmark-mark" aria-hidden="true" />
+            <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
             <span>COACH / POSTURA</span>
           </div>
           <div className="privacy-chip">
@@ -4918,7 +4919,7 @@ function SubscriptionRequired() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span className="wordmark-mark" aria-hidden="true" />
+            <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
             <span>COACH / POSTURA</span>
           </div>
           <UserMenu />
@@ -5001,7 +5002,7 @@ function PaymentReturnPage() {
         <main className="coach-layout">
           <header className="topbar">
             <div className="wordmark">
-              <span className="wordmark-mark" aria-hidden="true" />
+              <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
               <span>COACH / POSTURA</span>
             </div>
             <UserMenu />
@@ -5054,7 +5055,7 @@ function PaymentReturnPage() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span className="wordmark-mark" aria-hidden="true" />
+              <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
             <span>COACH / POSTURA</span>
           </div>
           <UserMenu />
