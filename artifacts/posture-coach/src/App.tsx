@@ -44,7 +44,6 @@ import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_17
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
-import introLogoVideo from '@assets/Video_Project_3_1789458792926.mp4';
 import brandLogoImage from '@assets/ChatGPT_Image_15_sept_2026__02_39_33_a.m.-removebg-preview_1789458540404.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -3519,39 +3518,6 @@ function getExercise(exerciseId: ExerciseId | null) {
   return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
 }
 
-function AppIntro() {
-  const [introStage, setIntroStage] = useState<'show' | 'move' | 'done'>('show');
-
-  useEffect(() => {
-    const moveTimer = window.setTimeout(() => setIntroStage('move'), 1_420);
-    const doneTimer = window.setTimeout(() => setIntroStage('done'), 2_050);
-
-    return () => {
-      window.clearTimeout(moveTimer);
-      window.clearTimeout(doneTimer);
-    };
-  }, []);
-
-  if (introStage === 'done') return null;
-
-  return (
-    <div className={`app-intro app-intro--${introStage}`} aria-hidden="true">
-      <div className="app-intro-logo">
-        <span className="app-intro-fallback-mark" />
-        <video
-          className="app-intro-video"
-          autoPlay
-          muted
-          playsInline
-          preload="auto"
-        >
-          <source src={introLogoVideo} type="video/mp4" />
-        </video>
-      </div>
-    </div>
-  );
-}
-
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -6031,7 +5997,6 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <AppIntro />
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <Router />
         </WouterRouter>
