@@ -283,6 +283,10 @@ type LiveAngleReading = {
   min?: number;
   max?: number;
 };
+type DipJointReading = {
+  label: string;
+  value: number | null;
+};
 type ReferenceSample = {
   elapsedMs: number;
   readings: Array<{
@@ -1374,6 +1378,10 @@ function selectMostConfident(
 const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle', number>> = {
   left: { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 },
   right: { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 },
+};
+const DIP_WRIST_TIP_INDEX: Record<PoseSide, number> = {
+  left: 19,
+  right: 20,
 };
 
 function getPoseCandidate(
@@ -3180,6 +3188,53 @@ function createLiveAngleReading(
   return { label, value, target, min, max };
 }
 
+function calculateDipJointReadings(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): DipJointReading[] {
+  const empty = (label: string): DipJointReading => ({ label, value: null });
+  if (!keypoints || !side) {
+    return ['Cadera', 'Hombro', 'Codo', 'Muñeca'].map(empty);
+  }
+
+  const indexes = sideKeypoints[side];
+  return [
+    {
+      label: 'Cadera',
+      // Para fondos, la cadera se expresa como la inclinación del torso
+      // respecto a la vertical, que es la referencia técnica del ejercicio.
+      value: calculateForwardLeanAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.hip],
+      ),
+    },
+    {
+      label: 'Hombro',
+      value: calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+      ),
+    },
+    {
+      label: 'Codo',
+      value: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+    },
+    {
+      label: 'Muñeca',
+      value: calculateAngle(
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+        keypoints[DIP_WRIST_TIP_INDEX[side]],
+      ),
+    },
+  ];
+}
+
 function calculateLiveAngleReadings(
   exercise: ExerciseId | null,
   keypoints: PosePoint[] | undefined,
@@ -3549,6 +3604,7 @@ function Home() {
   const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [liveAngleReadings, setLiveAngleReadings] = useState<LiveAngleReading[]>([]);
+  const [dipJointReadings, setDipJointReadings] = useState<DipJointReading[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [squatRepetitions, setSquatRepetitions] = useState(0);
   const [squatGoodRepetitions, setSquatGoodRepetitions] = useState(0);
@@ -4046,6 +4102,11 @@ function Home() {
         nextDominantSide,
       );
       setLiveAngleReadings(nextLiveAngleReadings);
+      setDipJointReadings(
+        selectedExerciseForFrame === 'fondos'
+          ? calculateDipJointReadings(pose?.keypoints, nextDominantSide)
+          : [],
+      );
       if (
         referenceRecordingRef.current
         && frameCameraReady
@@ -4194,6 +4255,7 @@ function Home() {
     setErrorCount(0);
     setAngle(null);
     setLiveAngleReadings([]);
+    setDipJointReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -4336,6 +4398,7 @@ function Home() {
     setErrorMessage('');
     setAngle(null);
     setLiveAngleReadings([]);
+    setDipJointReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -5216,11 +5279,12 @@ function Home() {
                         <strong>{dominantSide ? sideLabel : 'ESPERANDO'}</strong>
                       </div>
                       <div className="dip-joints-grid">
-                        {['Cadera', 'Hombro', 'Codo', 'Muñeca'].map((joint) => (
-                          <span className="dip-joint-chip" key={joint}>
+                        {dipJointReadings.map(({ label, value }) => (
+                          <div className="dip-joint-chip" key={label}>
                             <i aria-hidden="true" />
-                            {joint}
-                          </span>
+                            <span>{label}</span>
+                            <strong>{value === null ? '—' : `${value}°`}</strong>
+                          </div>
                         ))}
                       </div>
                     </div>
