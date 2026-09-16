@@ -4929,19 +4929,6 @@ function Home() {
                         : 'Aléjate lo suficiente para que se vea tu cuerpo completo y mantén las articulaciones visibles.'}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className="exercise-start-button"
-                  disabled={phase !== 'tracking' || (!personDetected && !exerciseStarted)}
-                  aria-pressed={exerciseStarted}
-                  onClick={toggleExercise}
-                >
-                  {exerciseStarted
-                    ? 'Detener curso'
-                      : personDetected
-                        ? 'Iniciar ejercicio'
-                        : 'Buscando cuerpo'}
-                </button>
               </div>
               <section className={`reference-calibration ${referenceRecording ? 'is-recording' : ''}`} aria-labelledby="reference-title">
                 <div className="reference-calibration-heading">
@@ -5295,6 +5282,19 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
+                <button
+                  type="button"
+                  className="exercise-start-button camera-start-button"
+                  disabled={phase !== 'tracking' || (!personDetected && !exerciseStarted)}
+                  aria-pressed={exerciseStarted}
+                  onClick={toggleExercise}
+                >
+                  {exerciseStarted
+                    ? 'Detener curso'
+                      : personDetected
+                        ? 'Iniciar ejercicio'
+                        : 'Buscando cuerpo'}
+                </button>
                   <div
                     className={`live-angle-hud live-angle-hud--${liveAngleReadings.length > 3 ? 'wide' : 'compact'}`}
                     aria-label={`Ángulos medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}

@@ -1158,6 +1158,20 @@
   opacity: 0.6;
 }
 
+.camera-start-button {
+  position: absolute;
+  top: 0.7rem;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: calc(100% - 1.4rem);
+  white-space: nowrap;
+}
+
+.camera-start-button:hover:not(:disabled) {
+  transform: translate(-50%, -1px);
+}
+
 .exercise-good-message {
   display: flex;
   align-items: center;
@@ -2738,6 +2752,13 @@
     width: calc(100% + 1.5rem);
     margin-inline: -0.75rem;
     border-radius: 1.15rem;
+  }
+
+  .camera-start-button {
+    top: 0.55rem;
+    max-width: calc(100% - 1.1rem);
+    padding-inline: 0.6rem;
+    font-size: 0.58rem;
   }
 
   .live-angle-hud {
