@@ -1590,6 +1590,10 @@
   pointer-events: none;
 }
 
+.video-stage--dip .live-angle-hud {
+  bottom: 3.7rem;
+}
+
 .live-angle-hud--wide {
   width: min(20rem, calc(100% - 1.6rem));
 }
@@ -1678,6 +1682,83 @@
   font-size: 0.39rem;
   line-height: 1.2;
   white-space: normal;
+}
+
+.dip-joints-hud {
+  position: absolute;
+  z-index: 3;
+  right: 0.8rem;
+  bottom: 0.78rem;
+  width: min(15.5rem, calc(100% - 1.6rem));
+  padding: 0.34rem 0.42rem 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 0.68rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02)),
+    rgba(8, 18, 32, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0.45rem 1.2rem rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(10px) saturate(120%);
+  pointer-events: none;
+}
+
+.dip-joints-hud-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.08rem 0.26rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dip-joints-hud-heading span,
+.dip-joints-hud-heading strong {
+  color: rgba(208, 223, 238, 0.68);
+  font-size: 0.39rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.dip-joints-hud-heading strong {
+  color: rgba(255, 226, 161, 0.84);
+}
+
+.dip-joints-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.22rem;
+  margin-top: 0.28rem;
+}
+
+.dip-joint-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  gap: 0.18rem;
+  padding: 0.23rem 0.16rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.42rem;
+  color: rgba(238, 244, 250, 0.78);
+  font-size: 0.4rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dip-joint-chip i {
+  width: 0.28rem;
+  height: 0.28rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 216, 138, 0.72);
+  border-radius: 50%;
+  background: rgba(255, 216, 138, 0.18);
+  box-shadow: 0 0 0.35rem rgba(255, 216, 138, 0.22);
 }
 
 .dip-angle-reading {
@@ -2617,8 +2698,22 @@
     width: min(15rem, calc(100% - 1.3rem));
   }
 
+  .video-stage--dip .live-angle-hud {
+    bottom: 3.45rem;
+  }
+
   .live-angle-hud--wide {
     width: min(18.5rem, calc(100% - 1.3rem));
+  }
+
+  .dip-joints-hud {
+    right: 0.65rem;
+    bottom: 0.7rem;
+    width: min(15rem, calc(100% - 1.3rem));
+  }
+
+  .dip-joint-chip {
+    font-size: 0.36rem;
   }
 
   .squat-summary {

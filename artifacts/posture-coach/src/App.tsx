@@ -5135,7 +5135,10 @@ function Home() {
                   </ul>
                 </details>
               )}
-              <div className="video-stage" style={{ aspectRatio: videoRatio }}>
+              <div
+                className={`video-stage ${selectedExercise === 'fondos' ? 'video-stage--dip' : ''}`}
+                style={{ aspectRatio: videoRatio }}
+              >
                 <video
                   ref={videoRef}
                   muted
@@ -5201,6 +5204,27 @@ function Home() {
                       })}
                     </div>
                   </div>
+                  {selectedExercise === 'fondos' && (
+                    <div
+                      className="dip-joints-hud"
+                      aria-label={`Puntos seguidos para fondos en barra${
+                        dominantSide ? `, lado ${sideLabel.toLowerCase()}` : ''
+                      }`}
+                    >
+                      <div className="dip-joints-hud-heading">
+                        <span>Puntos seguidos</span>
+                        <strong>{dominantSide ? sideLabel : 'ESPERANDO'}</strong>
+                      </div>
+                      <div className="dip-joints-grid">
+                        {['Cadera', 'Hombro', 'Codo', 'Muñeca'].map((joint) => (
+                          <span className="dip-joint-chip" key={joint}>
+                            <i aria-hidden="true" />
+                            {joint}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
