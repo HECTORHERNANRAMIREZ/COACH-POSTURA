@@ -1574,10 +1574,11 @@
 .live-angle-hud {
   position: absolute;
   z-index: 3;
-  right: 0.8rem;
-  bottom: 1.05rem;
-  width: min(15.5rem, calc(100% - 1.6rem));
-  padding: 0.48rem;
+  left: 0.65rem;
+  right: auto;
+  bottom: 0.65rem;
+  width: min(10.5rem, calc(100% - 1.3rem));
+  padding: 0.28rem;
   border: 1px solid rgba(255, 216, 138, 0.3);
   border-radius: 0.78rem;
   background:
@@ -1591,29 +1592,29 @@
 }
 
 .video-stage--dip .live-angle-hud {
-  bottom: 3.7rem;
+  bottom: 0.65rem;
 }
 
 .video-stage--pullup .live-angle-hud {
-  bottom: 4.5rem;
+  bottom: 0.65rem;
 }
 
 .live-angle-hud--wide {
-  width: min(20rem, calc(100% - 1.6rem));
+  width: min(11.5rem, calc(100% - 1.3rem));
 }
 
 .live-angle-hud-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.05rem 0.12rem 0.36rem;
+  gap: 0.3rem;
+  padding: 0.03rem 0.08rem 0.2rem;
   border-bottom: 1px solid rgba(255, 216, 138, 0.2);
 }
 
 .live-angle-hud-heading span,
 .live-angle-hud-heading strong {
-  font-size: 0.44rem;
+  font-size: 0.34rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 1.1;
@@ -1631,16 +1632,16 @@
 .live-angle-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.28rem;
-  margin-top: 0.34rem;
+  gap: 0.14rem;
+  margin-top: 0.18rem;
 }
 
 .live-angle-reading {
   display: grid;
   min-width: 0;
-  padding: 0.38rem 0.28rem 0.32rem;
+  padding: 0.18rem 0.12rem 0.16rem;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 0.58rem;
+  border-radius: 0.38rem;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.025)),
     rgba(8, 18, 32, 0.62);
@@ -1658,7 +1659,7 @@
 .live-angle-label {
   overflow: hidden;
   color: rgba(208, 223, 238, 0.72);
-  font-size: 0.43rem;
+  font-size: 0.31rem;
   font-weight: 750;
   letter-spacing: 0.045em;
   line-height: 1.1;
@@ -1668,9 +1669,9 @@
 }
 
 .live-angle-reading strong {
-  margin-top: 0.16rem;
+  margin-top: 0.1rem;
   color: rgba(240, 245, 251, 0.95);
-  font-size: clamp(1.08rem, 4.6vw, 1.42rem);
+  font-size: clamp(0.7rem, 3vw, 0.9rem);
   font-weight: 650;
   letter-spacing: -0.07em;
   line-height: 1;
@@ -1681,9 +1682,9 @@
 }
 
 .live-angle-reading small {
-  margin-top: 0.2rem;
+  margin-top: 0.12rem;
   color: rgba(255, 226, 161, 0.74);
-  font-size: 0.39rem;
+  font-size: 0.29rem;
   line-height: 1.2;
   white-space: normal;
 }
@@ -2735,27 +2736,30 @@
   }
 
   .live-angle-hud {
-    right: 0.65rem;
-    bottom: 0.75rem;
-    width: min(15rem, calc(100% - 1.3rem));
+    left: 0.55rem;
+    right: auto;
+    bottom: 0.55rem;
+    width: min(9.5rem, calc(100% - 1.1rem));
   }
 
   .video-stage--dip .live-angle-hud {
-    bottom: 3.45rem;
+    bottom: 0.55rem;
   }
 
   .video-stage--pullup .live-angle-hud {
-    bottom: 4.3rem;
+    bottom: 0.55rem;
   }
 
   .live-angle-hud--wide {
-    width: min(18.5rem, calc(100% - 1.3rem));
+    width: min(10.5rem, calc(100% - 1.1rem));
   }
 
   .dip-joints-hud {
-    right: 0.65rem;
-    top: 0.55rem;
-    width: min(11rem, calc(100% - 1.3rem));
+    left: 0.55rem;
+    right: auto;
+    top: auto;
+    bottom: 0.55rem;
+    width: min(9.5rem, calc(100% - 1.1rem));
   }
 
   .dip-joint-chip {
@@ -2763,8 +2767,10 @@
   }
 
   .pullup-joints-hud {
-    top: 0.55rem;
-    width: min(9.5rem, calc(100% - 1.3rem));
+    top: auto;
+    bottom: 0.55rem;
+    left: 0.55rem;
+    width: min(8.5rem, calc(100% - 1.1rem));
   }
 
   .squat-summary {
