@@ -5300,10 +5300,6 @@ function Home() {
                     aria-label={`Ángulos medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}
                     aria-live="polite"
                   >
-                    <div className="live-angle-hud-heading">
-                      <span>Medición en vivo</span>
-                      <strong>{cameraReady ? 'ACTIVA' : 'ESPERANDO CÁMARA'}</strong>
-                    </div>
                     <div className="live-angle-grid">
                       {liveAngleReadings.map((reading) => {
                         const isValid = reading.value !== null
