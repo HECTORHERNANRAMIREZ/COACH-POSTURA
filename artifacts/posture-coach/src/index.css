@@ -1574,8 +1574,8 @@
 .live-angle-hud {
   position: absolute;
   z-index: 3;
-  left: 0.65rem;
-  right: auto;
+  left: auto;
+  right: 0.65rem;
   bottom: 0.65rem;
   width: min(10.5rem, calc(100% - 1.3rem));
   padding: 0.28rem;
@@ -1692,8 +1692,10 @@
 .dip-joints-hud {
   position: absolute;
   z-index: 3;
-  right: 0.8rem;
-  top: 0.65rem;
+  left: 0.65rem;
+  right: auto;
+  top: auto;
+  bottom: 0.65rem;
   width: min(11.5rem, calc(100% - 1.6rem));
   padding: 0.25rem 0.3rem 0.28rem;
   border: 1px solid rgba(255, 255, 255, 0.17);
@@ -1781,7 +1783,10 @@
 }
 
 .pullup-joints-hud {
-  top: 0.65rem;
+  top: auto;
+  bottom: 0.65rem;
+  left: 0.65rem;
+  right: auto;
   width: min(10rem, calc(100% - 1rem));
   padding: 0.16rem 0.18rem 0.18rem;
   border-radius: 0.42rem;
@@ -2736,8 +2741,8 @@
   }
 
   .live-angle-hud {
-    left: 0.55rem;
-    right: auto;
+    left: auto;
+    right: 0.55rem;
     bottom: 0.55rem;
     width: min(9.5rem, calc(100% - 1.1rem));
   }
