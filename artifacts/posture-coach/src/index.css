@@ -1594,6 +1594,10 @@
   bottom: 3.7rem;
 }
 
+.video-stage--pullup .live-angle-hud {
+  bottom: 6.3rem;
+}
+
 .live-angle-hud--wide {
   width: min(20rem, calc(100% - 1.6rem));
 }
@@ -1773,6 +1777,22 @@
   border-radius: 50%;
   background: rgba(255, 216, 138, 0.18);
   box-shadow: 0 0 0.35rem rgba(255, 216, 138, 0.22);
+}
+
+.pullup-joints-hud {
+  width: min(20rem, calc(100% - 1.6rem));
+}
+
+.pullup-joints-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pullup-joint-chip {
+  font-size: 0.36rem;
+}
+
+.pullup-joint-chip strong {
+  font-size: 0.64rem;
 }
 
 .dip-angle-reading {
@@ -2716,6 +2736,10 @@
     bottom: 3.45rem;
   }
 
+  .video-stage--pullup .live-angle-hud {
+    bottom: 6rem;
+  }
+
   .live-angle-hud--wide {
     width: min(18.5rem, calc(100% - 1.3rem));
   }
@@ -2728,6 +2752,10 @@
 
   .dip-joint-chip {
     font-size: 0.36rem;
+  }
+
+  .pullup-joints-hud {
+    width: min(18.5rem, calc(100% - 1.3rem));
   }
 
   .squat-summary {

@@ -285,6 +285,7 @@ type LiveAngleReading = {
 type DipJointReading = {
   label: string;
   value: number | null;
+  status?: string;
 };
 type ReferenceSample = {
   elapsedMs: number;
@@ -1378,7 +1379,7 @@ const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'h
   left: { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 },
   right: { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 },
 };
-const DIP_WRIST_TIP_INDEX: Record<PoseSide, number> = {
+const WRIST_TIP_INDEX: Record<PoseSide, number> = {
   left: 19,
   right: 20,
 };
@@ -3228,8 +3229,83 @@ function calculateDipJointReadings(
       value: calculateAngle(
         keypoints[indexes.elbow],
         keypoints[indexes.wrist],
-        keypoints[DIP_WRIST_TIP_INDEX[side]],
+        keypoints[WRIST_TIP_INDEX[side]],
       ),
+    },
+  ];
+}
+
+function isHeadOverBothWrists(
+  keypoints: PosePoint[] | undefined,
+): boolean | null {
+  const nose = keypoints?.[0];
+  const wrists = [sideKeypoints.left.wrist, sideKeypoints.right.wrist]
+    .map((index) => keypoints?.[index])
+    .filter((point): point is PosePoint => (point?.score ?? 0) >= 0.2);
+
+  if (!nose || (nose.score ?? 0) < 0.2 || !wrists.length) return null;
+
+  const averageWristY = wrists.reduce((sum, wrist) => sum + wrist.y, 0) / wrists.length;
+  return nose.y < averageWristY;
+}
+
+function calculatePullupJointReadings(
+  keypoints: PosePoint[] | undefined,
+): DipJointReading[] {
+  if (!keypoints) {
+    return [
+      { label: 'Hombro izq.', value: null },
+      { label: 'Hombro der.', value: null },
+      { label: 'Codo izq.', value: null },
+      { label: 'Codo der.', value: null },
+      { label: 'Muñeca izq.', value: null },
+      { label: 'Muñeca der.', value: null },
+      { label: 'Cabeza', value: null },
+    ];
+  }
+
+  const readings = (side: PoseSide, shortSide: string): DipJointReading[] => {
+    const indexes = sideKeypoints[side];
+    return [
+      {
+        label: `Hombro ${shortSide}`,
+        value: calculateAngle(
+          keypoints[indexes.hip],
+          keypoints[indexes.shoulder],
+          keypoints[indexes.elbow],
+        ),
+      },
+      {
+        label: `Codo ${shortSide}`,
+        value: calculateAngle(
+          keypoints[indexes.shoulder],
+          keypoints[indexes.elbow],
+          keypoints[indexes.wrist],
+        ),
+      },
+      {
+        label: `Muñeca ${shortSide}`,
+        value: calculateAngle(
+          keypoints[indexes.elbow],
+          keypoints[indexes.wrist],
+          keypoints[WRIST_TIP_INDEX[side]],
+        ),
+      },
+    ];
+  };
+
+  const headOverWrists = isHeadOverBothWrists(keypoints);
+  return [
+    ...readings('left', 'izq.'),
+    ...readings('right', 'der.'),
+    {
+      label: 'Cabeza',
+      value: null,
+      status: headOverWrists === null
+        ? '—'
+        : headOverWrists
+          ? 'SOBRE'
+          : 'BAJO',
     },
   ];
 }
@@ -3571,6 +3647,7 @@ function Home() {
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [liveAngleReadings, setLiveAngleReadings] = useState<LiveAngleReading[]>([]);
   const [dipJointReadings, setDipJointReadings] = useState<DipJointReading[]>([]);
+  const [pullupJointReadings, setPullupJointReadings] = useState<DipJointReading[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [squatRepetitions, setSquatRepetitions] = useState(0);
   const [squatGoodRepetitions, setSquatGoodRepetitions] = useState(0);
@@ -4073,6 +4150,11 @@ function Home() {
           ? calculateDipJointReadings(pose?.keypoints, nextDominantSide)
           : [],
       );
+      setPullupJointReadings(
+        selectedExerciseForFrame === 'dominadas' || selectedExerciseForFrame === 'dominadas-supinas'
+          ? calculatePullupJointReadings(pose?.keypoints)
+          : [],
+      );
       if (
         referenceRecordingRef.current
         && frameCameraReady
@@ -4222,6 +4304,7 @@ function Home() {
     setAngle(null);
     setLiveAngleReadings([]);
     setDipJointReadings([]);
+    setPullupJointReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -4365,6 +4448,7 @@ function Home() {
     setAngle(null);
     setLiveAngleReadings([]);
     setDipJointReadings([]);
+    setPullupJointReadings([]);
     setDipElbowAngle(null);
     setDipTorsoAngle(null);
     setPulldownTorsoAngle(null);
@@ -5165,7 +5249,13 @@ function Home() {
                 </details>
               )}
               <div
-                className={`video-stage ${selectedExercise === 'fondos' ? 'video-stage--dip' : ''}`}
+                className={`video-stage ${
+                  selectedExercise === 'fondos' ? 'video-stage--dip' : ''
+                }${
+                  selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+                    ? ' video-stage--pullup'
+                    : ''
+                }`}
                 style={{ aspectRatio: videoRatio }}
               >
                 <video
@@ -5250,6 +5340,28 @@ function Home() {
                             <i aria-hidden="true" />
                             <span>{label}</span>
                             <strong>{value === null ? '—' : `${value}°`}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') && (
+                    <div
+                      className="dip-joints-hud pullup-joints-hud"
+                      aria-label="Medición en vivo de ambos hombros, codos, muñecas y posición de la cabeza"
+                    >
+                      <div className="dip-joints-hud-heading">
+                        <span>Articulaciones en vivo</span>
+                        <strong>IZQ. + DER.</strong>
+                      </div>
+                      <div className="dip-joints-grid pullup-joints-grid">
+                        {pullupJointReadings.map(({ label, value, status }) => (
+                          <div className="dip-joint-chip" key={label}>
+                            <i aria-hidden="true" />
+                            <span>{label}</span>
+                            <strong>
+                              {value === null ? (status ?? '—') : `${value}°`}
+                            </strong>
                           </div>
                         ))}
                       </div>
