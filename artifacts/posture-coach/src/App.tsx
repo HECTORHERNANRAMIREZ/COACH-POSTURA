@@ -140,7 +140,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -175,6 +175,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   sentadillas: squatImage,
   'prensa-piernas': legPressImage,
   'extensiones-maquina': machineExtensionImage,
+  'curl-femoral': `${basePath}/hamstring-curl.svg`,
   'hip-thrust-barra': `${basePath}/hip-thrust-barbell.png`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -577,6 +578,23 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
   {
+    id: 'curl-femoral',
+    name: 'Curl de femoral (Sentado o Tumbado)',
+    description: 'Flexiona las rodillas con control y mantén las caderas estables durante todo el recorrido.',
+    angleLabel: 'Rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos, tanto sentado como tumbado.',
+    trackedJoints: [
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Recorrido inicial: rodilla 120–180° abajo · 30–90° arriba',
+    ],
+  },
+  {
     id: 'hip-thrust-barra',
     name: 'Hip Thrust con barra',
     description: 'Eleva la cadera con control, mantén los pies firmes y bloquea arriba sin hiperextender la espalda.',
@@ -720,6 +738,11 @@ const HIP_THRUST_BOTTOM_MAX_ANGLE = 115;
 const HIP_THRUST_ACTIVATION_ANGLE = 125;
 const HIP_THRUST_TOP_MIN_ANGLE = 150;
 const HIP_THRUST_TOP_MAX_ANGLE = 180;
+const HAMSTRING_CURL_START_MIN_ANGLE = 120;
+const HAMSTRING_CURL_START_MAX_ANGLE = 180;
+const HAMSTRING_CURL_ACTIVATION_ANGLE = 110;
+const HAMSTRING_CURL_END_MIN_ANGLE = 30;
+const HAMSTRING_CURL_END_MAX_ANGLE = 90;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
@@ -871,6 +894,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: HIP_THRUST_TOP_MAX_ANGLE,
     endLabel: `cadera entre ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}°`,
   },
+  'curl-femoral': {
+    direction: 'decrease',
+    startMinAngle: HAMSTRING_CURL_START_MIN_ANGLE,
+    startMaxAngle: HAMSTRING_CURL_START_MAX_ANGLE,
+    activationAngle: HAMSTRING_CURL_ACTIVATION_ANGLE,
+    endMinAngle: HAMSTRING_CURL_END_MIN_ANGLE,
+    endMaxAngle: HAMSTRING_CURL_END_MAX_ANGLE,
+    endLabel: `rodilla entre ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°`,
+  },
   zancadas: {
     direction: 'decrease',
     startMinAngle: 145,
@@ -1006,6 +1038,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: rodillas y tobillos',
         'Se muestran ambos lados para comparar el movimiento',
         'Calibración del recorrido: pendiente',
+      ];
+    case 'curl-femoral':
+      return [
+        'Lecturas en vivo: rodillas y tobillos',
+        'Se muestran ambos lados para comparar el movimiento',
+        `Recorrido inicial: rodilla ${HAMSTRING_CURL_START_MIN_ANGLE}–${HAMSTRING_CURL_START_MAX_ANGLE}° abajo y ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}° arriba`,
       ];
     case 'hip-thrust-barra':
       return [
@@ -1773,6 +1811,8 @@ function getCameraGuidance(
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'prensa-piernas' || exercise === 'extensiones-maquina'
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
+           : exercise === 'curl-femoral'
+             ? 'Ponte de lado; deja visibles ambas rodillas y ambos tobillos, y coloca la cámara a la altura de la máquina tanto sentado como tumbado.'
           : exercise === 'peso-muerto-rumano'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
          : exercise === 'hip-thrust-barra'
@@ -3060,7 +3100,7 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'prensa-piernas' || exercise === 'extensiones-maquina') {
+  if (exercise === 'prensa-piernas' || exercise === 'extensiones-maquina' || exercise === 'curl-femoral') {
     return calculateAngle(
       keypoints[indexes.hip],
       keypoints[indexes.knee],
@@ -3141,6 +3181,14 @@ function calculateRepetitionAngle(
   }
 
   if (exercise === 'plancha') return null;
+
+  if (exercise === 'curl-femoral') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+      keypoints[indexes.ankle],
+    );
+  }
 
   if (exercise === 'hip-thrust-barra') {
     return calculateAngle(
@@ -3291,6 +3339,10 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     'extensiones-maquina': [
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'curl-femoral': [
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
     ],
@@ -3643,6 +3695,7 @@ function calculateLiveAngleReadings(
         return [empty('Rodilla', 'Inicio ≥140° · regreso >115° · fondo 83–90°')];
       case 'prensa-piernas':
       case 'extensiones-maquina':
+      case 'curl-femoral':
         return [
           empty('Rodilla izq.', 'Ángulo articular'),
           empty('Rodilla der.', 'Ángulo articular'),
@@ -3701,6 +3754,11 @@ function calculateLiveAngleReadings(
     keypoints[indexes.hip],
     keypoints[indexes.knee],
     keypoints[indexes.ankle],
+  );
+  const ankle = () => calculateAngle(
+    keypoints[indexes.knee],
+    keypoints[indexes.ankle],
+    keypoints[MUSCLE_UP_FOOT_INDEX[side ?? 'left']],
   );
   const hip = () => calculateAngle(
     keypoints[indexes.shoulder],
@@ -3833,6 +3891,17 @@ function calculateLiveAngleReadings(
         SQUAT_VALID_MIN_ANGLE,
         SQUAT_VALID_MAX_ANGLE,
       )];
+    case 'curl-femoral':
+      return [
+        value(
+          knee,
+          'Rodilla',
+          `Inicio ${HAMSTRING_CURL_START_MIN_ANGLE}–${HAMSTRING_CURL_START_MAX_ANGLE}° · activa <${HAMSTRING_CURL_ACTIVATION_ANGLE}° · final ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°`,
+          HAMSTRING_CURL_END_MIN_ANGLE,
+          HAMSTRING_CURL_END_MAX_ANGLE,
+        ),
+        value(ankle, 'Tobillo', 'Ángulo articular'),
+      ];
     case 'hip-thrust-barra':
       return [
         value(hip, 'Cadera', 'Abajo 70–115° · activa >125° · arriba 150–180°', HIP_THRUST_TOP_MIN_ANGLE, HIP_THRUST_TOP_MAX_ANGLE),
@@ -4996,6 +5065,7 @@ function Home() {
                     || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'peso-muerto-rumano'
                      || exercise.id === 'hip-thrust-barra'
+                     || exercise.id === 'curl-femoral'
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -5222,6 +5292,8 @@ function Home() {
                         ? `Solo cuenta si mantienes el torso entre ${ROW_TORSO_MIN_ANGLE}° y ${ROW_TORSO_MAX_ANGLE}°, elevas los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° y completas el recorrido del codo.`
                       : selectedExercise === 'hip-thrust-barra'
                         ? `Solo cuenta si partes con la cadera entre ${HIP_THRUST_BOTTOM_MIN_ANGLE}° y ${HIP_THRUST_BOTTOM_MAX_ANGLE}° y la elevas hasta ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}° sin hiperextender la espalda.`
+                      : selectedExercise === 'curl-femoral'
+                        ? `Solo cuenta si partes con la rodilla entre ${HAMSTRING_CURL_START_MIN_ANGLE}° y ${HAMSTRING_CURL_START_MAX_ANGLE}° y flexionas hasta ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°, manteniendo ambos lados visibles.`
                       : selectedExercise === 'flexiones'
                         ? `Solo cuenta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°, además de completar el recorrido del codo.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
@@ -5377,6 +5449,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'curl-femoral' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado y deja visibles ambas rodillas y ambos tobillos durante toda la serie.</li>
+                    <li><b>Posición:</b> puedes hacerlo sentado o tumbado; fija las caderas y evita levantar el cuerpo o despegarlo del respaldo o banco.</li>
+                    <li><b>Movimiento:</b> flexiona las rodillas llevando los talones hacia los glúteos de forma controlada, sin rebotes.</li>
+                    <li><b>Recorrido:</b> empieza entre {HAMSTRING_CURL_START_MIN_ANGLE}° y {HAMSTRING_CURL_START_MAX_ANGLE}° y llega entre {HAMSTRING_CURL_END_MIN_ANGLE}° y {HAMSTRING_CURL_END_MAX_ANGLE}°.</li>
+                    <li><b>Repetición:</b> el contador solo avanza cuando ambas rodillas y ambos tobillos permanecen visibles.</li>
+                  </ul>
+                </details>
+              )}
               <div
                 className={`video-stage ${
                   selectedExercise === 'fondos' ? 'video-stage--dip' : ''
@@ -5413,6 +5497,7 @@ function Home() {
                       || selectedExercise === 'jalon'
                       || selectedExercise === 'remo-barra'
                        || selectedExercise === 'hip-thrust-barra'
+                       || selectedExercise === 'curl-femoral'
                       || selectedExercise === 'plancha'
                        ? selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
                          ? 'trasera'
