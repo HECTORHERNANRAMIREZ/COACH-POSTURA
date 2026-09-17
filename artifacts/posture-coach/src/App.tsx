@@ -138,7 +138,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -171,6 +171,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
   'prensa-piernas': legPressImage,
+  'extensiones-maquina': legPressImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
@@ -520,6 +521,23 @@ const exercises: ExerciseDefinition[] = [
     id: 'prensa-piernas',
     name: 'Prensa de piernas',
     description: 'Empuja la plataforma con control y mantén alineadas las rodillas y los tobillos.',
+    angleLabel: 'Rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Calibración del recorrido: pendiente',
+    ],
+  },
+  {
+    id: 'extensiones-maquina',
+    name: 'Extensiones en máquina',
+    description: 'Extiende las piernas con control y mantén alineadas las rodillas y los tobillos.',
     angleLabel: 'Rodillas · tobillos',
     cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.',
     trackedJoints: [
@@ -918,6 +936,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Regreso arriba: >${SQUAT_RISE_THRESHOLD}°`,
       ];
     case 'prensa-piernas':
+      return [
+        'Lecturas en vivo: rodillas y tobillos',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Calibración del recorrido: pendiente',
+      ];
+    case 'extensiones-maquina':
       return [
         'Lecturas en vivo: rodillas y tobillos',
         'Se muestran ambos lados para comparar el movimiento',
@@ -1675,7 +1699,7 @@ function getCameraGuidance(
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
-         : exercise === 'prensa-piernas'
+          : exercise === 'prensa-piernas' || exercise === 'extensiones-maquina'
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
@@ -2960,7 +2984,7 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'prensa-piernas') {
+  if (exercise === 'prensa-piernas' || exercise === 'extensiones-maquina') {
     return calculateAngle(
       keypoints[indexes.hip],
       keypoints[indexes.knee],
@@ -3165,6 +3189,10 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     'prensa-piernas': [
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'extensiones-maquina': [
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
     ],
@@ -3500,6 +3528,7 @@ function calculateLiveAngleReadings(
       case 'sentadillas':
         return [empty('Rodilla', 'Inicio ≥140° · regreso >115° · fondo 83–90°')];
       case 'prensa-piernas':
+      case 'extensiones-maquina':
         return [
           empty('Rodilla izq.', 'Ángulo articular'),
           empty('Rodilla der.', 'Ángulo articular'),
@@ -4830,6 +4859,7 @@ function Home() {
                     ? Activity
                     : exercise.id === 'sentadillas'
                        || exercise.id === 'prensa-piernas'
+                       || exercise.id === 'extensiones-maquina'
                       || exercise.id === 'zancadas'
                       || exercise.id === 'zancada-banco'
                       ? ArrowDown
