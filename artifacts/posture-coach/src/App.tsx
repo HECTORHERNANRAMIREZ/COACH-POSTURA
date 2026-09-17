@@ -137,7 +137,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -169,6 +169,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'remo-barra': barbellRowImage,
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
+  'prensa-piernas': squatImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
@@ -513,6 +514,23 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'ankle', label: 'tobillo' },
     ],
     trackedAngleLabels: ['Rodilla: inicio ≥140°, regreso >115°, fondo 83–90°'],
+  },
+  {
+    id: 'prensa-piernas',
+    name: 'Prensa de piernas',
+    description: 'Empuja la plataforma con control y mantén alineadas las rodillas y los tobillos.',
+    angleLabel: 'Rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Calibración del recorrido: pendiente',
+    ],
   },
   {
     id: 'zancadas',
@@ -896,6 +914,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Inicio arriba: ≥${SQUAT_TOP_THRESHOLD}°`,
         `Profundidad válida: ${SQUAT_VALID_MIN_ANGLE}–${SQUAT_VALID_MAX_ANGLE}°`,
         `Regreso arriba: >${SQUAT_RISE_THRESHOLD}°`,
+      ];
+    case 'prensa-piernas':
+      return [
+        'Lecturas en vivo: rodillas y tobillos',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Calibración del recorrido: pendiente',
       ];
     case 'dominadas':
     case 'dominadas-supinas':
@@ -1649,6 +1673,8 @@ function getCameraGuidance(
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
+         : exercise === 'prensa-piernas'
+           ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -2932,6 +2958,13 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
+  if (exercise === 'prensa-piernas') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+      keypoints[indexes.ankle],
+    );
+  }
   if (
     exercise === 'fondos'
     || exercise === 'dominadas'
@@ -3126,6 +3159,10 @@ function getAngleDiagnosticPoints(
     ],
     sentadillas: [
       { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'prensa-piernas': [
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
     ],
@@ -3460,6 +3497,13 @@ function calculateLiveAngleReadings(
         return [empty('Codo', 'Inicio 85–135° · activa <70° · final 30–60°')];
       case 'sentadillas':
         return [empty('Rodilla', 'Inicio ≥140° · regreso >115° · fondo 83–90°')];
+      case 'prensa-piernas':
+        return [
+          empty('Rodilla izq.', 'Ángulo articular'),
+          empty('Rodilla der.', 'Ángulo articular'),
+          empty('Tobillo izq.', 'Ángulo articular'),
+          empty('Tobillo der.', 'Ángulo articular'),
+        ];
       case 'zancadas':
         return [
           empty('Rodilla delantera', 'Inicio 145–180° · activa <130° · final 80–100°'),
@@ -4769,6 +4813,7 @@ function Home() {
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
+                       || exercise.id === 'prensa-piernas'
                       || exercise.id === 'zancadas'
                       || exercise.id === 'zancada-banco'
                       ? ArrowDown
