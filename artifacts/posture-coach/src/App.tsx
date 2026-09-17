@@ -40,6 +40,7 @@ import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-pre
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
+import benchPressImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
@@ -136,7 +137,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -162,6 +163,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
+  'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
@@ -436,6 +438,27 @@ const exercises: ExerciseDefinition[] = [
     ],
     trackBothSides: true,
     trackedAngleLabels: ['Codo: final 85–110°', 'Codo respecto al torso: 30–60°'],
+  },
+  {
+    id: 'press-banca',
+    name: 'Press de banca',
+    description: 'Empuja la barra desde el pecho manteniendo hombros, codos, muñecas y cadera visibles.',
+    angleLabel: 'Hombros · codos · muñecas · cadera',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos, las muñecas y la cadera durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Cadera: lectura izquierda y derecha',
+      'Calibración del recorrido: pendiente',
+    ],
   },
   {
     id: 'triceps-polea-alta',
@@ -929,6 +952,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio / regreso: codo 145–180°',
         `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
         'Codos aproximadamente 45° respecto al torso',
+      ];
+    case 'press-banca':
+      return [
+        'Lecturas en vivo: hombros, codos, muñecas y caderas',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Calibración del recorrido: pendiente',
       ];
     case 'triceps-polea-alta':
       return [
@@ -1618,6 +1647,8 @@ function getCameraGuidance(
           ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
+        : exercise === 'press-banca'
+          ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -3071,6 +3102,12 @@ function getAngleDiagnosticPoints(
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'press-banca': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
     ],
     'triceps-polea-alta': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -4726,6 +4763,7 @@ function Home() {
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
+                    || exercise.id === 'press-banca'
                     || exercise.id === 'triceps-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'curl-biceps'
@@ -5116,6 +5154,7 @@ function Home() {
                       || selectedExercise === 'flexiones-declinadas'
                       || selectedExercise === 'flexiones-pica'
                       || selectedExercise === 'press-militar'
+                       || selectedExercise === 'press-banca'
                       || selectedExercise === 'triceps-polea-alta'
                       || selectedExercise === 'extension-horizontal-barra'
                       || selectedExercise === 'curl-biceps'
