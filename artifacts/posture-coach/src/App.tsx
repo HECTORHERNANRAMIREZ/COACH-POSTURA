@@ -587,6 +587,7 @@ const SQUAT_MEANINGFUL_DESCENT = 30;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
+const POSE_MODEL_LOAD_TIMEOUT_MS = 30000;
 // Calibración derivada de la secuencia de referencia enviada por el usuario:
 // abajo: codos extendidos; arriba: cabeza sobre las muñecas y codos cerrados.
 const PULLUP_BOTTOM_MIN_ANGLE = 135;
@@ -4339,7 +4340,21 @@ function Home() {
     }
   }, [incrementErrorCount]);
 
-  const loadDetector = useCallback(async () => createPoseDetector(), []);
+  const loadDetector = useCallback(async () => {
+    let timeoutId: number | null = null;
+    try {
+      return await Promise.race([
+        createPoseDetector(),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            reject(new Error('El modelo de análisis tardó demasiado en cargar. Comprueba tu conexión e inténtalo de nuevo.'));
+          }, POSE_MODEL_LOAD_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    }
+  }, []);
 
   const startCamera = useCallback(async (
     exerciseId?: ExerciseId,
@@ -5307,11 +5322,11 @@ function Home() {
                       </div>
                     </div>
                   )}
-                {phase !== 'tracking' && (
+                {phase === 'requesting' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
                       <span className="loading-mark" aria-hidden="true" />
-                      <span>{phase === 'requesting' ? 'Solicitando acceso...' : 'Preparando tu vista...'}</span>
+                      <span>Solicitando acceso...</span>
                     </div>
                   </div>
                 )}
