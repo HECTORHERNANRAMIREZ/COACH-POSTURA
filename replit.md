@@ -40,6 +40,7 @@ Coach de postura analiza ejercicios desde la cámara del usuario y corrige la t�
 - Plan anual de US$2 mediante Lemon Squeezy.
 - Activación y actualización automática del acceso según eventos de suscripción.
 - Coach de ejercicios con análisis de postura en cámara.
+- Las futuras calibraciones de ejercicios se harán solo en el código: ajustar rangos, tolerancias, fases y validaciones sin modificar la interfaz.
 
 ## User preferences
 
