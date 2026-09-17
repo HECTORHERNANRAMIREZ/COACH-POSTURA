@@ -3195,6 +3195,93 @@ function calculatePullupJointReadings(
   ];
 }
 
+function calculateExtremityAngleReadings(
+  exercise: ExerciseId | null,
+  keypoints: PosePoint[] | undefined,
+  dominantSide: PoseSide | null,
+): LiveAngleReading[] {
+  const definition = getExercise(exercise);
+  if (!definition) return [];
+
+  const sides: PoseSide[] = definition.trackBothSides
+    ? ['left', 'right']
+    : dominantSide
+      ? [dominantSide]
+      : [];
+  const joints = definition.trackedJoints.filter(({ joint }) => joint !== 'foot');
+  const shortSide = (side: PoseSide) => side === 'left' ? 'izq.' : 'der.';
+  const singularLabel = (label: string) => label.endsWith('s')
+    ? label.slice(0, -1)
+    : label;
+  const emptyReading = (label: string): LiveAngleReading => (
+    createLiveAngleReading(label, null, 'Ángulo articular')
+  );
+
+  if (!keypoints || !sides.length) {
+    return joints.flatMap(({ label }) => (
+      definition.trackBothSides
+        ? [emptyReading(`${singularLabel(label)} izq.`), emptyReading(`${singularLabel(label)} der.`)]
+        : [emptyReading(singularLabel(label))]
+    ));
+  }
+
+  return sides.flatMap((side) => {
+    const indexes = sideKeypoints[side];
+    const pointFor = (joint: TrackedJoint) => {
+      switch (joint) {
+        case 'hip':
+          return [
+            keypoints[indexes.shoulder],
+            keypoints[indexes.hip],
+            keypoints[indexes.knee],
+          ] as const;
+        case 'shoulder':
+          return [
+            keypoints[indexes.hip],
+            keypoints[indexes.shoulder],
+            keypoints[indexes.elbow],
+          ] as const;
+        case 'elbow':
+          return [
+            keypoints[indexes.shoulder],
+            keypoints[indexes.elbow],
+            keypoints[indexes.wrist],
+          ] as const;
+        case 'wrist':
+          return [
+            keypoints[indexes.elbow],
+            keypoints[indexes.wrist],
+            keypoints[WRIST_TIP_INDEX[side]],
+          ] as const;
+        case 'knee':
+          return [
+            keypoints[indexes.hip],
+            keypoints[indexes.knee],
+            keypoints[indexes.ankle],
+          ] as const;
+        case 'ankle':
+          return [
+            keypoints[indexes.knee],
+            keypoints[indexes.ankle],
+            keypoints[MUSCLE_UP_FOOT_INDEX[side]],
+          ] as const;
+        default:
+          return [undefined, undefined, undefined] as const;
+      }
+    };
+
+    return joints.map(({ joint, label }) => {
+      const [first, center, last] = pointFor(joint);
+      const sideLabel = definition.trackBothSides ? ` ${shortSide(side)}` : '';
+      return createLiveAngleReading(
+        `${singularLabel(label)}${sideLabel}`,
+        calculateAngle(first, center, last),
+        'Ángulo articular',
+      );
+    });
+  });
+}
+
 function calculateLiveAngleReadings(
   exercise: ExerciseId | null,
   keypoints: PosePoint[] | undefined,
@@ -4012,7 +4099,7 @@ function Home() {
       setDominantSide(nextDominantSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
       setAngle(displayAngle);
-      const nextLiveAngleReadings = calculateLiveAngleReadings(
+      const nextLiveAngleReadings = calculateExtremityAngleReadings(
         selectedExerciseForFrame,
         pose?.keypoints,
         nextDominantSide,
@@ -5002,34 +5089,32 @@ function Home() {
                         ? 'Iniciar ejercicio'
                         : 'Buscando cuerpo'}
                 </button>
-                  <div
-                    className={`live-angle-hud live-angle-hud--${liveAngleReadings.length > 3 ? 'wide' : 'compact'}`}
-                    aria-label={`Ángulos medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}
-                    aria-live="polite"
-                  >
-                    <div className="live-angle-hud-heading">
-                      <span>Extremidades</span>
-                      <strong>GRADOS EN VIVO</strong>
-                    </div>
-                    <div className="live-angle-grid">
-                      {liveAngleReadings.map((reading) => {
-                        const isValid = reading.value !== null
-                          && reading.min !== undefined
-                          && reading.max !== undefined
-                          && isWithinAngle(reading.value, reading.min, reading.max);
-                        return (
-                          <div
-                            key={`${reading.label}-${reading.target}`}
-                            className={`live-angle-reading ${isValid ? 'is-valid' : ''}`}
-                          >
-                            <span className="live-angle-label">{reading.label}</span>
-                            <strong>{reading.value === null ? '—' : `${reading.value}°`}</strong>
-                            <small>Objetivo {reading.target}</small>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  {selectedExercise !== 'fondos'
+                    && selectedExercise !== 'dominadas'
+                    && selectedExercise !== 'dominadas-supinas' && (
+                      <div
+                        className={`live-angle-hud live-angle-hud--${liveAngleReadings.length > 3 ? 'wide' : 'compact'}`}
+                        aria-label={`Ángulos de extremidades medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}
+                        aria-live="polite"
+                      >
+                        <div className="live-angle-hud-heading">
+                          <span>Extremidades</span>
+                          <strong>GRADOS EN VIVO</strong>
+                        </div>
+                        <div className="live-angle-grid">
+                          {liveAngleReadings.map((reading) => (
+                            <div
+                              key={`${reading.label}-${reading.target}`}
+                              className="live-angle-reading"
+                            >
+                              <span className="live-angle-label">{reading.label}</span>
+                              <strong>{reading.value === null ? '—' : `${reading.value}°`}</strong>
+                              <small>{reading.target}</small>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   {selectedExercise === 'fondos' && (
                     <div
                       className="dip-joints-hud"

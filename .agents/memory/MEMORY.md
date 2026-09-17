@@ -5,3 +5,4 @@
 - [Alineación de cámara](camera-alignment-guidance.md) — el conteo debe validar las articulaciones necesarias y el margen del encuadre, no solo detectar una persona.
 - [Calibración del muscle-up](muscle-up-calibration.md) — no marcar el balanceo como correcto hasta revisar una ejecución de referencia del usuario.
 - [Calibración por referencia](reference-calibration.md) — los rangos deben partir de una ejecución correcta completa y revisarse con sus muestras temporales.
+- [Panel de articulaciones](exercise-angle-overlay.md) — el overlay debe derivar sus lecturas de las articulaciones definidas por cada ejercicio, no solo cambiar el título.
