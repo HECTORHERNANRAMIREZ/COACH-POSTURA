@@ -140,7 +140,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -175,6 +175,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   sentadillas: squatImage,
   'prensa-piernas': legPressImage,
   'extensiones-maquina': machineExtensionImage,
+  'hip-thrust-barra': `${basePath}/hip-thrust-barbell.svg`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
@@ -576,6 +577,27 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
   {
+    id: 'hip-thrust-barra',
+    name: 'Hip Thrust con barra',
+    description: 'Eleva la cadera con control, mantén los pies firmes y bloquea arriba sin hiperextender la espalda.',
+    angleLabel: 'Cadera · rodillas · tobillos · brazos',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos, ambas piernas, el banco y la barra.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros, codos y muñecas: lectura izquierda y derecha',
+      'Caderas, rodillas y tobillos: lectura izquierda y derecha',
+      'Cadera: abajo 70–115° · arriba 150–180°',
+    ],
+  },
+  {
     id: 'zancadas',
     name: 'Zancadas dinámicas',
     description: 'Baja con control hasta formar 90° en las piernas.',
@@ -693,6 +715,11 @@ const BENCH_LUNGE_KNEE_MIN_ANGLE = 80;
 const BENCH_LUNGE_KNEE_MAX_ANGLE = 100;
 const BENCH_LUNGE_TORSO_MIN_LEAN = 15;
 const BENCH_LUNGE_TORSO_MAX_LEAN = 20;
+const HIP_THRUST_BOTTOM_MIN_ANGLE = 70;
+const HIP_THRUST_BOTTOM_MAX_ANGLE = 115;
+const HIP_THRUST_ACTIVATION_ANGLE = 125;
+const HIP_THRUST_TOP_MIN_ANGLE = 150;
+const HIP_THRUST_TOP_MAX_ANGLE = 180;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
@@ -835,6 +862,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: 60,
     endLabel: 'flexión entre 30–60°',
   },
+  'hip-thrust-barra': {
+    direction: 'increase',
+    startMinAngle: HIP_THRUST_BOTTOM_MIN_ANGLE,
+    startMaxAngle: HIP_THRUST_BOTTOM_MAX_ANGLE,
+    activationAngle: HIP_THRUST_ACTIVATION_ANGLE,
+    endMinAngle: HIP_THRUST_TOP_MIN_ANGLE,
+    endMaxAngle: HIP_THRUST_TOP_MAX_ANGLE,
+    endLabel: `cadera entre ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}°`,
+  },
   zancadas: {
     direction: 'decrease',
     startMinAngle: 145,
@@ -970,6 +1006,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: rodillas y tobillos',
         'Se muestran ambos lados para comparar el movimiento',
         'Calibración del recorrido: pendiente',
+      ];
+    case 'hip-thrust-barra':
+      return [
+        'Lecturas en vivo: hombros, codos, muñecas, caderas, rodillas y tobillos',
+        'Se muestran ambos lados para revisar todas las extremidades',
+        `Recorrido: cadera ${HIP_THRUST_BOTTOM_MIN_ANGLE}–${HIP_THRUST_BOTTOM_MAX_ANGLE}° abajo y ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}° arriba`,
       ];
     case 'peso-muerto-rumano':
       return [
@@ -1733,6 +1775,8 @@ function getCameraGuidance(
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
           : exercise === 'peso-muerto-rumano'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
+         : exercise === 'hip-thrust-barra'
+           ? 'Ponte de lado o en 3/4, con el banco y la barra visibles; deja dentro del encuadre ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -3030,6 +3074,13 @@ function calculateExerciseAngle(
       keypoints[indexes.knee],
     );
   }
+  if (exercise === 'hip-thrust-barra') {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+    );
+  }
   if (
     exercise === 'fondos'
     || exercise === 'dominadas'
@@ -3090,6 +3141,14 @@ function calculateRepetitionAngle(
   }
 
   if (exercise === 'plancha') return null;
+
+  if (exercise === 'hip-thrust-barra') {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+    );
+  }
 
   if (exercise === 'jalon') {
     return calculateAngle(
@@ -3232,6 +3291,14 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     'extensiones-maquina': [
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'hip-thrust-barra': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
     ],
@@ -3582,6 +3649,21 @@ function calculateLiveAngleReadings(
           empty('Tobillo izq.', 'Ángulo articular'),
           empty('Tobillo der.', 'Ángulo articular'),
         ];
+      case 'hip-thrust-barra':
+        return [
+          empty('Hombro izq.', 'Ángulo articular'),
+          empty('Hombro der.', 'Ángulo articular'),
+          empty('Codo izq.', 'Ángulo articular'),
+          empty('Codo der.', 'Ángulo articular'),
+          empty('Muñeca izq.', 'Ángulo articular'),
+          empty('Muñeca der.', 'Ángulo articular'),
+          empty('Cadera izq.', '70–115° abajo · 150–180° arriba'),
+          empty('Cadera der.', '70–115° abajo · 150–180° arriba'),
+          empty('Rodilla izq.', 'Ángulo articular'),
+          empty('Rodilla der.', 'Ángulo articular'),
+          empty('Tobillo izq.', 'Ángulo articular'),
+          empty('Tobillo der.', 'Ángulo articular'),
+        ];
       case 'zancadas':
         return [
           empty('Rodilla delantera', 'Inicio 145–180° · activa <130° · final 80–100°'),
@@ -3619,6 +3701,11 @@ function calculateLiveAngleReadings(
     keypoints[indexes.hip],
     keypoints[indexes.knee],
     keypoints[indexes.ankle],
+  );
+  const hip = () => calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
   );
 
   switch (exercise) {
@@ -3746,6 +3833,11 @@ function calculateLiveAngleReadings(
         SQUAT_VALID_MIN_ANGLE,
         SQUAT_VALID_MAX_ANGLE,
       )];
+    case 'hip-thrust-barra':
+      return [
+        value(hip, 'Cadera', 'Abajo 70–115° · activa >125° · arriba 150–180°', HIP_THRUST_TOP_MIN_ANGLE, HIP_THRUST_TOP_MAX_ANGLE),
+        value(knee, 'Rodilla', 'Ángulo articular'),
+      ];
     case 'zancadas': {
       const rearSide = side === 'left' ? 'right' : 'left';
       const rear = sideKeypoints[rearSide];
@@ -4903,6 +4995,7 @@ function Home() {
                     || exercise.id === 'triceps-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'peso-muerto-rumano'
+                     || exercise.id === 'hip-thrust-barra'
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -5127,6 +5220,8 @@ function Home() {
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
                         ? `Solo cuenta si mantienes el torso entre ${ROW_TORSO_MIN_ANGLE}° y ${ROW_TORSO_MAX_ANGLE}°, elevas los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° y completas el recorrido del codo.`
+                      : selectedExercise === 'hip-thrust-barra'
+                        ? `Solo cuenta si partes con la cadera entre ${HIP_THRUST_BOTTOM_MIN_ANGLE}° y ${HIP_THRUST_BOTTOM_MAX_ANGLE}° y la elevas hasta ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}° sin hiperextender la espalda.`
                       : selectedExercise === 'flexiones'
                         ? `Solo cuenta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°, además de completar el recorrido del codo.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
@@ -5270,6 +5365,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'hip-thrust-barra' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> coloca la cámara de lado o en 3/4 y deja visibles ambos brazos y ambas piernas, además del banco y la barra.</li>
+                    <li><b>Posición:</b> apoya la parte alta de la espalda en el banco, con los pies firmes y las rodillas alineadas con los tobillos.</li>
+                    <li><b>Subida:</b> eleva la cadera hasta formar una línea entre hombros, cadera y rodillas; no arquees la zona lumbar para ganar altura.</li>
+                    <li><b>Recorrido:</b> empieza entre {HIP_THRUST_BOTTOM_MIN_ANGLE}° y {HIP_THRUST_BOTTOM_MAX_ANGLE}° y llega arriba entre {HIP_THRUST_TOP_MIN_ANGLE}° y {HIP_THRUST_TOP_MAX_ANGLE}°.</li>
+                    <li><b>Repetición:</b> el contador solo avanza cuando ambos lados y todas las articulaciones necesarias permanecen visibles.</li>
+                  </ul>
+                </details>
+              )}
               <div
                 className={`video-stage ${
                   selectedExercise === 'fondos' ? 'video-stage--dip' : ''
@@ -5305,6 +5412,7 @@ function Home() {
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
                       || selectedExercise === 'remo-barra'
+                       || selectedExercise === 'hip-thrust-barra'
                       || selectedExercise === 'plancha'
                        ? selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
                          ? 'trasera'
