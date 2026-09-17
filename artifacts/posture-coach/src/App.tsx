@@ -749,7 +749,6 @@ const ROW_ARM_POINT_MIN_SCORE = 0.24;
 const POSE_STALE_POINT_FRAMES = 6;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
 const POSE_LOCK_MIN_AREA_RATIO = 0.1;
-const MAX_CAMERA_ROLL_DEGREES = 34;
 const MAX_FRONT_VIEW_RATIO = 0.95;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
@@ -1864,6 +1863,18 @@ function getCameraGuidance(
     };
   }
 
+  const missingWorldLabels = requiredPoints
+    .filter(({ point }) => Boolean(point) && !hasWorldCoordinates(point))
+    .map(({ label }) => label);
+
+  if (missingWorldLabels.length) {
+    return {
+      tone: 'checking',
+      message: 'Calibrando medición 3D',
+      detail: 'No mostraré grados ni contaré repeticiones hasta tener coordenadas 3D confiables. La altura o inclinación del móvil no cambia el ángulo.',
+    };
+  }
+
   const leftShoulder = keypoints[sideKeypoints.left.shoulder];
   const rightShoulder = keypoints[sideKeypoints.right.shoulder];
   const leftHip = keypoints[sideKeypoints.left.hip];
@@ -1880,19 +1891,6 @@ function getCameraGuidance(
       Math.hypot(leftShoulder.x - leftHip.x, leftShoulder.y - leftHip.y),
       Math.hypot(rightShoulder.x - rightHip.x, rightShoulder.y - rightHip.y),
     );
-    const cameraRoll = Math.atan2(
-      Math.abs(rightShoulder.y - leftShoulder.y),
-      Math.abs(rightShoulder.x - leftShoulder.x),
-    ) * (180 / Math.PI);
-
-    if (cameraRoll > MAX_CAMERA_ROLL_DEGREES) {
-      return {
-        tone: 'warning',
-        message: 'Endereza un poco el móvil',
-        detail: 'La inclinación actual es demasiado extrema para separar el movimiento de la cámara. Una inclinación moderada sí funciona.',
-      };
-    }
-
     if (
       exercise !== 'press-militar'
       && exercise !== 'dominadas'
@@ -1915,12 +1913,29 @@ function getCameraGuidance(
       ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles en semiperfil; todavía no se juzga el balanceo.'
       : exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
-      : 'Los puntos necesarios están visibles. Puedes iniciar aunque el móvil esté bajo o inclinado.',
+      : 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.',
   };
 }
 
 function getMeasurementCoordinates(point: PosePoint): { x: number; y: number; z: number } {
   return point.world ?? { x: point.x, y: point.y, z: point.z ?? 0 };
+}
+
+function hasWorldCoordinates(point: PosePoint | undefined): point is PosePoint & {
+  world: { x: number; y: number; z: number };
+} {
+  return Boolean(
+    point?.world
+    && Number.isFinite(point.world.x)
+    && Number.isFinite(point.world.y)
+    && Number.isFinite(point.world.z),
+  );
+}
+
+function getAngleMeasurementCoordinates(
+  point: PosePoint | undefined,
+): { x: number; y: number; z: number } | null {
+  return hasWorldCoordinates(point) ? point.world : null;
 }
 
 function distanceBetweenPoints(first: PosePoint | undefined, second: PosePoint | undefined) {
@@ -1942,9 +1957,10 @@ function calculateAngle(
   if (!first || !vertex || !last) return null;
   if ((first.score ?? 0) < 0.2 || (vertex.score ?? 0) < 0.2 || (last.score ?? 0) < 0.2) return null;
 
-  const firstCoordinates = getMeasurementCoordinates(first);
-  const vertexCoordinates = getMeasurementCoordinates(vertex);
-  const lastCoordinates = getMeasurementCoordinates(last);
+  const firstCoordinates = getAngleMeasurementCoordinates(first);
+  const vertexCoordinates = getAngleMeasurementCoordinates(vertex);
+  const lastCoordinates = getAngleMeasurementCoordinates(last);
+  if (!firstCoordinates || !vertexCoordinates || !lastCoordinates) return null;
   const firstVector = {
     x: firstCoordinates.x - vertexCoordinates.x,
     y: firstCoordinates.y - vertexCoordinates.y,
@@ -1982,7 +1998,7 @@ const defaultTechniqueFeedback: TechniqueFeedback = {
 const defaultSquatFeedback: TechniqueFeedback = {
   tone: 'checking',
   message: 'Ángulo normalizado',
-  detail: 'La inclinación, escala y altura de la cámara no cambian la medición.',
+  detail: 'El ángulo se calcula con coordenadas 3D; la inclinación, escala y altura de la cámara no cambian la medición.',
 };
 
 const muscleUpReferenceFeedback: TechniqueFeedback = {
@@ -2532,8 +2548,9 @@ function calculateForwardLeanAngle(
   if (!shoulder || !hip) return null;
   if ((shoulder.score ?? 0) < 0.2 || (hip.score ?? 0) < 0.2) return null;
 
-  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
-  const hipCoordinates = getMeasurementCoordinates(hip);
+  const shoulderCoordinates = getAngleMeasurementCoordinates(shoulder);
+  const hipCoordinates = getAngleMeasurementCoordinates(hip);
+  if (!shoulderCoordinates || !hipCoordinates) return null;
   const horizontalDistance = Math.hypot(
     shoulderCoordinates.x - hipCoordinates.x,
     shoulderCoordinates.z - hipCoordinates.z,
@@ -2962,9 +2979,10 @@ function calculateHipSagRatio(
     return null;
   }
 
-  const shoulderCoordinates = getMeasurementCoordinates(shoulder);
-  const hipCoordinates = getMeasurementCoordinates(hip);
-  const ankleCoordinates = getMeasurementCoordinates(ankle);
+  const shoulderCoordinates = getAngleMeasurementCoordinates(shoulder);
+  const hipCoordinates = getAngleMeasurementCoordinates(hip);
+  const ankleCoordinates = getAngleMeasurementCoordinates(ankle);
+  if (!shoulderCoordinates || !hipCoordinates || !ankleCoordinates) return null;
   const bodyVector = {
     x: ankleCoordinates.x - shoulderCoordinates.x,
     y: ankleCoordinates.y - shoulderCoordinates.y,
@@ -3002,8 +3020,9 @@ function calculateAngleToFloor(
   if (!first || !second) return null;
   if ((first.score ?? 0) < 0.2 || (second.score ?? 0) < 0.2) return null;
 
-  const firstCoordinates = getMeasurementCoordinates(first);
-  const secondCoordinates = getMeasurementCoordinates(second);
+  const firstCoordinates = getAngleMeasurementCoordinates(first);
+  const secondCoordinates = getAngleMeasurementCoordinates(second);
+  if (!firstCoordinates || !secondCoordinates) return null;
   const horizontalDistance = Math.hypot(
     firstCoordinates.x - secondCoordinates.x,
     firstCoordinates.z - secondCoordinates.z,
@@ -5128,6 +5147,7 @@ function Home() {
                       {activeExercise?.cameraNote && `${activeExercise.cameraNote} · `}
                       {dominantSide === 'left' ? 'lado izquierdo' : dominantSide === 'right' ? 'lado derecho' : 'buscando lado'}
                     </span>
+                    <span>Ángulos 3D normalizados</span>
                   </div>
                 </div>
                 <div className="active-header-actions">
