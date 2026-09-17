@@ -546,9 +546,19 @@ const SQUAT_MEANINGFUL_DESCENT = 30;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
-const PULLUP_BOTTOM_MIN_ANGLE = 160;
+// Calibración derivada de la secuencia de referencia enviada por el usuario:
+// abajo: codos extendidos; arriba: cabeza sobre las muñecas y codos cerrados.
+const PULLUP_BOTTOM_MIN_ANGLE = 135;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 155;
+const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 105;
+const PULLUP_BOTTOM_WRIST_MIN_ANGLE = 130;
+const PULLUP_TOP_SHOULDER_MIN_ANGLE = 70;
+const PULLUP_TOP_SHOULDER_MAX_ANGLE = 110;
+const PULLUP_TOP_ELBOW_MIN_ANGLE = 85;
+const PULLUP_TOP_ELBOW_MAX_ANGLE = 115;
+const PULLUP_TOP_WRIST_MIN_ANGLE = 130;
+const PULLUP_TOP_WRIST_MAX_ANGLE = 160;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
@@ -1099,25 +1109,77 @@ type PullupTrackerUpdate = {
   completedMinimumAngle: number | null;
 };
 
+type PullupExtremityValidation = {
+  atBottom: boolean;
+  atTop: boolean;
+};
+
 type PullupTrackerConfig = {
   topMinAngle: number;
   topMaxAngle: number;
 };
 
 const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
-  topMinAngle: 0,
-  topMaxAngle: 180,
+  topMinAngle: PULLUP_TOP_ELBOW_MIN_ANGLE,
+  topMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
 };
 
 const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
-  topMinAngle: 0,
-  topMaxAngle: 180,
+  topMinAngle: PULLUP_TOP_ELBOW_MIN_ANGLE,
+  topMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
 };
+
+function getPullupExtremityValidation(
+  keypoints: PosePoint[] | undefined,
+): PullupExtremityValidation {
+  if (!keypoints) return { atBottom: false, atTop: false };
+
+  const sideReadings = (side: PoseSide) => {
+    const indexes = sideKeypoints[side];
+    return {
+      shoulder: calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+      ),
+      elbow: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+      wrist: calculateAngle(
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+        keypoints[WRIST_TIP_INDEX[side]],
+      ),
+    };
+  };
+
+  const readings = (['left', 'right'] as PoseSide[]).map(sideReadings);
+  const allInRange = (
+    key: 'shoulder' | 'elbow' | 'wrist',
+    min: number,
+    max: number,
+  ) => readings.every((reading) => {
+    const value = reading[key];
+    return value !== null && isWithinAngle(value, min, max);
+  });
+
+  return {
+    atBottom: allInRange('shoulder', PULLUP_BOTTOM_SHOULDER_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE)
+      && allInRange('elbow', PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE)
+      && allInRange('wrist', PULLUP_BOTTOM_WRIST_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
+    atTop: allInRange('shoulder', PULLUP_TOP_SHOULDER_MIN_ANGLE, PULLUP_TOP_SHOULDER_MAX_ANGLE)
+      && allInRange('elbow', PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE)
+      && allInRange('wrist', PULLUP_TOP_WRIST_MIN_ANGLE, PULLUP_TOP_WRIST_MAX_ANGLE),
+  };
+}
 
 function advancePullupTracker(
   tracker: PullupTracker,
   rawAngle: number,
   headOverWrists: boolean,
+  extremities: PullupExtremityValidation,
   config: PullupTrackerConfig = STANDARD_PULLUP_TRACKER_CONFIG,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
@@ -1132,12 +1194,13 @@ function advancePullupTracker(
     event: null,
     lastAngle: smoothedAngle,
   };
-  const isAtBottom = smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
+  const isAtBottom = extremities.atBottom
+    && smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
     && smoothedAngle <= PULLUP_BOTTOM_MAX_ANGLE;
   const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
   const hasReachedTopByAngle = smoothedAngle >= config.topMinAngle
     && smoothedAngle <= config.topMaxAngle
-  const hasReachedTop = hasReachedTopByAngle && headOverWrists;
+  const hasReachedTop = hasReachedTopByAngle && headOverWrists && extremities.atTop;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
 
@@ -3966,7 +4029,8 @@ function Home() {
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
-          isHeadOverWrists(pose?.keypoints, nextDominantSide),
+          isHeadOverBothWrists(pose?.keypoints) === true,
+          getPullupExtremityValidation(pose?.keypoints),
           isSupinePullup
             ? SUPINE_PULLUP_TRACKER_CONFIG
             : STANDARD_PULLUP_TRACKER_CONFIG,
