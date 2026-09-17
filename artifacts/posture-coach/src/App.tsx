@@ -38,6 +38,7 @@ import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930
 import declinePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_02_57_19_p.m._1788984656423.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
 import legPressImage from '@assets/ChatGPT_Image_17_sept_2026,_14_32_47_1789673578570.png';
+import machineExtensionImage from '@assets/ChatGPT_Image_17_sept_2026,_14_46_27_1789674404855.png';
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
@@ -171,7 +172,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
   'prensa-piernas': legPressImage,
-  'extensiones-maquina': legPressImage,
+  'extensiones-maquina': machineExtensionImage,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
