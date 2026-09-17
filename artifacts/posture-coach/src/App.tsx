@@ -5322,11 +5322,11 @@ function Home() {
                       </div>
                     </div>
                   )}
-                {phase === 'requesting' && (
+                {phase !== 'tracking' && (
                   <div className="camera-loading" role="status" aria-live="polite">
                     <div className="loading-copy">
                       <span className="loading-mark" aria-hidden="true" />
-                      <span>Solicitando acceso...</span>
+                      <span>{phase === 'requesting' ? 'Solicitando acceso...' : 'Preparando tu vista...'}</span>
                     </div>
                   </div>
                 )}
