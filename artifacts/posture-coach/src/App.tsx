@@ -175,7 +175,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   sentadillas: squatImage,
   'prensa-piernas': legPressImage,
   'extensiones-maquina': machineExtensionImage,
-  'curl-femoral': `${basePath}/hamstring-curl.svg`,
+  'curl-femoral': `${basePath}/hamstring-curl-seated.png`,
   'hip-thrust-barra': `${basePath}/hip-thrust-barbell.png`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
