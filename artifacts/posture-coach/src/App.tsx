@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Camera,
   CheckCircle2,
+  ChevronDown,
   Maximize2,
   ShieldCheck,
   Square,
@@ -4694,6 +4695,7 @@ function Home() {
   const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
+  const [expandedMuscleGroups, setExpandedMuscleGroups] = useState<Record<string, boolean>>({});
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
   const stabilityFramesRef = useRef(0);
@@ -5733,8 +5735,33 @@ function Home() {
               <div className="exercise-list">
                 {exerciseGroups.map((group) => (
                   <div className="exercise-group" key={group.label}>
-                    <h2 className="exercise-group-title">{group.label}</h2>
-                    {group.exercises.map((exercise) => {
+                    {(() => {
+                      const groupId = `exercise-group-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+                      const isExpanded = expandedMuscleGroups[group.label] ?? group.label === 'Por clasificar';
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className="exercise-group-toggle"
+                            aria-expanded={isExpanded}
+                            aria-controls={groupId}
+                            data-testid={`exercise-group-${group.label.toLowerCase()}`}
+                            onClick={() => setExpandedMuscleGroups((current) => ({
+                              ...current,
+                              [group.label]: !isExpanded,
+                            }))}
+                          >
+                            <h2 className="exercise-group-title">{group.label}</h2>
+                            <ChevronDown
+                              className={`exercise-group-chevron${isExpanded ? ' is-expanded' : ''}`}
+                              size={18}
+                              strokeWidth={1.8}
+                              aria-hidden="true"
+                            />
+                          </button>
+                          {isExpanded && (
+                            <div className="exercise-group-list" id={groupId}>
+                              {group.exercises.map((exercise) => {
                       const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
                     || exercise.id === 'dominadas-supinas'
@@ -5772,40 +5799,45 @@ function Home() {
                       || exercise.id === 'zancada-banco'
                       ? ArrowDown
                       : Square;
-                      return (
-                        <div
-                          key={exercise.id}
-                          className="exercise-card"
-                          data-testid={`exercise-${exercise.id}`}
-                        >
-                          <button
-                            type="button"
-                            className="exercise-card-icon"
-                            aria-label={`Ampliar imagen de ${exercise.name}`}
-                            onClick={() => setPreviewExercise(exercise)}
-                          >
-                            <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
-                            <span className="exercise-card-zoom-hint" aria-hidden="true">
-                              <Maximize2 size={12} strokeWidth={2} />
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            className="exercise-card-action"
-                            onClick={() => void startCamera(exercise.id)}
-                          >
-                            <span className="exercise-card-copy">
-                              <strong>{exercise.name}</strong>
-                              <small>{exercise.description}</small>
-                              {exercise.cameraNote && (
-                                <small className="exercise-card-note">{exercise.cameraNote}</small>
-                              )}
-                            </span>
-                            <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
-                          </button>
-                        </div>
+                                return (
+                                  <div
+                                    key={exercise.id}
+                                    className="exercise-card"
+                                    data-testid={`exercise-${exercise.id}`}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="exercise-card-icon"
+                                      aria-label={`Ampliar imagen de ${exercise.name}`}
+                                      onClick={() => setPreviewExercise(exercise)}
+                                    >
+                                      <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
+                                      <span className="exercise-card-zoom-hint" aria-hidden="true">
+                                        <Maximize2 size={12} strokeWidth={2} />
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="exercise-card-action"
+                                      onClick={() => void startCamera(exercise.id)}
+                                    >
+                                      <span className="exercise-card-copy">
+                                        <strong>{exercise.name}</strong>
+                                        <small>{exercise.description}</small>
+                                        {exercise.cameraNote && (
+                                          <small className="exercise-card-note">{exercise.cameraNote}</small>
+                                        )}
+                                      </span>
+                                      <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
                       );
-                    })}
+                    })()}
                   </div>
                 ))}
               </div>

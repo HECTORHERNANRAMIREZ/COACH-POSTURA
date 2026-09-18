@@ -509,14 +509,47 @@
   margin-top: 0.8rem;
 }
 
+.exercise-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.65rem 0.15rem;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.exercise-group-toggle:hover {
+  border-bottom-color: rgba(57, 255, 106, 0.42);
+}
+
 .exercise-group-title {
-  margin: 0.45rem 0 0.15rem;
+  margin: 0;
   color: rgba(240, 245, 251, 0.94);
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.13em;
   line-height: 1.2;
   text-transform: uppercase;
+}
+
+.exercise-group-chevron {
+  color: rgba(139, 255, 165, 0.92);
+  transition: transform 180ms ease;
+}
+
+.exercise-group-chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
+.exercise-group-list {
+  display: grid;
+  gap: 0.65rem;
 }
 
 .exercise-card {
