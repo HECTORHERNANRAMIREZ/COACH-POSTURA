@@ -361,8 +361,8 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
-    description: 'Mantén el torso erguido entre 10° y 30° mientras llevas la barra al pecho.',
-    angleLabel: 'Torso 10°–30° · cadera–hombro–codo 25°–60°',
+    description: 'Mantén el torso erguido entre 10° y 25° mientras llevas la barra al pecho.',
+    angleLabel: 'Torso 10°–30° · cadera–hombro–codo 60°–90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
     trackedJoints: [
       { joint: 'hip', label: 'cadera' },
@@ -370,7 +370,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'elbow', label: 'codo' },
       { joint: 'wrist', label: 'muñeca' },
     ],
-    trackedAngleLabels: ['Torso: 10–30°', 'Codo: 80–120°', 'Tirón cadera–hombro–codo: final 25–60°'],
+    trackedAngleLabels: ['Torso: 10–25°', 'Codo: final 85–110°', 'Tirón cadera–hombro–codo: inicio 130–155° · final 60–90°'],
   },
   {
     id: 'remo-barra',
@@ -698,12 +698,14 @@ const PLANK_ARM_FLOOR_MIN_ANGLE = 80;
 const PLANK_ARM_FLOOR_MAX_ANGLE = 100;
 const PLANK_ELBOW_MIN_ANGLE = 80;
 const PLANK_ELBOW_MAX_ANGLE = 100;
-const PULLDOWN_ANGLE_MIN = 25;
-const PULLDOWN_ANGLE_MAX = 60;
+// Calibración basada en la secuencia de referencia del usuario:
+// inicio 134–148°, activación alrededor de 115° y punto bajo 62–94°.
+const PULLDOWN_ANGLE_MIN = 60;
+const PULLDOWN_ANGLE_MAX = 90;
 const PULLDOWN_TORSO_MIN_ANGLE = 10;
-const PULLDOWN_TORSO_MAX_ANGLE = 30;
-const PULLDOWN_ELBOW_MIN_ANGLE = 80;
-const PULLDOWN_ELBOW_MAX_ANGLE = 120;
+const PULLDOWN_TORSO_MAX_ANGLE = 25;
+const PULLDOWN_ELBOW_MIN_ANGLE = 85;
+const PULLDOWN_ELBOW_MAX_ANGLE = 110;
 const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 45;
 const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 90;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
@@ -804,12 +806,12 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   },
   jalon: {
     direction: 'decrease',
-    startMinAngle: 150,
-    startMaxAngle: 180,
-    activationAngle: 135,
-    endMinAngle: 25,
-    endMaxAngle: 60,
-    endLabel: 'ángulo cadera–hombro–codo entre 25–60°',
+    startMinAngle: 130,
+    startMaxAngle: 155,
+    activationAngle: 115,
+    endMinAngle: PULLDOWN_ANGLE_MIN,
+    endMaxAngle: PULLDOWN_ANGLE_MAX,
+    endLabel: `ángulo cadera–hombro–codo entre ${PULLDOWN_ANGLE_MIN}–${PULLDOWN_ANGLE_MAX}°`,
     countOnReturn: true,
   },
   'remo-barra': {
@@ -983,10 +985,12 @@ function advanceExerciseRepTracker(
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
-      nextTracker.event = 'valid';
-      nextTracker.repetitions += 1;
-      nextTracker.goodRepetitions += 1;
       completedEndpointAngle = nextTracker.endpointAngle;
+      if (!config.countOnReturn) {
+        nextTracker.event = 'valid';
+        nextTracker.repetitions += 1;
+        nextTracker.goodRepetitions += 1;
+      }
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
@@ -997,8 +1001,8 @@ function advanceExerciseRepTracker(
         ? smoothedAngle > config.endMaxAngle
         : smoothedAngle < config.endMinAngle;
 
-      if (hasReturnedFromEnd) {
-        nextTracker.phase = isAtStart ? 'inicio' : 'final';
+      if (hasReturnedFromEnd && isAtStart) {
+        nextTracker.phase = 'inicio';
         nextTracker.event = 'valid';
         nextTracker.repetitions += 1;
         nextTracker.goodRepetitions += 1;
@@ -2779,14 +2783,14 @@ function getLatPulldownTechniqueFeedback(
     return {
       tone: 'warning',
       message: 'Baja más el ángulo',
-      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe entrar entre 25° y 60°.`,
+      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe entrar entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}°.`,
     };
   }
   if (pulldownAngle < PULLDOWN_ANGLE_MIN) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado el ángulo',
-      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe mantenerse entre 25° y 60°.`,
+      detail: `El ángulo cadera–hombro–codo está a ${pulldownAngle}°. Debe mantenerse entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}°.`,
     };
   }
   if (elbowAngle < PULLDOWN_ELBOW_MIN_ANGLE) {
@@ -3671,9 +3675,9 @@ function calculateLiveAngleReadings(
         ];
       case 'jalon':
         return [
-          empty('Torso', '10–30°'),
-          empty('Codo', '80–120°'),
-          empty('Tirón', 'Inicio 150–180° · activa <135° · final 25–60°'),
+          empty('Torso', `${PULLDOWN_TORSO_MIN_ANGLE}–${PULLDOWN_TORSO_MAX_ANGLE}°`),
+          empty('Codo', `${PULLDOWN_ELBOW_MIN_ANGLE}–${PULLDOWN_ELBOW_MAX_ANGLE}°`),
+          empty('Tirón', `Inicio 130–155° · activa <115° · final ${PULLDOWN_ANGLE_MIN}–${PULLDOWN_ANGLE_MAX}°`),
         ];
       case 'remo-barra':
         return [
@@ -3827,12 +3831,24 @@ function calculateLiveAngleReadings(
     }
     case 'jalon':
       return [
-        value(torso, 'Torso', '10–30°', PULLDOWN_TORSO_MIN_ANGLE, PULLDOWN_TORSO_MAX_ANGLE),
-        value(elbow, 'Codo', '80–120°', PULLDOWN_ELBOW_MIN_ANGLE, PULLDOWN_ELBOW_MAX_ANGLE),
+        value(
+          torso,
+          'Torso',
+          `${PULLDOWN_TORSO_MIN_ANGLE}–${PULLDOWN_TORSO_MAX_ANGLE}°`,
+          PULLDOWN_TORSO_MIN_ANGLE,
+          PULLDOWN_TORSO_MAX_ANGLE,
+        ),
+        value(
+          elbow,
+          'Codo',
+          `${PULLDOWN_ELBOW_MIN_ANGLE}–${PULLDOWN_ELBOW_MAX_ANGLE}°`,
+          PULLDOWN_ELBOW_MIN_ANGLE,
+          PULLDOWN_ELBOW_MAX_ANGLE,
+        ),
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
           'Tirón',
-          'Inicio 150–180° · activa <135° · final 25–60°',
+          `Inicio ${repetitionConfigs.jalon?.startMinAngle}–${repetitionConfigs.jalon?.startMaxAngle}° · activa <${repetitionConfigs.jalon?.activationAngle}° · final ${PULLDOWN_ANGLE_MIN}–${PULLDOWN_ANGLE_MAX}°`,
           PULLDOWN_ANGLE_MIN,
           PULLDOWN_ANGLE_MAX,
         ),
