@@ -140,7 +140,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -166,6 +166,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
+  'press-hombros-maquina': militaryPressImage,
   'elevaciones-laterales': lateralRaiseImage,
   'elevaciones-laterales-polea-baja': lowCableLateralRaiseImage,
   'pajaros-mancuernas': rearDeltFlyImage,
@@ -476,6 +477,25 @@ const exercises: ExerciseDefinition[] = [
     ],
     trackBothSides: true,
     trackedAngleLabels: ['Codo: final 85–110°', 'Codo respecto al torso: 30–60°'],
+  },
+  {
+    id: 'press-hombros-maquina',
+    name: 'Press de hombros en máquina',
+    description: 'Empuja los agarres hacia arriba con control, manteniendo los hombros estables y las muñecas alineadas.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto a la máquina durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: empuje vertical con muñecas alineadas',
+    ],
   },
   {
     id: 'elevaciones-laterales',
@@ -2019,6 +2039,8 @@ function getCameraGuidance(
       message: 'Ajustando la cámara',
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
+        : exercise === 'press-hombros-maquina'
+          ? 'Ponte de frente o en 3/4 a la máquina y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'elevaciones-laterales' || exercise === 'elevaciones-laterales-polea-baja'
           ? exercise === 'elevaciones-laterales-polea-baja'
             ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas junto a la polea.'
@@ -2126,6 +2148,7 @@ function getCameraGuidance(
     );
     if (
       exercise !== 'press-militar'
+      && exercise !== 'press-hombros-maquina'
       && exercise !== 'elevaciones-laterales'
       && exercise !== 'elevaciones-laterales-polea-baja'
       && exercise !== 'pajaros-mancuernas'
@@ -2151,6 +2174,8 @@ function getCameraGuidance(
       ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles en semiperfil; todavía no se juzga el balanceo.'
       : exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
+      : exercise === 'press-hombros-maquina'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la máquina dentro del encuadre.'
       : exercise === 'elevaciones-laterales' || exercise === 'elevaciones-laterales-polea-baja'
         ? exercise === 'elevaciones-laterales-polea-baja'
           ? 'Usa una vista frontal o en 3/4, con ambos brazos y la polea dentro del encuadre.'
@@ -3703,6 +3728,11 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
       { label: 'Cadera', joint: 'hip' },
+    ],
+    'press-hombros-maquina': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
     ],
     'face-pulls-polea-alta': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -5535,6 +5565,7 @@ function Home() {
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
+                    || exercise.id === 'press-hombros-maquina'
                      || exercise.id === 'elevaciones-laterales'
                      || exercise.id === 'elevaciones-laterales-polea-baja'
                     || exercise.id === 'pajaros-mancuernas'
