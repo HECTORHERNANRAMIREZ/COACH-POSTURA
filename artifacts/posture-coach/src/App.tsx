@@ -227,7 +227,7 @@ type SquatTracker = {
   currentRepCounted: boolean;
 };
 type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
-type PullupRepEvent = 'valid' | 'no-top' | 'no-lockout' | null;
+type PullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
 type PullupTracker = {
   phase: PullupPhase;
   repetitions: number;
@@ -237,6 +237,7 @@ type PullupTracker = {
   event: PullupRepEvent;
   lastAngle: number | null;
   topFrames: number;
+  currentRepCorrect: boolean;
 };
 type ExerciseRepPhase = 'esperando inicio' | 'inicio' | 'en movimiento' | 'final';
 type ExerciseRepDirection = 'decrease' | 'increase';
@@ -257,6 +258,7 @@ type ExerciseRepTracker = {
   endpointAngle: number | null;
   samples: number[];
   event: 'valid' | null;
+  currentRepCorrect: boolean;
 };
 type ExerciseRepTrackerUpdate = {
   tracker: ExerciseRepTracker;
@@ -932,6 +934,7 @@ function createExerciseRepTracker(): ExerciseRepTracker {
     endpointAngle: null,
     samples: [],
     event: null,
+    currentRepCorrect: false,
   };
 }
 
@@ -943,6 +946,7 @@ function advanceExerciseRepTracker(
   tracker: ExerciseRepTracker,
   rawAngle: number,
   config: ExerciseRepConfig,
+  techniqueValid = true,
 ): ExerciseRepTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-SQUAT_SMOOTHING_SAMPLES);
   const smoothedAngle = median(samples) ?? rawAngle;
@@ -970,30 +974,38 @@ function advanceExerciseRepTracker(
     if (isAtStart) {
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
+      nextTracker.currentRepCorrect = techniqueValid;
     }
   } else if (nextTracker.phase === 'inicio') {
     if (hasActivated) {
       nextTracker.phase = 'en movimiento';
       nextTracker.endpointAngle = smoothedAngle;
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
     } else if (!isAtStart) {
       nextTracker.phase = 'esperando inicio';
+      nextTracker.currentRepCorrect = false;
     }
   } else if (nextTracker.phase === 'en movimiento') {
+    nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
     nextTracker.endpointAngle = config.direction === 'decrease'
       ? Math.min(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle)
       : Math.max(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle);
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
       completedEndpointAngle = nextTracker.endpointAngle;
       if (!config.countOnReturn) {
         nextTracker.event = 'valid';
         nextTracker.repetitions += 1;
-        nextTracker.goodRepetitions += 1;
+        if (nextTracker.currentRepCorrect) {
+          nextTracker.goodRepetitions += 1;
+        }
       }
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
+      nextTracker.currentRepCorrect = techniqueValid;
     }
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
@@ -1005,7 +1017,11 @@ function advanceExerciseRepTracker(
         nextTracker.phase = 'inicio';
         nextTracker.event = 'valid';
         nextTracker.repetitions += 1;
-        nextTracker.goodRepetitions += 1;
+        const repetitionWasCorrect = nextTracker.currentRepCorrect && techniqueValid;
+        if (repetitionWasCorrect) {
+          nextTracker.goodRepetitions += 1;
+        }
+        nextTracker.currentRepCorrect = techniqueValid;
         completedEndpointAngle = nextTracker.endpointAngle;
       }
     } else if (isAtStart) {
@@ -1195,6 +1211,7 @@ function createPullupTracker(): PullupTracker {
     event: null,
     lastAngle: null,
     topFrames: 0,
+    currentRepCorrect: false,
   };
 }
 
@@ -1389,6 +1406,8 @@ function advancePullupTracker(
   const isAtBottom = extremities.atBottom
     && smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
     && smoothedAngle <= PULLUP_BOTTOM_MAX_ANGLE;
+  const isAtBottomByAngle = smoothedAngle >= PULLUP_BOTTOM_MIN_ANGLE
+    && smoothedAngle <= PULLUP_BOTTOM_MAX_ANGLE;
   const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
   const hasReachedTopByAngle = smoothedAngle >= config.topMinAngle
     && smoothedAngle <= config.topMaxAngle
@@ -1397,7 +1416,10 @@ function advancePullupTracker(
   let completedMinimumAngle: number | null = null;
 
   if (nextTracker.phase === 'esperando abajo') {
-    if (isAtBottom) nextTracker.phase = 'abajo';
+    if (isAtBottomByAngle) {
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = isAtBottom;
+    }
   } else if (nextTracker.phase === 'abajo') {
     if (hasStartedPull) {
       nextTracker.phase = 'subiendo';
@@ -1408,23 +1430,32 @@ function advancePullupTracker(
       ? smoothedAngle
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
 
-    nextTracker.topFrames = hasReachedTop ? nextTracker.topFrames + 1 : 0;
+    nextTracker.topFrames = hasReachedTopByAngle ? nextTracker.topFrames + 1 : 0;
     if (nextTracker.topFrames >= 2) {
       nextTracker.phase = 'arriba';
       nextTracker.topFrames = 0;
-    } else if (isAtBottom) {
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
+        && hasReachedTop
+        && headOverWrists
+        && extremities.atTop;
+    } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
       nextTracker.repetitions += 1;
+      nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     }
   } else if (nextTracker.phase === 'arriba') {
     nextTracker.topFrames = 0;
-    if (isAtBottom) {
+    if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.event = 'valid';
       nextTracker.repetitions += 1;
-      nextTracker.goodRepetitions += 1;
+      const repetitionWasCorrect = nextTracker.currentRepCorrect && isAtBottom;
+      nextTracker.event = repetitionWasCorrect ? 'valid' : 'invalid';
+      if (repetitionWasCorrect) {
+        nextTracker.goodRepetitions += 1;
+      }
+      nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (smoothedAngle > config.topMaxAngle) {
       nextTracker.phase = 'bajando';
@@ -1435,16 +1466,21 @@ function advancePullupTracker(
       ? smoothedAngle
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
 
-    if (isAtBottom) {
+    if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.event = 'valid';
       nextTracker.repetitions += 1;
-      nextTracker.goodRepetitions += 1;
+      const repetitionWasCorrect = nextTracker.currentRepCorrect && isAtBottom;
+      nextTracker.event = repetitionWasCorrect ? 'valid' : 'invalid';
+      if (repetitionWasCorrect) {
+        nextTracker.goodRepetitions += 1;
+      }
+      nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isRising && smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE) {
       nextTracker.phase = 'esperando abajo';
       nextTracker.event = 'no-lockout';
       nextTracker.repetitions += 1;
+      nextTracker.currentRepCorrect = false;
       completedMinimumAngle = nextTracker.minimumAngle;
     }
   }
@@ -2836,8 +2872,29 @@ function isLatPulldownTechniqueValid(
     keypoints[indexes.shoulder],
     keypoints[indexes.hip],
   );
-  return torsoLean !== null
-    && isWithinAngle(torsoLean, PULLDOWN_TORSO_MIN_ANGLE, PULLDOWN_TORSO_MAX_ANGLE);
+  const pulldownAngle = calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+  );
+  const elbowAngle = calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  );
+  if (
+    torsoLean === null
+    || pulldownAngle === null
+    || elbowAngle === null
+    || !isWithinAngle(torsoLean, PULLDOWN_TORSO_MIN_ANGLE, PULLDOWN_TORSO_MAX_ANGLE)
+    || !isWithinAngle(pulldownAngle, PULLDOWN_ANGLE_MIN, repetitionConfigs.jalon?.startMaxAngle ?? 155)
+  ) {
+    return false;
+  }
+
+  const isAtEnd = isWithinAngle(pulldownAngle, PULLDOWN_ANGLE_MIN, PULLDOWN_ANGLE_MAX);
+  return !isAtEnd
+    || isWithinAngle(elbowAngle, PULLDOWN_ELBOW_MIN_ANGLE, PULLDOWN_ELBOW_MAX_ANGLE);
 }
 
 function getBarbellRowTechniqueFeedback(
@@ -4407,10 +4464,16 @@ function Home() {
               ? `Extensión de codos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · cabeza por encima de las muñecas · agarre supino.`
               : `Extensión de codos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · cabeza por encima de las muñecas.`,
           });
+        } else if (pullupUpdate.tracker.event === 'invalid') {
+          setPullupFeedback({
+            tone: 'warning',
+            message: `Repetición ${pullupUpdate.tracker.repetitions}: EVALUADA`,
+            detail: 'Completaste el recorrido, pero no se cumplieron todos los rangos calibrados. No suma como correcta.',
+          });
         } else if (pullupUpdate.tracker.event === 'no-top') {
           setPullupFeedback({
             tone: 'warning',
-            message: 'No rep · subida incompleta',
+            message: `Repetición ${pullupUpdate.tracker.repetitions}: EVALUADA`,
             detail: isSupinePullup
               ? 'Sube hasta pasar la cabeza por encima de las muñecas.'
               : 'Sube hasta pasar la cabeza por encima de las muñecas.',
@@ -4418,7 +4481,7 @@ function Home() {
         } else if (pullupUpdate.tracker.event === 'no-lockout') {
           setPullupFeedback({
             tone: 'warning',
-            message: 'No rep · falta extensión',
+            message: `Repetición ${pullupUpdate.tracker.repetitions}: EVALUADA`,
             detail: `Volviste a subir con ${pullupUpdate.smoothedAngle}°. Extiende primero los brazos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°.`,
           });
         } else {
@@ -4443,6 +4506,9 @@ function Home() {
           nextDominantSide,
           selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
         );
+      const repetitionTechniqueReady = rowTechniqueReady
+        && dipTechniqueReady
+        && pushupTechniqueReady;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -4450,15 +4516,13 @@ function Home() {
         && frameDetectionStable
         && repetitionConfig
         && repetitionAngle !== null
-        && rowTechniqueReady
-        && dipTechniqueReady
-        && pulldownTechniqueReady
-        && pushupTechniqueReady
+        && repetitionTechniqueReady
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
           repetitionConfig,
+          selectedExerciseForFrame === 'jalon' ? pulldownTechniqueReady : true,
         );
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
@@ -4475,10 +4539,9 @@ function Home() {
         && (
           !hasFreshPose
           || !frameCameraReady
-          || !rowTechniqueReady
-          || !dipTechniqueReady
-          || !pulldownTechniqueReady
-          || !pushupTechniqueReady
+          || repetitionAngle === null
+          || (selectedExerciseForFrame === 'remo-barra' && !rowTechniqueReady)
+          || (selectedExerciseForFrame === 'fondos' && !dipTechniqueReady)
         )
       ) {
         const resetTracker = createExerciseRepTracker();
@@ -5316,12 +5379,12 @@ function Home() {
                     <strong>{exerciseGoodRepetitions}</strong>
                   </div>
                   <div className="squat-summary-stat">
-                    <span>Total válidas</span>
+                    <span>Total evaluadas</span>
                     <strong>{exerciseRepetitions}</strong>
                   </div>
                   <p>
                     {selectedExercise === 'jalon'
-                      ? `Solo cuenta si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
+                      ? `Se evalúa al completar el recorrido. Es correcta solo si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
                       : selectedExercise === 'fondos'
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
@@ -5766,7 +5829,7 @@ function Home() {
                         <dd className="diagnostic-value diagnostic-value--success">{exerciseGoodRepetitions}</dd>
                       </div>
                       <div className="diagnostic-row">
-                        <dt>Total válidas</dt>
+                        <dt>Total evaluadas</dt>
                         <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
                       </div>
                     </>
