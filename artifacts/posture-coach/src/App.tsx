@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -488,6 +488,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-militar',
     name: 'Press militar con mancuernas',
+    muscleGroup: 'hombros',
     description: 'Baja los codos hasta 85°–110° y vuelve a extenderlos con control.',
     angleLabel: 'Codo al bajar · objetivo 85°–110°',
     trackedJoints: [
@@ -502,6 +503,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-hombros-maquina',
     name: 'Press de hombros en máquina',
+    muscleGroup: 'hombros',
     description: 'Empuja los agarres hacia arriba con control, manteniendo los hombros estables y las muñecas alineadas.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto a la máquina durante todo el recorrido.',
@@ -521,6 +523,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'elevaciones-laterales',
     name: 'Elevaciones laterales',
+    muscleGroup: 'hombros',
     description: 'Eleva los brazos hasta la línea de los hombros sin encogerlos ni balancearte.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos y las manos durante todo el recorrido.',
@@ -540,6 +543,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'elevaciones-laterales-polea-baja',
     name: 'Elevaciones laterales polea baja',
+    muscleGroup: 'hombros',
     description: 'Eleva el brazo desde la polea baja hasta la línea del hombro sin girar el torso ni perder el control.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto a la polea.',
@@ -559,6 +563,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'pajaros-mancuernas',
     name: 'Pájaros con mancuernas',
+    muscleGroup: 'hombros',
     description: 'Inclina el torso y abre los brazos hasta la línea de los hombros sin balancearte.',
     angleLabel: 'Hombros · codos · muñecas · cadera',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos, las manos y la cadera durante todo el recorrido.',
@@ -579,6 +584,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'face-pulls-polea-alta',
     name: 'Face Pulls en polea alta',
+    muscleGroup: 'hombros',
     description: 'Tira de la cuerda hacia la cara manteniendo hombros estables y codos abiertos.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
@@ -598,6 +604,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'aperturas-inversas-maquina',
     name: 'Aperturas inversas en máquina',
+    muscleGroup: 'hombros',
     description: 'Abre los brazos hacia atrás con control, manteniendo el pecho apoyado y los hombros estables.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos, muñecas y la máquina durante todo el recorrido.',
@@ -932,6 +939,10 @@ const exerciseGroups = [
   {
     label: 'Espalda',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'espalda'),
+  },
+  {
+    label: 'Hombros',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'hombros'),
   },
   {
     label: 'Por clasificar',
