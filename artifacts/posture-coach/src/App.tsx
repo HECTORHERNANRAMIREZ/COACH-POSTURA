@@ -135,7 +135,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -161,6 +161,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
+  'elevaciones-laterales': `${basePath}/lateral-raises.svg`,
   'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
@@ -468,6 +469,25 @@ const exercises: ExerciseDefinition[] = [
     trackedAngleLabels: ['Codo: final 85–110°', 'Codo respecto al torso: 30–60°'],
   },
   {
+    id: 'elevaciones-laterales',
+    name: 'Elevaciones laterales',
+    description: 'Eleva los brazos hasta la línea de los hombros sin encogerlos ni balancearte.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos y las manos durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: subida hasta la línea de los hombros',
+    ],
+  },
+  {
     id: 'press-banca',
     name: 'Press de banca',
     description: 'Empuja la barra desde el pecho manteniendo hombros, codos, muñecas y cadera visibles.',
@@ -721,6 +741,11 @@ const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
 const MILITARY_PRESS_VALID_MIN_ANGLE = 85;
 const MILITARY_PRESS_VALID_MAX_ANGLE = 110;
+const LATERAL_RAISE_START_MIN_ANGLE = 0;
+const LATERAL_RAISE_START_MAX_ANGLE = 40;
+const LATERAL_RAISE_ACTIVATION_ANGLE = 55;
+const LATERAL_RAISE_END_MIN_ANGLE = 75;
+const LATERAL_RAISE_END_MAX_ANGLE = 110;
 const DIP_TORSO_MIN_ANGLE = 30;
 const DIP_TORSO_MAX_ANGLE = 40;
 const PLANK_MAX_HIP_SAG_RATIO = 0.08;
@@ -890,6 +915,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: MILITARY_PRESS_VALID_MIN_ANGLE,
     endMaxAngle: MILITARY_PRESS_VALID_MAX_ANGLE,
     endLabel: `codo entre ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+  },
+  'elevaciones-laterales': {
+    direction: 'increase',
+    startMinAngle: LATERAL_RAISE_START_MIN_ANGLE,
+    startMaxAngle: LATERAL_RAISE_START_MAX_ANGLE,
+    activationAngle: LATERAL_RAISE_ACTIVATION_ANGLE,
+    endMinAngle: LATERAL_RAISE_END_MIN_ANGLE,
+    endMaxAngle: LATERAL_RAISE_END_MAX_ANGLE,
+    endLabel: `hombro entre ${LATERAL_RAISE_END_MIN_ANGLE}–${LATERAL_RAISE_END_MAX_ANGLE}°`,
   },
   'triceps-polea-alta': {
     direction: 'increase',
@@ -1173,6 +1207,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio / regreso: codo 145–180°',
         `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
         'Codos aproximadamente 45° respecto al torso',
+      ];
+    case 'elevaciones-laterales':
+      return [
+        `Inicio / regreso: hombro ${LATERAL_RAISE_START_MIN_ANGLE}–${LATERAL_RAISE_START_MAX_ANGLE}°`,
+        `Activación: hombro >${LATERAL_RAISE_ACTIVATION_ANGLE}°`,
+        `Final: hombro ${LATERAL_RAISE_END_MIN_ANGLE}–${LATERAL_RAISE_END_MAX_ANGLE}°`,
+        'Lecturas bilaterales: hombros, codos y muñecas',
       ];
     case 'press-banca':
       return [
@@ -1882,6 +1923,8 @@ function getCameraGuidance(
       message: 'Ajustando la cámara',
       detail: exercise === 'press-militar'
         ? 'Ponte de frente o en 3/4 y muestra hombros, codos, muñecas y cadera.'
+        : exercise === 'elevaciones-laterales'
+          ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -1979,6 +2022,7 @@ function getCameraGuidance(
     );
     if (
       exercise !== 'press-militar'
+      && exercise !== 'elevaciones-laterales'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && torsoLength > 0
@@ -1999,6 +2043,8 @@ function getCameraGuidance(
       ? 'Lecturas listas. Mantén la barra y todo el cuerpo visibles en semiperfil; todavía no se juzga el balanceo.'
       : exercise === 'press-militar'
       ? 'Usa una vista frontal o en 3/4, móvil a la altura del pecho y brazos completos visibles.'
+      : exercise === 'elevaciones-laterales'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos completos dentro del encuadre.'
       : 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.',
   };
 }
@@ -2369,6 +2415,76 @@ function getMilitaryPressTechniqueFeedback(
     tone: 'success',
     message: 'Press militar controlado',
     detail: `Codos a ${elbowTorsoAngle}° · plano escapular correcto. Empuja con control y evita abrirlos demasiado.`,
+  };
+}
+
+function getLateralRaiseTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+): TechniqueFeedback {
+  if (!keypoints) {
+    return {
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Ponte de frente o en 3/4 y muestra ambos hombros, codos y muñecas.',
+    };
+  }
+
+  const readings = (['left', 'right'] as PoseSide[]).map((side) => {
+    const indexes = sideKeypoints[side];
+    return {
+      shoulder: calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+      ),
+      elbow: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+    };
+  });
+
+  if (readings.some(({ shoulder, elbow }) => shoulder === null || elbow === null)) {
+    return {
+      tone: 'checking',
+      message: 'Muestra ambos brazos',
+      detail: 'Necesitamos ver hombros, codos y muñecas de los dos lados para comparar la elevación.',
+    };
+  }
+
+  const shoulderAngles = readings.map(({ shoulder }) => shoulder as number);
+  const elbowAngles = readings.map(({ elbow }) => elbow as number);
+  const averageShoulderAngle = shoulderAngles.reduce((sum, value) => sum + value, 0) / shoulderAngles.length;
+  const shoulderDifference = Math.abs(shoulderAngles[0] - shoulderAngles[1]);
+  const minimumElbowAngle = Math.min(...elbowAngles);
+
+  if (shoulderDifference > 22) {
+    return {
+      tone: 'warning',
+      message: 'Eleva ambos brazos al mismo nivel',
+      detail: `Hay ${shoulderDifference}° de diferencia entre los hombros. Sube el brazo más bajo sin inclinar el torso.`,
+    };
+  }
+  if (averageShoulderAngle > LATERAL_RAISE_END_MAX_ANGLE + 8) {
+    return {
+      tone: 'warning',
+      message: 'No subas por encima de los hombros',
+      detail: `La elevación media es de ${Math.round(averageShoulderAngle)}°. Detén las mancuernas a la altura de los hombros.`,
+    };
+  }
+  if (minimumElbowAngle < 135) {
+    return {
+      tone: 'warning',
+      message: 'Mantén los codos ligeramente flexionados',
+      detail: `Un codo está a ${minimumElbowAngle}°. Conserva una flexión suave sin cerrar demasiado los brazos.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Elevación lateral controlada',
+    detail: `Hombros a ${Math.round(averageShoulderAngle)}° de media. Mantén las muñecas alineadas y baja con control.`,
   };
 }
 
@@ -3254,6 +3370,13 @@ function calculateExerciseAngle(
       keypoints[indexes.knee],
     );
   }
+  if (exercise === 'elevaciones-laterales') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    );
+  }
   if (
     exercise === 'fondos'
     || exercise === 'dominadas'
@@ -3328,6 +3451,14 @@ function calculateRepetitionAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
       keypoints[indexes.knee],
+    );
+  }
+
+  if (exercise === 'elevaciones-laterales') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
     );
   }
 
@@ -3437,6 +3568,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'press-militar': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'elevaciones-laterales': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -4713,6 +4849,8 @@ function Home() {
             ? getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'press-militar'
             ? getMilitaryPressTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'elevaciones-laterales'
+            ? getLateralRaiseTechniqueFeedback(pose?.keypoints)
           : selectedExerciseRef.current === 'triceps-polea-alta'
             ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
            : selectedExerciseRef.current === 'extension-horizontal-barra'
@@ -5259,6 +5397,7 @@ function Home() {
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
                     || exercise.id === 'press-militar'
+                     || exercise.id === 'elevaciones-laterales'
                     || exercise.id === 'press-banca'
                     || exercise.id === 'triceps-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
@@ -5572,6 +5711,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'elevaciones-laterales' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Vista:</b> colócate de frente o en 3/4 y deja dentro del encuadre ambos hombros, codos y muñecas.</li>
+                    <li><b>Subida:</b> eleva los brazos hacia los lados hasta la línea de los hombros, sin encogerlos.</li>
+                    <li><b>Codos:</b> conserva una ligera flexión durante todo el recorrido; no los cierres ni los bloquees.</li>
+                    <li><b>Muñecas:</b> mantenlas alineadas con los codos y evita doblarlas hacia arriba o hacia abajo.</li>
+                    <li><b>Control:</b> baja las mancuernas lentamente y mantén ambos lados a una altura similar.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'triceps-polea-alta' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -5707,6 +5858,7 @@ function Home() {
                       || selectedExercise === 'flexiones-declinadas'
                       || selectedExercise === 'flexiones-pica'
                       || selectedExercise === 'press-militar'
+                      || selectedExercise === 'elevaciones-laterales'
                        || selectedExercise === 'press-banca'
                       || selectedExercise === 'triceps-polea-alta'
                       || selectedExercise === 'extension-horizontal-barra'

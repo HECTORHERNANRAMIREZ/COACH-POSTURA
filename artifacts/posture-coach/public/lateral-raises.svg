@@ -1,0 +1,35 @@
+<svg width="720" height="480" viewBox="0 0 720 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="40" x2="640" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#15253C"/>
+      <stop offset="1" stop-color="#0A1424"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="360" y1="80" x2="360" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8BFFA5"/>
+      <stop offset="1" stop-color="#39FF6A"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="720" height="480" rx="28" fill="url(#bg)"/>
+  <path d="M80 390H640" stroke="#28425A" stroke-width="2"/>
+  <path d="M360 82V390" stroke="#234056" stroke-width="2" stroke-dasharray="8 12"/>
+  <circle cx="360" cy="108" r="34" stroke="url(#glow)" stroke-width="12" filter="url(#softGlow)"/>
+  <path d="M360 145V283" stroke="url(#glow)" stroke-width="18" stroke-linecap="round" filter="url(#softGlow)"/>
+  <path d="M360 170L246 220L150 174" stroke="url(#glow)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)"/>
+  <path d="M360 170L474 220L570 174" stroke="url(#glow)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)"/>
+  <path d="M360 283L300 390" stroke="url(#glow)" stroke-width="18" stroke-linecap="round" filter="url(#softGlow)"/>
+  <path d="M360 283L420 390" stroke="url(#glow)" stroke-width="18" stroke-linecap="round" filter="url(#softGlow)"/>
+  <circle cx="246" cy="220" r="9" fill="#D6FFE0"/>
+  <circle cx="474" cy="220" r="9" fill="#D6FFE0"/>
+  <circle cx="150" cy="174" r="8" fill="#D6FFE0"/>
+  <circle cx="570" cy="174" r="8" fill="#D6FFE0"/>
+  <rect x="126" y="151" width="12" height="46" rx="6" transform="rotate(25 126 151)" fill="#A8BACB"/>
+  <rect x="582" y="151" width="12" height="46" rx="6" transform="rotate(-25 582 151)" fill="#A8BACB"/>
+  <text x="360" y="438" text-anchor="middle" fill="#A8BACB" font-family="Arial, sans-serif" font-size="18" letter-spacing="3">ELEVACIONES LATERALES</text>
+</svg>
