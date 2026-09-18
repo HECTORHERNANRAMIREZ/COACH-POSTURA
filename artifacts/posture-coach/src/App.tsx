@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho';
+type MuscleGroup = 'pecho' | 'espalda';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -338,6 +338,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'dominadas',
     name: 'Dominadas en barra',
+    muscleGroup: 'espalda',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
     cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
@@ -352,6 +353,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'dominadas-supinas',
     name: 'Dominadas supinas',
+    muscleGroup: 'espalda',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
     cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
@@ -366,6 +368,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'muscle-up',
     name: 'Muscle-up',
+    muscleGroup: 'espalda',
     description: 'Observa la transición sobre la barra y controla el balanceo de las piernas.',
     angleLabel: 'Codos · rodillas · tobillos',
     cameraNote: 'Nota: vista en semiperfil (30°–45°); separa brazos y piernas y deja el cuerpo completo y la barra dentro del encuadre.',
@@ -384,6 +387,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'jalon',
     name: 'Jalón al pecho en polea',
+    muscleGroup: 'espalda',
     description: 'Mantén el torso erguido entre 10° y 25° mientras llevas la barra al pecho.',
     angleLabel: 'Torso 10°–30° · cadera–hombro–codo 60°–90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -398,6 +402,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'remo-barra',
     name: 'Remo con barra',
+    muscleGroup: 'espalda',
     description: 'Haz una bisagra de cadera, mantén la espalda neutra y lleva la barra al cuerpo con control.',
     angleLabel: 'Torso 30–45° · codos 15–30° · codo 70–115°',
     cameraNote: 'Nota: vista lateral, incluso desde el suelo; muestra todo el cuerpo.',
@@ -923,6 +928,10 @@ const exerciseGroups = [
   {
     label: 'Pecho',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'pecho'),
+  },
+  {
+    label: 'Espalda',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'espalda'),
   },
   {
     label: 'Por clasificar',
