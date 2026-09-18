@@ -604,8 +604,8 @@ const exercises: ExerciseDefinition[] = [
   },
   {
     id: 'cruces-polea-baja-alta',
-    name: 'Cruces de polea baja a alta',
-    description: 'Lleva las manos desde abajo hacia delante del pecho con control, manteniendo hombros, codos y muñecas alineados.',
+    name: 'Cruces de polea baja, media y alta',
+    description: 'Lleva las manos desde la polea baja, media o alta hacia delante del pecho con control, manteniendo hombros, codos y muñecas alineados.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto a las poleas.',
     trackedJoints: [
@@ -618,7 +618,7 @@ const exercises: ExerciseDefinition[] = [
       'Hombros: lectura izquierda y derecha',
       'Codos: lectura izquierda y derecha',
       'Muñecas: lectura izquierda y derecha',
-      'Recorrido: manos desde la polea baja hacia el centro del pecho',
+      'Recorrido: manos desde la polea baja, media o alta hacia el centro del pecho',
     ],
   },
   {
