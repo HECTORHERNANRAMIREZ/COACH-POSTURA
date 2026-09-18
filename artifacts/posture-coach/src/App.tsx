@@ -44,6 +44,7 @@ import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._17
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m._1789741994699.png';
 import lowCableLateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_11_52_57_1789750471669.png';
+import rearDeltFlyImage from '@assets/ChatGPT_Image_18_sept_2026,_12_00_17_1789751148309.png';
 import benchPressImage from '@assets/ChatGPT_Image_16_sept_2026,_22_36_13_1789621905499.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
@@ -137,7 +138,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -165,6 +166,8 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-militar': militaryPressImage,
   'elevaciones-laterales': lateralRaiseImage,
   'elevaciones-laterales-polea-baja': lowCableLateralRaiseImage,
+  'pajaros-mancuernas': rearDeltFlyImage,
+  'face-pulls-polea-alta': tricepsPushdownImage,
   'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
@@ -507,6 +510,45 @@ const exercises: ExerciseDefinition[] = [
       'Codos: lectura izquierda y derecha',
       'Muñecas: lectura izquierda y derecha',
       'Recorrido: subida hasta la línea de los hombros',
+    ],
+  },
+  {
+    id: 'pajaros-mancuernas',
+    name: 'Pájaros con mancuernas',
+    description: 'Inclina el torso y abre los brazos hasta la línea de los hombros sin balancearte.',
+    angleLabel: 'Hombros · codos · muñecas · cadera',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos, las manos y la cadera durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'cadera' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: apertura de brazos hasta la línea de los hombros',
+    ],
+  },
+  {
+    id: 'face-pulls-polea-alta',
+    name: 'Face Pulls en polea alta',
+    description: 'Tira de la cuerda hacia la cara manteniendo hombros estables y codos abiertos.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: manos hacia la cara con codos abiertos',
     ],
   },
   {
@@ -1959,6 +2001,10 @@ function getCameraGuidance(
           ? exercise === 'elevaciones-laterales-polea-baja'
             ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas junto a la polea.'
             : 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+        : exercise === 'pajaros-mancuernas'
+          ? 'Ponte de frente o en 3/4, inclina el torso y deja visibles ambos hombros, codos, muñecas y cadera durante todo el recorrido.'
+        : exercise === 'face-pulls-polea-alta'
+          ? 'Ponte de frente o en 3/4 frente a la polea y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -2058,6 +2104,8 @@ function getCameraGuidance(
       exercise !== 'press-militar'
       && exercise !== 'elevaciones-laterales'
       && exercise !== 'elevaciones-laterales-polea-baja'
+      && exercise !== 'pajaros-mancuernas'
+      && exercise !== 'face-pulls-polea-alta'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && torsoLength > 0
@@ -2081,7 +2129,11 @@ function getCameraGuidance(
       : exercise === 'elevaciones-laterales' || exercise === 'elevaciones-laterales-polea-baja'
         ? exercise === 'elevaciones-laterales-polea-baja'
           ? 'Usa una vista frontal o en 3/4, con ambos brazos y la polea dentro del encuadre.'
-          : 'Usa una vista frontal o en 3/4, con ambos brazos completos dentro del encuadre.'
+           : 'Usa una vista frontal o en 3/4, con ambos brazos completos dentro del encuadre.'
+      : exercise === 'pajaros-mancuernas'
+        ? 'Usa una vista frontal o en 3/4, inclina el torso y mantén ambos brazos completos dentro del encuadre.'
+      : exercise === 'face-pulls-polea-alta'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la cuerda dentro del encuadre.'
       : 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.',
   };
 }
@@ -3615,6 +3667,17 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'elevaciones-laterales-polea-baja': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'pajaros-mancuernas': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
+    ],
+    'face-pulls-polea-alta': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -5442,6 +5505,8 @@ function Home() {
                     || exercise.id === 'press-militar'
                      || exercise.id === 'elevaciones-laterales'
                      || exercise.id === 'elevaciones-laterales-polea-baja'
+                    || exercise.id === 'pajaros-mancuernas'
+                    || exercise.id === 'face-pulls-polea-alta'
                     || exercise.id === 'press-banca'
                     || exercise.id === 'triceps-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
