@@ -37,6 +37,7 @@ import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-
 import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
 import declinePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_02_57_19_p.m._1788984656423.png';
 import squatImage from '@assets/ChatGPT_Image_8_sept_2026__23_03_29-removebg-preview_1788926641237.png';
+import shoulderMachinePressImage from '@assets/ChatGPT_Image_18_sept_2026,_12_36_30_1789752998784.png';
 import legPressImage from '@assets/ChatGPT_Image_17_sept_2026,_14_32_47_1789673578570.png';
 import machineExtensionImage from '@assets/ChatGPT_Image_17_sept_2026,_14_46_27_1789674404855.png';
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
@@ -166,7 +167,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
-  'press-hombros-maquina': militaryPressImage,
+  'press-hombros-maquina': shoulderMachinePressImage,
   'elevaciones-laterales': lateralRaiseImage,
   'elevaciones-laterales-polea-baja': lowCableLateralRaiseImage,
   'pajaros-mancuernas': rearDeltFlyImage,
