@@ -42,6 +42,7 @@ import machineExtensionImage from '@assets/ChatGPT_Image_17_sept_2026,_14_46_27_
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
+import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m._1789741994699.png';
 import benchPressImage from '@assets/ChatGPT_Image_16_sept_2026,_22_36_13_1789621905499.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
@@ -161,7 +162,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
   'press-militar': militaryPressImage,
-  'elevaciones-laterales': `${basePath}/lateral-raises.svg`,
+  'elevaciones-laterales': lateralRaiseImage,
   'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
