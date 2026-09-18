@@ -266,15 +266,6 @@
   animation: enter-from-left 720ms 120ms both cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.wordmark-logo {
-  display: block;
-  flex: 0 0 1.9rem;
-  width: 1.9rem;
-  height: 1.9rem;
-  object-fit: contain;
-  filter: drop-shadow(0 0 0.55rem rgba(57, 255, 106, 0.28));
-}
-
 .topbar-back {
   display: inline-flex;
   align-items: center;

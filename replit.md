@@ -1,6 +1,6 @@
-# Coach de postura
+# LiftForm
 
-Coach de postura analiza ejercicios desde la cámara del usuario y corrige la técnica en tiempo real con una cuenta protegida y un plan anual de Lemon Squeezy.
+LiftForm analiza ejercicios desde la cámara del usuario y corrige la técnica en tiempo real con una cuenta protegida y un plan anual de Lemon Squeezy.
 
 ## Run & Operate
 
@@ -22,7 +22,7 @@ Coach de postura analiza ejercicios desde la cámara del usuario y corrige la t�
 
 ## Where things live
 
-- `artifacts/posture-coach/src/App.tsx` — experiencia del coach, Clerk, acceso al plan y checkout.
+- `artifacts/posture-coach/src/App.tsx` — experiencia de LiftForm, Clerk, acceso al plan y checkout.
 - `artifacts/api-server/src/routes/billing.ts` — checkout de Lemon Squeezy, estado de suscripción y webhook firmado.
 - `lib/db/src/schema/billingSubscriptions.ts` — persistencia del vínculo entre Clerk y Lemon Squeezy.
 - `lib/api-spec/openapi.yaml` — contrato fuente de las rutas de facturación.
@@ -39,7 +39,7 @@ Coach de postura analiza ejercicios desde la cámara del usuario y corrige la t�
 - Entrada y registro con Google mediante Clerk.
 - Plan anual de US$2 mediante Lemon Squeezy.
 - Activación y actualización automática del acceso según eventos de suscripción.
-- Coach de ejercicios con análisis de postura en cámara.
+- LiftForm: coach de ejercicios con análisis de postura en cámara.
 - Las futuras calibraciones de ejercicios se harán solo en el código: ajustar rangos, tolerancias, fases y validaciones sin modificar la interfaz.
 
 ## User preferences

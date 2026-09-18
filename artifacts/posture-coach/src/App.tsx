@@ -48,7 +48,6 @@ import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
-import brandLogoImage from '@assets/ChatGPT_Image_15_sept_2026__02_39_33_a.m.-removebg-preview_1789458540404.png';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -72,7 +71,7 @@ import {
 const queryClient = new QueryClient();
 
 // MODO TEMPORAL DE DESARROLLO:
-// Se conserva todo el código de Clerk y Lemon Squeezy, pero el coach abre
+// Se conserva todo el código de Clerk y Lemon Squeezy, pero LiftForm abre
 // directamente mientras agregamos y ajustamos ejercicios.
 // Para reactivar login y pagos, cambiar este valor a true.
 const AUTH_AND_BILLING_ENABLED = false;
@@ -93,11 +92,7 @@ if (AUTH_AND_BILLING_ENABLED && !clerkPubKey) {
 const clerkAppearance = {
   theme: shadcn,
   cssLayerName: 'clerk',
-  options: {
-    logoPlacement: 'inside' as const,
-    logoLinkUrl: basePath || '/',
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
-  },
+  options: {},
   variables: {
     colorPrimary: '#39ff6a',
     colorForeground: '#f0f5fb',
@@ -5227,8 +5222,7 @@ function Home() {
             </button>
           ) : (
             <div className="wordmark">
-               <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
-              <span>COACH / POSTURA</span>
+              <span>LiftForm</span>
             </div>
           )}
           <div className="topbar-actions">
@@ -6122,8 +6116,7 @@ function PublicWelcome() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
-            <span>COACH / POSTURA</span>
+            <span>LiftForm</span>
           </div>
           <div className="privacy-chip">
             <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -6200,8 +6193,7 @@ function SubscriptionRequired() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
-            <span>COACH / POSTURA</span>
+            <span>LiftForm</span>
           </div>
           <UserMenu />
         </header>
@@ -6215,10 +6207,10 @@ function SubscriptionRequired() {
             <div className="account-mark account-mark--paid" aria-hidden="true">
               <CheckCircle2 size={22} strokeWidth={1.8} />
             </div>
-            <h1 id="plan-title" className="welcome-title">Activa tu coach.</h1>
+            <h1 id="plan-title" className="welcome-title">Activa LiftForm.</h1>
             <p className="welcome-subtitle">
               Hola{user?.firstName ? `, ${user.firstName}` : ''}. Tu cuenta ya está lista.
-              Activa el plan anual por <strong>US$2</strong> para abrir las sesiones de postura.
+              Activa el plan anual por <strong>US$2</strong> para abrir tus sesiones en LiftForm.
             </p>
             <button
               type="button"
@@ -6283,8 +6275,7 @@ function PaymentReturnPage() {
         <main className="coach-layout">
           <header className="topbar">
             <div className="wordmark">
-              <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
-              <span>COACH / POSTURA</span>
+            <span>LiftForm</span>
             </div>
             <UserMenu />
           </header>
@@ -6295,7 +6286,7 @@ function PaymentReturnPage() {
               </div>
               <h1 id="payment-confirmed-title" className="welcome-title">Pago confirmado.</h1>
               <p className="welcome-subtitle">
-                Tu plan está activo para esta cuenta de Clerk. Ya puedes abrir tu coach de postura.
+                 Tu plan está activo para esta cuenta de Clerk. Ya puedes abrir LiftForm.
               </p>
               <div className="account-actions">
                 <button
@@ -6303,7 +6294,7 @@ function PaymentReturnPage() {
                   className="primary-action"
                   onClick={() => setLocation('/')}
                 >
-                  Entrar al coach
+                  Entrar a LiftForm
                   <ArrowRight size={17} aria-hidden="true" />
                 </button>
                 {billing.data.receiptUrl && (
@@ -6336,8 +6327,7 @@ function PaymentReturnPage() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-              <img className="wordmark-logo" src={brandLogoImage} alt="" aria-hidden="true" />
-            <span>COACH / POSTURA</span>
+            <span>LiftForm</span>
           </div>
           <UserMenu />
         </header>
@@ -6352,7 +6342,7 @@ function PaymentReturnPage() {
             <p className="welcome-subtitle">
               {timedOut
                 ? 'El pago puede estar confirmado, pero todavía no recibimos el aviso de Lemon Squeezy.'
-                : 'Lemon Squeezy está confirmando tu pago. Tu coach se abrirá automáticamente en cuanto recibamos la confirmación.'}
+                 : 'Lemon Squeezy está confirmando tu pago. LiftForm se abrirá automáticamente en cuanto recibamos la confirmación.'}
             </p>
             {!timedOut && (
               <div className="payment-checking" role="status" aria-live="polite">
@@ -6519,13 +6509,13 @@ function ClerkProviderWithRoutes() {
         signIn: {
           start: {
             title: 'Bienvenido de nuevo',
-            subtitle: 'Entra para continuar con tu coach',
+             subtitle: 'Entra para continuar con LiftForm',
           },
         },
         signUp: {
           start: {
             title: 'Crea tu cuenta',
-            subtitle: 'Activa tu espacio de postura',
+             subtitle: 'Activa tu espacio en LiftForm',
           },
         },
       }}
