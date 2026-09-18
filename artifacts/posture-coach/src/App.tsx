@@ -46,6 +46,7 @@ import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m.
 import lowCableLateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_11_52_57_1789750471669.png';
 import rearDeltFlyImage from '@assets/ChatGPT_Image_18_sept_2026,_12_00_17_1789751148309.png';
 import facePullImage from '@assets/ChatGPT_Image_18_sept_2026,_12_10_35_1789751458880.png';
+import reverseMachineFlyImage from '@assets/ChatGPT_Image_18_sept_2026,_12_23_41_1789752227304.png';
 import benchPressImage from '@assets/ChatGPT_Image_16_sept_2026,_22_36_13_1789621905499.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
@@ -169,7 +170,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'elevaciones-laterales-polea-baja': lowCableLateralRaiseImage,
   'pajaros-mancuernas': rearDeltFlyImage,
   'face-pulls-polea-alta': facePullImage,
-  'aperturas-inversas-maquina': rearDeltFlyImage,
+  'aperturas-inversas-maquina': reverseMachineFlyImage,
   'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
