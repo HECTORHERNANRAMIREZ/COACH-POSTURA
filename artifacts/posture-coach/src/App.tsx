@@ -151,9 +151,11 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
+type MuscleGroup = 'pecho';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
+  muscleGroup?: MuscleGroup;
   description: string;
   angleLabel: string;
   cameraNote?: string;
@@ -320,6 +322,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'fondos',
     name: 'Fondos en barra',
+    muscleGroup: 'pecho',
     description: 'Inclina el torso hacia delante y desciende hasta 90° de codo para enfatizar el pecho.',
     angleLabel: 'Torso 30–40° · codo 85–95°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -431,6 +434,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'flexiones',
     name: 'Flexiones de pecho',
+    muscleGroup: 'pecho',
     description: 'Mantén los codos cerca del torso y el cuerpo en línea.',
     angleLabel: 'Codo respecto al torso 45–90° · alineación 162–180°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -446,6 +450,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'flexiones-declinadas',
     name: 'Flexiones declinadas',
+    muscleGroup: 'pecho',
     description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
     angleLabel: 'Codo 30–60° · cuerpo 162–180°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -461,6 +466,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'flexiones-pica',
     name: 'Flexiones en pica',
+    muscleGroup: 'pecho',
     description: 'Eleva la cadera y lleva la cabeza hacia el suelo con control.',
     angleLabel: 'Codo respecto al cuerpo · objetivo 45–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -605,6 +611,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'cruces-polea-baja-alta',
     name: 'Cruces de polea baja, media y alta',
+    muscleGroup: 'pecho',
     description: 'Lleva las manos desde la polea baja, media o alta hacia delante del pecho con control, manteniendo hombros, codos y muñecas alineados.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto a las poleas.',
@@ -624,6 +631,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-banca',
     name: 'Press de banca',
+    muscleGroup: 'pecho',
     description: 'Empuja la barra desde el pecho manteniendo hombros, codos, muñecas y cadera visibles.',
     angleLabel: 'Hombros · codos · muñecas · cadera',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos, las muñecas y la cadera durante todo el recorrido.',
@@ -645,6 +653,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-banca-inclinado',
     name: 'Press de banca inclinado',
+    muscleGroup: 'pecho',
     description: 'Empuja la barra desde la parte alta del pecho manteniendo hombros, codos y muñecas alineados.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
@@ -685,6 +694,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-plano-inclinado',
     name: 'Press plano inclinado',
+    muscleGroup: 'pecho',
     description: 'Empuja las mancuernas desde el pecho manteniendo hombros, codos y muñecas alineados sobre el banco inclinado.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
@@ -907,6 +917,17 @@ const exercises: ExerciseDefinition[] = [
     trackedAngleLabels: ['Codo: 80–100°', 'Brazo respecto al suelo: 80–100°', 'Línea hombro–cadera–tobillo: 162–180°'],
   },
 ];
+
+const exerciseGroups = [
+  {
+    label: 'Pecho',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'pecho'),
+  },
+  {
+    label: 'Por clasificar',
+    exercises: exercises.filter((exercise) => !exercise.muscleGroup),
+  },
+].filter((group) => group.exercises.length > 0);
 
 const SQUAT_VALID_MIN_ANGLE = 83;
 const SQUAT_VALID_MAX_ANGLE = 90;
@@ -5710,8 +5731,11 @@ function Home() {
                 Selecciona un movimiento para empezar a observar tu técnica en tiempo real.
               </p>
               <div className="exercise-list">
-                {exercises.map((exercise) => {
-                  const ExerciseIcon = exercise.id === 'fondos'
+                {exerciseGroups.map((group) => (
+                  <div className="exercise-group" key={group.label}>
+                    <h2 className="exercise-group-title">{group.label}</h2>
+                    {group.exercises.map((exercise) => {
+                      const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
                     || exercise.id === 'dominadas-supinas'
                     || exercise.id === 'muscle-up'
@@ -5748,40 +5772,42 @@ function Home() {
                       || exercise.id === 'zancada-banco'
                       ? ArrowDown
                       : Square;
-                  return (
-                    <div
-                      key={exercise.id}
-                      className="exercise-card"
-                      data-testid={`exercise-${exercise.id}`}
-                    >
-                      <button
-                        type="button"
-                        className="exercise-card-icon"
-                        aria-label={`Ampliar imagen de ${exercise.name}`}
-                        onClick={() => setPreviewExercise(exercise)}
-                      >
-                        <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
-                        <span className="exercise-card-zoom-hint" aria-hidden="true">
-                          <Maximize2 size={12} strokeWidth={2} />
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="exercise-card-action"
-                        onClick={() => void startCamera(exercise.id)}
-                      >
-                        <span className="exercise-card-copy">
-                          <strong>{exercise.name}</strong>
-                          <small>{exercise.description}</small>
-                          {exercise.cameraNote && (
-                            <small className="exercise-card-note">{exercise.cameraNote}</small>
-                          )}
-                        </span>
-                        <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
-                      </button>
-                    </div>
-                  );
-                })}
+                      return (
+                        <div
+                          key={exercise.id}
+                          className="exercise-card"
+                          data-testid={`exercise-${exercise.id}`}
+                        >
+                          <button
+                            type="button"
+                            className="exercise-card-icon"
+                            aria-label={`Ampliar imagen de ${exercise.name}`}
+                            onClick={() => setPreviewExercise(exercise)}
+                          >
+                            <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
+                            <span className="exercise-card-zoom-hint" aria-hidden="true">
+                              <Maximize2 size={12} strokeWidth={2} />
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="exercise-card-action"
+                            onClick={() => void startCamera(exercise.id)}
+                          >
+                            <span className="exercise-card-copy">
+                              <strong>{exercise.name}</strong>
+                              <small>{exercise.description}</small>
+                              {exercise.cameraNote && (
+                                <small className="exercise-card-note">{exercise.cameraNote}</small>
+                              )}
+                            </span>
+                            <ArrowRight className="exercise-card-arrow" size={17} strokeWidth={1.8} aria-hidden="true" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
               <p className="privacy-note">
                 <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />

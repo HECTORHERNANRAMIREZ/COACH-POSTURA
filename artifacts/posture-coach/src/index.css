@@ -500,6 +500,25 @@
   text-align: left;
 }
 
+.exercise-group {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.exercise-group + .exercise-group {
+  margin-top: 0.8rem;
+}
+
+.exercise-group-title {
+  margin: 0.45rem 0 0.15rem;
+  color: rgba(240, 245, 251, 0.94);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .exercise-card {
   display: grid;
   grid-template-columns: 2.7rem minmax(0, 1fr) auto;
