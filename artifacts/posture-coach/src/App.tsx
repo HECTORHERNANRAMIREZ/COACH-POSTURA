@@ -51,6 +51,7 @@ import reverseMachineFlyImage from '@assets/ChatGPT_Image_18_sept_2026,_12_23_41
 import lowToHighCableCrossoverImage from '@assets/ChatGPT_Image_18_sept_2026,_12_58_09_1789754327739.png';
 import benchPressImage from '@assets/ChatGPT_Image_16_sept_2026,_22_36_13_1789621905499.png';
 import inclineBenchPressImage from '@assets/ChatGPT_Image_18_sept_2026,_12_52_44_1789753996627.png';
+import dumbbellFlatPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_04_03_1789754734704.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
@@ -178,7 +179,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'cruces-polea-baja-alta': lowToHighCableCrossoverImage,
   'press-banca': benchPressImage,
   'press-banca-inclinado': inclineBenchPressImage,
-  'press-plano-mancuernas': benchPressImage,
+  'press-plano-mancuernas': dumbbellFlatPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
