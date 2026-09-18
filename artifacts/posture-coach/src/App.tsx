@@ -140,7 +140,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -176,6 +176,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'prensa-piernas': legPressImage,
   'extensiones-maquina': machineExtensionImage,
   'curl-femoral': `${basePath}/hamstring-curl-seated.png`,
+  'elevacion-talones-pie': `${basePath}/standing-calf-raise.png`,
   'hip-thrust-barra': `${basePath}/hip-thrust-barbell.png`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -594,6 +595,25 @@ const exercises: ExerciseDefinition[] = [
       'Rodillas: lectura izquierda y derecha',
       'Tobillos: lectura izquierda y derecha',
       'Recorrido inicial: rodilla 120–180° abajo · 30–90° arriba',
+    ],
+  },
+  {
+    id: 'elevacion-talones-pie',
+    name: 'Elevación de talones de pie',
+    description: 'Eleva los talones con control sin perder la alineación del torso ni bloquear las rodillas.',
+    angleLabel: 'Tobillos · rodillas · torso',
+    cameraNote: 'Nota: vista lateral; deja visibles hombro, cadera, rodilla, tobillo y pie durante todo el movimiento.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'knee', label: 'rodilla' },
+      { joint: 'ankle', label: 'tobillo' },
+      { joint: 'foot', label: 'pie' },
+    ],
+    trackedAngleLabels: [
+      'Torso: alineación respecto a la vertical',
+      'Rodilla: estabilidad durante la elevación',
+      'Tobillo: elevación del talón',
     ],
   },
   {
@@ -1063,6 +1083,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: rodillas y tobillos',
         'Se muestran ambos lados para comparar el movimiento',
         `Recorrido inicial: rodilla ${HAMSTRING_CURL_START_MIN_ANGLE}–${HAMSTRING_CURL_START_MAX_ANGLE}° abajo y ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}° arriba`,
+      ];
+    case 'elevacion-talones-pie':
+      return [
+        'Lecturas en vivo: tobillo, rodilla y torso',
+        'Vista lateral para seguir la elevación del talón',
+        'Mantén las rodillas estables y el torso alineado durante todo el movimiento',
       ];
     case 'hip-thrust-barra':
       return [
@@ -1852,6 +1878,8 @@ function getCameraGuidance(
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
            : exercise === 'curl-femoral'
              ? 'Ponte de lado; deja visibles ambas rodillas y ambos tobillos, y coloca la cámara a la altura de la máquina tanto sentado como tumbado.'
+           : exercise === 'elevacion-talones-pie'
+             ? 'Ponte de lado y deja visibles hombro, cadera, rodilla, tobillo y pie durante toda la elevación.'
           : exercise === 'peso-muerto-rumano'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
          : exercise === 'hip-thrust-barra'
@@ -3187,6 +3215,13 @@ function calculateExerciseAngle(
       keypoints[indexes.ankle],
     );
   }
+  if (exercise === 'elevacion-talones-pie') {
+    return calculateAngle(
+      keypoints[indexes.knee],
+      keypoints[indexes.ankle],
+      keypoints[MUSCLE_UP_FOOT_INDEX[side]],
+    );
+  }
   if (exercise === 'peso-muerto-rumano') {
     return calculateAngle(
       keypoints[indexes.shoulder],
@@ -3329,7 +3364,7 @@ function getAngleDiagnosticPoints(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
 ): AngleDiagnosticPoint[] {
-  const labels: Record<ExerciseId, Array<{ label: string; joint: keyof typeof sideKeypoints.left }>> = {
+  const labels: Record<ExerciseId, Array<{ label: string; joint: TrackedJoint }>> = {
     fondos: [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
@@ -3425,6 +3460,13 @@ function getAngleDiagnosticPoints(
     'curl-femoral': [
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'elevacion-talones-pie': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+      { label: 'Pie', joint: 'foot' },
     ],
     'hip-thrust-barra': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -3615,6 +3657,45 @@ function calculateExtremityAngleReadings(
 ): LiveAngleReading[] {
   const definition = getExercise(exercise);
   if (!definition) return [];
+
+  if (exercise === 'elevacion-talones-pie') {
+    const emptyReading = (label: string): LiveAngleReading => (
+      createLiveAngleReading(label, null, 'Seguimiento de elevación')
+    );
+    if (!keypoints || !dominantSide) {
+      return ['Torso', 'Rodilla', 'Tobillo'].map(emptyReading);
+    }
+
+    const indexes = sideKeypoints[dominantSide];
+    return [
+      createLiveAngleReading(
+        'Torso',
+        calculateForwardLeanAngle(
+          keypoints[indexes.shoulder],
+          keypoints[indexes.hip],
+        ),
+        'Alineación respecto a la vertical',
+      ),
+      createLiveAngleReading(
+        'Rodilla',
+        calculateAngle(
+          keypoints[indexes.hip],
+          keypoints[indexes.knee],
+          keypoints[indexes.ankle],
+        ),
+        'Estable durante la elevación',
+      ),
+      createLiveAngleReading(
+        'Tobillo',
+        calculateAngle(
+          keypoints[indexes.knee],
+          keypoints[indexes.ankle],
+          keypoints[MUSCLE_UP_FOOT_INDEX[dominantSide]],
+        ),
+        'Elevación del talón',
+      ),
+    ];
+  }
 
   const sides: PoseSide[] = definition.trackBothSides
     ? ['left', 'right']
@@ -5164,6 +5245,7 @@ function Home() {
                     || exercise.id === 'peso-muerto-rumano'
                      || exercise.id === 'hip-thrust-barra'
                      || exercise.id === 'curl-femoral'
+                     || exercise.id === 'elevacion-talones-pie'
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -5560,6 +5642,17 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'elevacion-talones-pie' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado y deja visibles hombro, cadera, rodilla, tobillo y pie.</li>
+                    <li><b>Posición:</b> mantén el torso alineado y las rodillas estables, sin bloquearlas ni flexionarlas para ganar impulso.</li>
+                    <li><b>Movimiento:</b> eleva los talones de forma controlada y vuelve a apoyar con suavidad, sin rebotes.</li>
+                    <li><b>Lecturas:</b> se muestran en vivo la alineación del torso y los ángulos de rodilla y tobillo.</li>
+                  </ul>
+                </details>
+              )}
               <div
                 className={`video-stage ${
                   selectedExercise === 'fondos' ? 'video-stage--dip' : ''
@@ -5597,6 +5690,7 @@ function Home() {
                       || selectedExercise === 'remo-barra'
                        || selectedExercise === 'hip-thrust-barra'
                        || selectedExercise === 'curl-femoral'
+                       || selectedExercise === 'elevacion-talones-pie'
                       || selectedExercise === 'plancha'
                        ? selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
                          ? 'trasera'
