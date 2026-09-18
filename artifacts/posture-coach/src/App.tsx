@@ -139,7 +139,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -169,6 +169,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'elevaciones-laterales-polea-baja': lowCableLateralRaiseImage,
   'pajaros-mancuernas': rearDeltFlyImage,
   'face-pulls-polea-alta': facePullImage,
+  'aperturas-inversas-maquina': rearDeltFlyImage,
   'press-banca': benchPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
@@ -550,6 +551,25 @@ const exercises: ExerciseDefinition[] = [
       'Codos: lectura izquierda y derecha',
       'Muñecas: lectura izquierda y derecha',
       'Recorrido: manos hacia la cara con codos abiertos',
+    ],
+  },
+  {
+    id: 'aperturas-inversas-maquina',
+    name: 'Aperturas inversas en máquina',
+    description: 'Abre los brazos hacia atrás con control, manteniendo el pecho apoyado y los hombros estables.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos, muñecas y la máquina durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: apertura hacia atrás con el pecho apoyado',
     ],
   },
   {
@@ -2006,6 +2026,8 @@ function getCameraGuidance(
           ? 'Ponte de frente o en 3/4, inclina el torso y deja visibles ambos hombros, codos, muñecas y cadera durante todo el recorrido.'
         : exercise === 'face-pulls-polea-alta'
           ? 'Ponte de frente o en 3/4 frente a la polea y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+        : exercise === 'aperturas-inversas-maquina'
+          ? 'Ponte de frente o en 3/4 a la máquina y deja visibles ambos hombros, codos y muñecas junto al respaldo durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -2107,6 +2129,7 @@ function getCameraGuidance(
       && exercise !== 'elevaciones-laterales-polea-baja'
       && exercise !== 'pajaros-mancuernas'
       && exercise !== 'face-pulls-polea-alta'
+      && exercise !== 'aperturas-inversas-maquina'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && torsoLength > 0
@@ -2135,6 +2158,8 @@ function getCameraGuidance(
         ? 'Usa una vista frontal o en 3/4, inclina el torso y mantén ambos brazos completos dentro del encuadre.'
       : exercise === 'face-pulls-polea-alta'
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la cuerda dentro del encuadre.'
+      : exercise === 'aperturas-inversas-maquina'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la máquina dentro del encuadre.'
       : 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.',
   };
 }
@@ -3679,6 +3704,11 @@ function getAngleDiagnosticPoints(
       { label: 'Cadera', joint: 'hip' },
     ],
     'face-pulls-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'aperturas-inversas-maquina': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -5508,6 +5538,7 @@ function Home() {
                      || exercise.id === 'elevaciones-laterales-polea-baja'
                     || exercise.id === 'pajaros-mancuernas'
                     || exercise.id === 'face-pulls-polea-alta'
+                    || exercise.id === 'aperturas-inversas-maquina'
                     || exercise.id === 'press-banca'
                     || exercise.id === 'triceps-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
