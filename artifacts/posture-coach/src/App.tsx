@@ -140,7 +140,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-banca' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -177,6 +177,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'extensiones-maquina': machineExtensionImage,
   'curl-femoral': `${basePath}/hamstring-curl-seated.png`,
   'elevacion-talones-pie': `${basePath}/standing-calf-raise.png`,
+  'maquina-aductores': `${basePath}/adductor-machine.png`,
   'hip-thrust-barra': `${basePath}/hip-thrust-barbell.png`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -614,6 +615,20 @@ const exercises: ExerciseDefinition[] = [
       'Torso: alineación respecto a la vertical',
       'Rodilla: estabilidad durante la elevación',
       'Tobillo: elevación del talón',
+    ],
+  },
+  {
+    id: 'maquina-aductores',
+    name: 'Máquina de aductores',
+    description: 'Controla el movimiento de las piernas y mantén los tobillos visibles durante todo el recorrido.',
+    angleLabel: 'Tobillos',
+    cameraNote: 'Nota: vista frontal; deja visibles ambos tobillos y la máquina durante todo el ejercicio.',
+    trackedJoints: [
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Tobillos: lectura izquierda y derecha',
     ],
   },
   {
@@ -1089,6 +1104,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: tobillo, rodilla y torso',
         'Vista lateral para seguir la elevación del talón',
         'Mantén las rodillas estables y el torso alineado durante todo el movimiento',
+      ];
+    case 'maquina-aductores':
+      return [
+        'Lecturas en vivo: tobillos izquierdo y derecho',
+        'Vista frontal para mantener ambos tobillos visibles',
+        'No se muestran lecturas de caderas, rodillas ni torso',
       ];
     case 'hip-thrust-barra':
       return [
@@ -1880,6 +1901,8 @@ function getCameraGuidance(
              ? 'Ponte de lado; deja visibles ambas rodillas y ambos tobillos, y coloca la cámara a la altura de la máquina tanto sentado como tumbado.'
            : exercise === 'elevacion-talones-pie'
              ? 'Ponte de lado y deja visibles hombro, cadera, rodilla, tobillo y pie durante toda la elevación.'
+           : exercise === 'maquina-aductores'
+             ? 'Ponte de frente a la máquina y deja visibles ambos tobillos durante todo el recorrido.'
           : exercise === 'peso-muerto-rumano'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
          : exercise === 'hip-thrust-barra'
@@ -3215,7 +3238,7 @@ function calculateExerciseAngle(
       keypoints[indexes.ankle],
     );
   }
-  if (exercise === 'elevacion-talones-pie') {
+  if (exercise === 'elevacion-talones-pie' || exercise === 'maquina-aductores') {
     return calculateAngle(
       keypoints[indexes.knee],
       keypoints[indexes.ankle],
@@ -3467,6 +3490,9 @@ function getAngleDiagnosticPoints(
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
       { label: 'Pie', joint: 'foot' },
+    ],
+    'maquina-aductores': [
+      { label: 'Tobillo', joint: 'ankle' },
     ],
     'hip-thrust-barra': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -5246,6 +5272,7 @@ function Home() {
                      || exercise.id === 'hip-thrust-barra'
                      || exercise.id === 'curl-femoral'
                      || exercise.id === 'elevacion-talones-pie'
+                     || exercise.id === 'maquina-aductores'
                     || exercise.id === 'curl-biceps'
                     ? Activity
                     : exercise.id === 'sentadillas'
@@ -5650,6 +5677,16 @@ function Home() {
                     <li><b>Posición:</b> mantén el torso alineado y las rodillas estables, sin bloquearlas ni flexionarlas para ganar impulso.</li>
                     <li><b>Movimiento:</b> eleva los talones de forma controlada y vuelve a apoyar con suavidad, sin rebotes.</li>
                     <li><b>Lecturas:</b> se muestran en vivo la alineación del torso y los ángulos de rodilla y tobillo.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'maquina-aductores' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de frente a la máquina y deja visibles ambos tobillos.</li>
+                    <li><b>Movimiento:</b> realiza el recorrido de forma controlada, sin rebotes ni movimientos bruscos.</li>
+                    <li><b>Lecturas:</b> el panel muestra únicamente el seguimiento de los tobillos izquierdo y derecho.</li>
                   </ul>
                 </details>
               )}
