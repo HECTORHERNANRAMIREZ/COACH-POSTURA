@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -730,6 +730,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'triceps-polea-alta',
     name: 'Extensiones de tríceps en polea alta',
+    muscleGroup: 'triceps',
     description: 'Mantén los codos fijos y extiende los brazos con control.',
     angleLabel: 'Codo · extensión controlada',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -957,6 +958,10 @@ const exerciseGroups = [
   {
     label: 'Pierna',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'pierna'),
+  },
+  {
+    label: 'Tríceps',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'triceps'),
   },
   {
     label: 'Por clasificar',
