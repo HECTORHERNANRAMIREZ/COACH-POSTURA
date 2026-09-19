@@ -419,6 +419,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'peso-muerto-rumano',
     name: 'Peso muerto rumano',
+    muscleGroup: 'pierna',
     description: 'Haz una bisagra de cadera con control y mantén alineadas todas las extremidades.',
     angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el recorrido.',
