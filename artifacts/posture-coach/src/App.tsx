@@ -46,6 +46,7 @@ import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._17
 import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_1789784284541.png';
 import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
 import pallofPressImage from '@assets/ChatGPT_Image_18_sept_2026,_21_47_36_1789786072344.png';
+import russianTwistImage from '@assets/ChatGPT_Image_18_sept_2026,_21_56_46_1789786639535.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m._1789741994699.png';
 import lowCableLateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_11_52_57_1789750471669.png';
@@ -149,7 +150,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -206,6 +207,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
   'press-pallof-polea-banda': pallofPressImage,
+  'giros-rusos': russianTwistImage,
 };
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
@@ -1018,6 +1020,32 @@ const exercises: ExerciseDefinition[] = [
       'Recorrido: manos desde el pecho hasta la extensión y regreso',
     ],
   },
+  {
+    id: 'giros-rusos',
+    name: 'Giros rusos',
+    muscleGroup: 'abdomen',
+    description: 'Mantén las piernas elevadas y rota el torso de lado a lado con control, sin perder la posición.',
+    angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el movimiento.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Caderas: lectura izquierda y derecha',
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Recorrido: rotación controlada de lado a lado',
+    ],
+  },
 ];
 
 const exerciseGroups = [
@@ -1665,6 +1693,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: cadera, rodillas y tobillos',
         'Se muestran ambos lados para comparar el movimiento',
         'Calibración del recorrido: pendiente',
+      ];
+    case 'giros-rusos':
+      return [
+        'Lecturas en vivo: hombros, codos, muñecas, caderas, rodillas y tobillos',
+        'Se muestran ambos lados para comprobar todas las extremidades',
+        'Calibración del recorrido de rotación: pendiente',
       ];
     default: {
       const config = getRepetitionConfig(exercise);
@@ -2352,6 +2386,8 @@ function getCameraGuidance(
           ? 'Ponte de frente o en 3/4 frente a las poleas y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'press-pallof-polea-banda'
           ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+        : exercise === 'giros-rusos'
+          ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -2467,6 +2503,7 @@ function getCameraGuidance(
       && exercise !== 'aperturas-inversas-maquina'
       && exercise !== 'cruces-polea-baja-alta'
        && exercise !== 'press-pallof-polea-banda'
+       && exercise !== 'giros-rusos'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && exercise !== 'press-banca-inclinado'
@@ -2506,6 +2543,8 @@ function getCameraGuidance(
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y las dos poleas dentro del encuadre.'
       : exercise === 'press-pallof-polea-banda'
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la polea o banda dentro del encuadre.'
+      : exercise === 'giros-rusos'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-mancuernas'
@@ -4303,6 +4342,14 @@ function getAngleDiagnosticPoints(
       { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'giros-rusos': [
+      { label: 'Hombros', joint: 'shoulder' },
+      { label: 'Codos', joint: 'elbow' },
+      { label: 'Muñecas', joint: 'wrist' },
+      { label: 'Caderas', joint: 'hip' },
+      { label: 'Rodillas', joint: 'knee' },
+      { label: 'Tobillos', joint: 'ankle' },
     ],
   };
   const indexes = side ? sideKeypoints[side] : null;
@@ -6246,7 +6293,9 @@ function Home() {
                         ? cameraGuidance.detail
                         : !detectionStable
                           ? 'Mantén las articulaciones visibles; no se contará hasta estabilizar la pose 3D.'
-                          : 'El contador está activo. Detén el curso cuando hayas terminado.'
+                          : hasEvaluationCounter
+                            ? 'El contador está activo. Detén el curso cuando hayas terminado.'
+                            : 'Las lecturas están activas. Mantén la posición y completa el movimiento con control.'
                       : personDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
@@ -6429,6 +6478,18 @@ function Home() {
                     <li><b>Press:</b> extiende las manos al frente hasta que ambos codos lleguen a {PALLOF_END_MIN_ANGLE}°–{PALLOF_END_MAX_ANGLE}°, sin girar los hombros ni el torso.</li>
                     <li><b>Muñecas:</b> mantenlas neutras y alineadas con los antebrazos durante todo el recorrido.</li>
                     <li><b>Regreso:</b> vuelve lentamente al pecho; el contador cierra la repetición al completar la extensión y el regreso.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'giros-rusos' && (
+                <details className="pulldown-instructions">
+                  <summary>Lecturas y posición</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> usa una vista frontal o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.</li>
+                    <li><b>Posición:</b> siéntate con el torso ligeramente inclinado y mantén las piernas elevadas o extendidas según tu nivel, sin perder el equilibrio.</li>
+                    <li><b>Rotación:</b> gira el torso de un lado al otro con control; evita mover solo los brazos o impulsarte con las piernas.</li>
+                    <li><b>Lecturas:</b> se muestran los ángulos de hombros, codos, muñecas, caderas, rodillas y tobillos de ambos lados.</li>
+                    <li><b>Recorrido:</b> el rango de rotación queda registrado como referencia hasta calibrarlo con una ejecución correcta.</li>
                   </ul>
                 </details>
               )}
