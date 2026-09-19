@@ -167,7 +167,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'barra-reloj' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -239,6 +239,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
   'elevaciones-piernas-barra': hangingLegRaiseImage,
+  'barra-reloj': hangingLegRaiseImage,
   'elevaciones-piernas-suelo': floorLegRaiseImage,
   'press-pallof-polea-banda': pallofPressImage,
   'giros-rusos': russianTwistImage,
@@ -1366,6 +1367,32 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
   {
+    id: 'barra-reloj',
+    name: 'Barra reloj',
+    muscleGroup: 'abdomen',
+    description: 'Cuelga de la barra y mueve las piernas con control siguiendo el recorrido del reloj, sin balancear el cuerpo.',
+    angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos · pies',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles la barra, todo el cuerpo y las extremidades completas. No hace falta mostrar la cabeza.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+      { joint: 'foot', label: 'pies' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros, codos y muñecas: lectura izquierda y derecha',
+      'Caderas, rodillas y tobillos: lectura izquierda y derecha',
+      'Pies: ambos dentro del encuadre',
+      'Recorrido: movimiento de piernas alrededor del eje de la barra',
+      'Calibración del recorrido: pendiente',
+      'Cabeza: no necesaria para iniciar ni contar',
+    ],
+  },
+  {
     id: 'elevaciones-piernas-suelo',
     name: 'Elevaciones de piernas en suelo',
     muscleGroup: 'abdomen',
@@ -1614,6 +1641,10 @@ const MUSCLE_UP_ANGLE_KEYS: MuscleUpAngleKey[] = [
 const MUSCLE_UP_FOOT_INDEX: Record<PoseSide, number> = {
   left: 31,
   right: 32,
+};
+const FOOT_HEEL_INDEX: Record<PoseSide, number> = {
+  left: 29,
+  right: 30,
 };
 
 function createMuscleUpAngles(): MuscleUpAngles {
@@ -2352,6 +2383,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Activación: cadera <${HANGING_LEG_RAISE_ACTIVATION_ANGLE}°`,
         `Final: cadera ${HANGING_LEG_RAISE_END_MIN_ANGLE}–${HANGING_LEG_RAISE_END_MAX_ANGLE}°`,
         'Cuerpo completo y extremidades visibles; la cara no es necesaria',
+      ];
+    case 'barra-reloj':
+      return [
+        'Lecturas en vivo: hombros, codos, muñecas, caderas, rodillas y tobillos de ambos lados',
+        'Pies completos dentro del encuadre',
+        'Cuerpo completo y extremidades visibles; la cabeza no interviene',
+        'Calibración del recorrido del reloj: pendiente',
       ];
     case 'elevaciones-piernas-suelo':
       return [
@@ -3156,8 +3194,8 @@ function getCameraGuidance(
            ? 'Ponte de lado y deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.'
          : exercise === 'rueda-abdominal'
            ? 'Ponte de lado o en 3/4 y deja visibles la cabeza, ambos hombros, codos, muñecas, cadera, rodillas y tobillos durante todo el recorrido.'
-          : exercise === 'elevaciones-piernas-barra'
-            ? 'Ponte de lado o en 3/4 frente a la barra y deja visibles la barra, ambos brazos, ambas piernas y los pies completos. No hace falta mostrar la cara.'
+        : exercise === 'elevaciones-piernas-barra' || exercise === 'barra-reloj'
+             ? 'Ponte de lado o en 3/4 frente a la barra y deja visibles la barra, ambos brazos, ambas piernas y los pies completos. No hace falta mostrar la cabeza.'
           : exercise === 'elevaciones-piernas-suelo'
             ? 'Ponte de lado y deja visibles ambos tobillos, rodillas y caderas durante todo el recorrido. No hace falta mostrar la cara.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
@@ -3298,8 +3336,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'pull-over-polea-alta'
         ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
-      : exercise === 'elevaciones-piernas-barra'
-        ? 'Usa una vista lateral o en 3/4, con la barra, ambos brazos, ambas piernas y los pies completos dentro del encuadre. La cara no interviene.'
+           : exercise === 'elevaciones-piernas-barra' || exercise === 'barra-reloj'
+             ? 'Usa una vista lateral o en 3/4, con la barra, ambos brazos, ambas piernas y los pies completos dentro del encuadre. La cabeza no interviene.'
       : exercise === 'elevaciones-piernas-suelo'
         ? 'Usa una vista lateral, con ambos tobillos, rodillas y caderas completos dentro del encuadre. La cara no interviene.'
       : exercise === 'dominadas-comando'
@@ -4970,7 +5008,7 @@ function calculateExerciseAngle(
       keypoints[indexes.knee],
     );
   }
-  if (exercise === 'elevaciones-piernas-barra') {
+  if (exercise === 'elevaciones-piernas-barra' || exercise === 'barra-reloj') {
     return calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
@@ -5108,7 +5146,7 @@ function calculateRepetitionAngle(
       keypoints[indexes.ankle],
     );
   }
-  if (exercise === 'elevaciones-piernas-barra') {
+  if (exercise === 'elevaciones-piernas-barra' || exercise === 'barra-reloj') {
     return calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
@@ -5494,6 +5532,15 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillos', joint: 'ankle' },
       { label: 'Pies', joint: 'foot' },
     ],
+    'barra-reloj': [
+      { label: 'Hombros', joint: 'shoulder' },
+      { label: 'Codos', joint: 'elbow' },
+      { label: 'Muñecas', joint: 'wrist' },
+      { label: 'Caderas', joint: 'hip' },
+      { label: 'Rodillas', joint: 'knee' },
+      { label: 'Tobillos', joint: 'ankle' },
+      { label: 'Pies', joint: 'foot' },
+    ],
     'elevaciones-piernas-suelo': [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
@@ -5712,7 +5759,9 @@ function calculateExtremityAngleReadings(
     : dominantSide
       ? [dominantSide]
       : [];
-  const joints = definition.trackedJoints.filter(({ joint }) => joint !== 'foot');
+  const joints = definition.trackedJoints.filter(({ joint }) => (
+    joint !== 'foot' || exercise === 'barra-reloj'
+  ));
   const shortSide = (side: PoseSide) => side === 'left' ? 'izq.' : 'der.';
   const singularLabel = (label: string) => label.endsWith('s')
     ? label.slice(0, -1)
@@ -5768,6 +5817,12 @@ function calculateExtremityAngleReadings(
             keypoints[indexes.knee],
             keypoints[indexes.ankle],
             keypoints[MUSCLE_UP_FOOT_INDEX[side]],
+          ] as const;
+        case 'foot':
+          return [
+            keypoints[indexes.ankle],
+            keypoints[MUSCLE_UP_FOOT_INDEX[side]],
+            keypoints[FOOT_HEEL_INDEX[side]],
           ] as const;
         default:
           return [undefined, undefined, undefined] as const;
@@ -8172,6 +8227,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'barra-reloj' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado o en 3/4 y aleja el móvil hasta que entren la barra, los brazos y todo el cuerpo, incluidos los pies.</li>
+                    <li><b>Posición:</b> cuelga con hombros, codos y muñecas visibles; mantén el tronco controlado y evita usar la cabeza como referencia.</li>
+                    <li><b>Movimiento:</b> mueve las piernas alrededor del eje de la barra siguiendo el recorrido del reloj, sin balancear el cuerpo.</li>
+                    <li><b>Detección:</b> se validan hombros, codos, muñecas, caderas, rodillas, tobillos y pies de ambos lados. La cabeza no es necesaria.</li>
+                    <li><b>Calibración:</b> el recorrido angular queda visible para revisar una ejecución correcta antes de fijar el rango del contador.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'elevaciones-piernas-suelo' && (
                 <details className="pulldown-instructions">
                   <summary>Condiciones para una repetición correcta</summary>
@@ -8254,6 +8321,7 @@ function Home() {
                        || selectedExercise === 'curl-femoral'
                        || selectedExercise === 'elevacion-talones-pie'
                         || selectedExercise === 'elevaciones-piernas-barra'
+                         || selectedExercise === 'barra-reloj'
                         || selectedExercise === 'elevaciones-piernas-suelo'
                       || selectedExercise === 'plancha'
                          ? selectedExercise === 'dominadas'
