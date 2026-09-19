@@ -68,6 +68,7 @@ import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import seatedCableRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_44_28_1789793094889.png';
 import oneArmDumbbellRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_50_29_1789793435423.png';
+import elevatedAustralianRowImage from '@assets/ChatGPT_Image_19_sept_2026,_13_58_44_1789844332280.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -204,7 +205,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'copa-mancuernas': dumbbellOverheadTricepsImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
-  'remos-australianos-elevados': barbellRowImage,
+  'remos-australianos-elevados': elevatedAustralianRowImage,
   'remo-sentado-polea-agarre-cerrado': seatedCableRowImage,
   'remo-mancuerna-una-mano': oneArmDumbbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
