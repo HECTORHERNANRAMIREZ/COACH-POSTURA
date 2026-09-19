@@ -33,6 +33,7 @@ import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_17889282808
 import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
 import muscleUpImage from '@assets/ChatGPT_Image_14_sept_2026,_13_48_26_1789411716868.png';
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
+import pullOverImage from '@assets/ChatGPT_Image_18_sept_2026,_23_33_58_1789792689595.png';
 import plankImage from '@assets/ChatGPT_Image_8_sept_2026__23_06_57-removebg-preview_1788926983717.png';
 import pushupImage from '@assets/Captura_de_pantalla_2026-09-08_225611-removebg-preview_1788926239892.png';
 import pikePushupImage from '@assets/ChatGPT_Image_9_sept_2026,_00_01_49_1788930345371.png';
@@ -177,7 +178,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'dominadas-supinas': supinePullupImage,
   'muscle-up': muscleUpImage,
   jalon: pulldownImage,
-  'pull-over-polea-alta': pulldownImage,
+  'pull-over-polea-alta': pullOverImage,
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
