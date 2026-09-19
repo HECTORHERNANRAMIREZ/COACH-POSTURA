@@ -66,6 +66,7 @@ import dumbbellOverheadTricepsImage from '@assets/ChatGPT_Image_18_sept_2026,_22
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import seatedCableRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_44_28_1789793094889.png';
+import oneArmDumbbellRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_50_29_1789793435423.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -155,7 +156,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -202,6 +203,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
   'remo-sentado-polea-agarre-cerrado': seatedCableRowImage,
+  'remo-mancuerna-una-mano': oneArmDumbbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
@@ -474,6 +476,27 @@ const exercises: ExerciseDefinition[] = [
       'Codos: lectura izquierda y derecha',
       'Muñecas: lectura izquierda y derecha',
       'Recorrido: agarre cerrado hacia el abdomen con el torso estable',
+      'Calibración del recorrido: pendiente',
+    ],
+  },
+  {
+    id: 'remo-mancuerna-una-mano',
+    name: 'Remo con mancuerna a una mano',
+    muscleGroup: 'espalda',
+    description: 'Apoya una mano en el banco, lleva la mancuerna hacia la cadera y mantén el torso estable.',
+    angleLabel: 'Hombro · codo · cadera · muñeca',
+    cameraNote: 'Nota: vista lateral; deja visibles el hombro, codo, cadera y muñeca del lado que trabaja, junto al banco.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: [
+      'Hombro: posición estable durante el tirón',
+      'Codo: recorrido hacia atrás y hacia la cadera',
+      'Cadera: torso estable sobre el banco',
+      'Muñeca: alineada con el antebrazo',
       'Calibración del recorrido: pendiente',
     ],
   },
@@ -1735,6 +1758,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Torso estable y agarre cerrado hacia el abdomen',
         'Calibración del recorrido: pendiente',
       ];
+    case 'remo-mancuerna-una-mano':
+      return [
+        'Lecturas en vivo: hombro, codo, cadera y muñeca',
+        'Se sigue el lado más visible que trabaja',
+        'Torso estable con apoyo en el banco',
+        'Calibración del recorrido: pendiente',
+      ];
     case 'flexiones':
       return [
         'Inicio / regreso: codo 150–180°',
@@ -2585,6 +2615,8 @@ function getCameraGuidance(
           ? 'Ponte de lado frente a la polea alta y deja visibles ambos hombros, codos, caderas y muñecas durante todo el recorrido.'
          : exercise === 'remo-sentado-polea-agarre-cerrado'
            ? 'Ponte de lado o en 3/4 frente a la polea baja y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+         : exercise === 'remo-mancuerna-una-mano'
+           ? 'Ponte de lado junto al banco y deja visibles el hombro, codo, cadera y muñeca del brazo que trabaja.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'press-banca-agarre-cerrado'
@@ -2747,6 +2779,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
       : exercise === 'remo-sentado-polea-agarre-cerrado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y la polea baja dentro del encuadre.'
+      : exercise === 'remo-mancuerna-una-mano'
+        ? 'Usa una vista lateral, con el banco y el brazo que trabaja completos dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-banca-agarre-cerrado'
@@ -4458,6 +4492,12 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
     ],
+    'remo-mancuerna-una-mano': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
     flexiones: [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
@@ -4985,6 +5025,13 @@ function calculateLiveAngleReadings(
           empty('Codo der.', 'Ángulo articular'),
           empty('Muñeca izq.', 'Ángulo articular'),
           empty('Muñeca der.', 'Ángulo articular'),
+        ];
+      case 'remo-mancuerna-una-mano':
+        return [
+          empty('Hombro', 'Ángulo articular'),
+          empty('Codo', 'Ángulo articular'),
+          empty('Cadera', 'Ángulo articular'),
+          empty('Muñeca', 'Ángulo articular'),
         ];
       case 'flexiones':
       case 'flexiones-declinadas':
@@ -6491,6 +6538,7 @@ function Home() {
                     || exercise.id === 'pull-over-polea-alta'
                     || exercise.id === 'remo-barra'
                     || exercise.id === 'remo-sentado-polea-agarre-cerrado'
+                    || exercise.id === 'remo-mancuerna-una-mano'
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
@@ -7058,6 +7106,7 @@ function Home() {
                       || selectedExercise === 'muscle-up'
                        || selectedExercise === 'pull-over-polea-alta'
                        || selectedExercise === 'remo-sentado-polea-agarre-cerrado'
+                       || selectedExercise === 'remo-mancuerna-una-mano'
                       || selectedExercise === 'zancadas'
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
