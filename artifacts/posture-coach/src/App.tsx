@@ -153,7 +153,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -177,6 +177,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'dominadas-supinas': supinePullupImage,
   'muscle-up': muscleUpImage,
   jalon: pulldownImage,
+  'pull-over-polea-alta': pulldownImage,
   flexiones: pushupImage,
   'flexiones-declinadas': declinePushupImage,
   'flexiones-pica': pikePushupImage,
@@ -412,6 +413,28 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'wrist', label: 'muñeca' },
     ],
     trackedAngleLabels: ['Torso: 10–25°', 'Codo: final 85–110°', 'Tirón cadera–hombro–codo: inicio 130–155° · final 60–90°'],
+  },
+  {
+    id: 'pull-over-polea-alta',
+    name: 'Pull-over en polea alta con brazos extendidos',
+    muscleGroup: 'espalda',
+    description: 'Lleva la barra desde arriba hacia la cadera con los brazos extendidos, manteniendo estable el torso.',
+    angleLabel: 'Hombros · codos · cadera · muñecas',
+    cameraNote: 'Nota: vista lateral; deja visibles ambos hombros, codos, caderas y muñecas junto a la polea.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Caderas: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: hombro desde arriba hacia la cadera con codos extendidos',
+    ],
   },
   {
     id: 'remo-barra',
@@ -1313,6 +1336,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endLabel: `ángulo cadera–hombro–codo entre ${PULLDOWN_ANGLE_MIN}–${PULLDOWN_ANGLE_MAX}°`,
     countOnReturn: true,
   },
+  'pull-over-polea-alta': {
+    direction: 'decrease',
+    startMinAngle: 130,
+    startMaxAngle: 180,
+    activationAngle: 110,
+    endMinAngle: 20,
+    endMaxAngle: 80,
+    endLabel: 'hombro entre 20–80° hacia la cadera',
+  },
   'remo-barra': {
     direction: 'decrease',
     startMinAngle: 145,
@@ -1728,6 +1760,14 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Se muestran ambos lados para comparar el movimiento',
         'Inicio / regreso: codo 150–180°',
         'Final: codo 70–105° con agarre cerrado',
+      ];
+    case 'pull-over-polea-alta':
+      return [
+        'Lecturas en vivo: hombros, codos, caderas y muñecas',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Inicio: hombro 130–180° con brazos elevados',
+        'Final: hombro 20–80° llevando la barra hacia la cadera',
+        'Codos extendidos y muñecas alineadas',
       ];
     case 'press-banca-inclinado':
       return [
@@ -2510,6 +2550,8 @@ function getCameraGuidance(
           ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
+        : exercise === 'pull-over-polea-alta'
+          ? 'Ponte de lado frente a la polea alta y deja visibles ambos hombros, codos, caderas y muñecas durante todo el recorrido.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'press-banca-agarre-cerrado'
@@ -2627,6 +2669,7 @@ function getCameraGuidance(
        && exercise !== 'press-pallof-polea-banda'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
+      && exercise !== 'pull-over-polea-alta'
       && exercise !== 'press-banca-agarre-cerrado'
       && exercise !== 'press-banca-inclinado'
       && exercise !== 'press-plano-mancuernas'
@@ -2667,6 +2710,8 @@ function getCameraGuidance(
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la polea o banda dentro del encuadre.'
       : exercise === 'giros-rusos'
         ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
+      : exercise === 'pull-over-polea-alta'
+        ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-banca-agarre-cerrado'
@@ -4160,6 +4205,13 @@ function calculateExerciseAngle(
       keypoints[indexes.elbow],
     );
   }
+  if (exercise === 'pull-over-polea-alta') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    );
+  }
   if (
     exercise === 'fondos'
     || exercise === 'dominadas'
@@ -4270,6 +4322,13 @@ function calculateRepetitionAngle(
       keypoints[indexes.elbow],
     );
   }
+  if (exercise === 'pull-over-polea-alta') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    );
+  }
 
   return calculateAngle(
     keypoints[indexes.shoulder],
@@ -4343,6 +4402,12 @@ function getAngleDiagnosticPoints(
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'pull-over-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Cadera', joint: 'hip' },
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'remo-barra': [
@@ -6374,6 +6439,7 @@ function Home() {
                     || exercise.id === 'dominadas-supinas'
                     || exercise.id === 'muscle-up'
                     || exercise.id === 'jalon'
+                    || exercise.id === 'pull-over-polea-alta'
                     || exercise.id === 'remo-barra'
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-declinadas'
@@ -6940,6 +7006,7 @@ function Home() {
                        || selectedExercise === 'dominadas'
                        || selectedExercise === 'dominadas-supinas'
                       || selectedExercise === 'muscle-up'
+                       || selectedExercise === 'pull-over-polea-alta'
                       || selectedExercise === 'zancadas'
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
