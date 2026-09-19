@@ -133,7 +133,7 @@
 
 .posture-app {
   position: relative;
-  min-height: 100dvh;
+  min-height: 260vh;
   overflow-x: clip;
   isolation: isolate;
   background: transparent;
