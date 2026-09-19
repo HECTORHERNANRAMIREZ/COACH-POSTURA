@@ -48,6 +48,7 @@ import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_1789784284541.png';
 import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
+import floorLegRaiseImage from '@assets/ChatGPT_Image_19_sept_2026,_05_53_59_p.m._1789858489259.png';
 import pallofPressImage from '@assets/ChatGPT_Image_18_sept_2026,_21_47_36_1789786072344.png';
 import russianTwistImage from '@assets/ChatGPT_Image_18_sept_2026,_21_56_46_1789786639535.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
@@ -238,7 +239,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
   'elevaciones-piernas-barra': hangingLegRaiseImage,
-  'elevaciones-piernas-suelo': reverseCrunchImage,
+  'elevaciones-piernas-suelo': floorLegRaiseImage,
   'press-pallof-polea-banda': pallofPressImage,
   'giros-rusos': russianTwistImage,
 };
