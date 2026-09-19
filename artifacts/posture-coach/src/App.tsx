@@ -166,7 +166,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -238,6 +238,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
   'elevaciones-piernas-barra': hangingLegRaiseImage,
+  'elevaciones-piernas-suelo': reverseCrunchImage,
   'press-pallof-polea-banda': pallofPressImage,
   'giros-rusos': russianTwistImage,
 };
@@ -1364,6 +1365,27 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
   {
+    id: 'elevaciones-piernas-suelo',
+    name: 'Elevaciones de piernas en suelo',
+    muscleGroup: 'abdomen',
+    description: 'Eleva las piernas desde el suelo con control, manteniendo las rodillas extendidas y la cadera estable.',
+    angleLabel: 'Cadera · rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja visibles ambos tobillos, rodillas y caderas durante todo el recorrido. No hace falta mostrar la cara.',
+    trackedJoints: [
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Caderas: lectura izquierda y derecha',
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Recorrido: piernas desde el suelo hasta la elevación controlada',
+      'Cara: no necesaria para iniciar ni contar',
+    ],
+  },
+  {
     id: 'press-pallof-polea-banda',
     name: 'Press Pallof con polea o banda',
     muscleGroup: 'abdomen',
@@ -1565,6 +1587,11 @@ const HANGING_LEG_RAISE_START_MAX_ANGLE = 180;
 const HANGING_LEG_RAISE_ACTIVATION_ANGLE = 125;
 const HANGING_LEG_RAISE_END_MIN_ANGLE = 70;
 const HANGING_LEG_RAISE_END_MAX_ANGLE = 110;
+const FLOOR_LEG_RAISE_START_MIN_ANGLE = 145;
+const FLOOR_LEG_RAISE_START_MAX_ANGLE = 180;
+const FLOOR_LEG_RAISE_ACTIVATION_ANGLE = 125;
+const FLOOR_LEG_RAISE_END_MIN_ANGLE = 70;
+const FLOOR_LEG_RAISE_END_MAX_ANGLE = 110;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
@@ -1886,6 +1913,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: HANGING_LEG_RAISE_END_MIN_ANGLE,
     endMaxAngle: HANGING_LEG_RAISE_END_MAX_ANGLE,
     endLabel: `cadera entre ${HANGING_LEG_RAISE_END_MIN_ANGLE}–${HANGING_LEG_RAISE_END_MAX_ANGLE}°`,
+  },
+  'elevaciones-piernas-suelo': {
+    direction: 'decrease',
+    startMinAngle: FLOOR_LEG_RAISE_START_MIN_ANGLE,
+    startMaxAngle: FLOOR_LEG_RAISE_START_MAX_ANGLE,
+    activationAngle: FLOOR_LEG_RAISE_ACTIVATION_ANGLE,
+    endMinAngle: FLOOR_LEG_RAISE_END_MIN_ANGLE,
+    endMaxAngle: FLOOR_LEG_RAISE_END_MAX_ANGLE,
+    endLabel: `cadera entre ${FLOOR_LEG_RAISE_END_MIN_ANGLE}–${FLOOR_LEG_RAISE_END_MAX_ANGLE}°`,
   },
 };
 
@@ -2315,6 +2351,14 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Activación: cadera <${HANGING_LEG_RAISE_ACTIVATION_ANGLE}°`,
         `Final: cadera ${HANGING_LEG_RAISE_END_MIN_ANGLE}–${HANGING_LEG_RAISE_END_MAX_ANGLE}°`,
         'Cuerpo completo y extremidades visibles; la cara no es necesaria',
+      ];
+    case 'elevaciones-piernas-suelo':
+      return [
+        `Inicio / regreso: cadera ${FLOOR_LEG_RAISE_START_MIN_ANGLE}–${FLOOR_LEG_RAISE_START_MAX_ANGLE}°`,
+        `Activación: cadera <${FLOOR_LEG_RAISE_ACTIVATION_ANGLE}°`,
+        `Final: cadera ${FLOOR_LEG_RAISE_END_MIN_ANGLE}–${FLOOR_LEG_RAISE_END_MAX_ANGLE}°`,
+        'Lecturas en vivo: cadera, rodillas y tobillos de ambos lados',
+        'La cara no es necesaria para iniciar ni contar',
       ];
     case 'giros-rusos':
       return [
@@ -3113,6 +3157,8 @@ function getCameraGuidance(
            ? 'Ponte de lado o en 3/4 y deja visibles la cabeza, ambos hombros, codos, muñecas, cadera, rodillas y tobillos durante todo el recorrido.'
           : exercise === 'elevaciones-piernas-barra'
             ? 'Ponte de lado o en 3/4 frente a la barra y deja visibles la barra, ambos brazos, ambas piernas y los pies completos. No hace falta mostrar la cara.'
+          : exercise === 'elevaciones-piernas-suelo'
+            ? 'Ponte de lado y deja visibles ambos tobillos, rodillas y caderas durante todo el recorrido. No hace falta mostrar la cara.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -3204,6 +3250,7 @@ function getCameraGuidance(
       && exercise !== 'dominadas-comando'
       && exercise !== 'pull-over-polea-alta'
        && exercise !== 'elevaciones-piernas-barra'
+       && exercise !== 'elevaciones-piernas-suelo'
       && exercise !== 'press-banca-agarre-cerrado'
       && exercise !== 'press-banca-inclinado'
       && exercise !== 'press-plano-mancuernas'
@@ -3252,6 +3299,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
       : exercise === 'elevaciones-piernas-barra'
         ? 'Usa una vista lateral o en 3/4, con la barra, ambos brazos, ambas piernas y los pies completos dentro del encuadre. La cara no interviene.'
+      : exercise === 'elevaciones-piernas-suelo'
+        ? 'Usa una vista lateral, con ambos tobillos, rodillas y caderas completos dentro del encuadre. La cara no interviene.'
       : exercise === 'dominadas-comando'
         ? 'Usa una vista trasera o en 3/4, con la barra, ambos brazos y la cabeza dentro del encuadre.'
       : exercise === 'remo-sentado-polea-agarre-cerrado'
@@ -4927,6 +4976,13 @@ function calculateExerciseAngle(
       keypoints[indexes.knee],
     );
   }
+  if (exercise === 'elevaciones-piernas-suelo') {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+    );
+  }
   if (
     exercise === 'elevaciones-laterales'
     || exercise === 'elevaciones-laterales-polea-baja'
@@ -5052,6 +5108,13 @@ function calculateRepetitionAngle(
     );
   }
   if (exercise === 'elevaciones-piernas-barra') {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+    );
+  }
+  if (exercise === 'elevaciones-piernas-suelo') {
     return calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
@@ -5429,6 +5492,11 @@ function getAngleDiagnosticPoints(
       { label: 'Rodillas', joint: 'knee' },
       { label: 'Tobillos', joint: 'ankle' },
       { label: 'Pies', joint: 'foot' },
+    ],
+    'elevaciones-piernas-suelo': [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
     ],
     'giros-rusos': [
       { label: 'Hombros', joint: 'shoulder' },
@@ -8103,6 +8171,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'elevaciones-piernas-suelo' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado y deja visibles ambos tobillos, rodillas y caderas durante todo el recorrido.</li>
+                    <li><b>Inicio:</b> túmbate boca arriba con las piernas extendidas y controladas cerca del suelo, sin despegar la zona lumbar de forma brusca.</li>
+                    <li><b>Movimiento:</b> eleva las piernas juntas y desciende lentamente, evitando rebotes o balanceos.</li>
+                    <li><b>Recorrido:</b> la cadera inicia entre {FLOOR_LEG_RAISE_START_MIN_ANGLE}° y {FLOOR_LEG_RAISE_START_MAX_ANGLE}° y llega entre {FLOOR_LEG_RAISE_END_MIN_ANGLE}° y {FLOOR_LEG_RAISE_END_MAX_ANGLE}°.</li>
+                    <li><b>Detección:</b> se validan caderas, rodillas y tobillos de ambos lados. La cara no es necesaria.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'maquina-aductores' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -8173,6 +8253,7 @@ function Home() {
                        || selectedExercise === 'curl-femoral'
                        || selectedExercise === 'elevacion-talones-pie'
                         || selectedExercise === 'elevaciones-piernas-barra'
+                        || selectedExercise === 'elevaciones-piernas-suelo'
                       || selectedExercise === 'plancha'
                          ? selectedExercise === 'dominadas'
                           || selectedExercise === 'dominadas-supinas'
