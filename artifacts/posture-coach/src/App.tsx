@@ -993,7 +993,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'antebrazo',
     description: 'Apoya los antebrazos sobre los muslos y mueve las muñecas con control, usando barra o mancuernas.',
     angleLabel: 'Hombros · codos · muñecas',
-    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto al banco.',
+    cameraNote: 'Nota: vista lateral; deja visibles hombro, codo y muñeca del lado que trabaja junto al banco.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -1013,7 +1013,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'antebrazo',
     description: 'Gira el rodillo con control para elevar y descender la carga, manteniendo estables los brazos.',
     angleLabel: 'Hombros · codos · muñecas',
-    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto al rodillo.',
+    cameraNote: 'Nota: vista lateral; deja visibles hombro, codo y muñeca del lado que trabaja junto al rodillo.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -2880,9 +2880,9 @@ function getCameraGuidance(
           : exercise === 'curl-inverso-barra'
             ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
           : exercise === 'curl-muneca-sentado'
-            ? 'Ponte de frente o en 3/4 junto al banco y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+            ? 'Ponte de lado junto al banco y deja visibles el hombro, codo y muñeca del lado que trabaja durante todo el recorrido.'
           : exercise === 'rodillo-muneca'
-            ? 'Ponte de frente o en 3/4 frente al rodillo y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+            ? 'Ponte de lado frente al rodillo y deja visibles el hombro, codo y muñeca del lado que trabaja durante todo el recorrido.'
           : exercise === 'prensa-piernas' || exercise === 'extensiones-maquina'
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
            : exercise === 'curl-femoral'
@@ -7624,7 +7624,7 @@ function Home() {
                     <li><b>Agarre:</b> usa una barra o una mancuerna en cada mano; mantén las muñecas alineadas y el peso controlado.</li>
                     <li><b>Movimiento:</b> flexiona y extiende las muñecas lentamente, sin levantar los antebrazos ni separar los codos.</li>
                     <li><b>Recorrido:</b> inicia cerca de {WRIST_CURL_START_MIN_ANGLE}°–{WRIST_CURL_START_MAX_ANGLE}° y busca {WRIST_CURL_END_MIN_ANGLE}°–{WRIST_CURL_END_MAX_ANGLE}° sin forzar la articulación.</li>
-                    <li><b>Encuadre:</b> usa una vista frontal o en 3/4 y deja visibles ambos hombros, codos y muñecas durante toda la serie.</li>
+                    <li><b>Encuadre:</b> usa una vista lateral y deja visibles el hombro, codo y muñeca del lado que trabaja durante toda la serie.</li>
                   </ul>
                 </details>
               )}
@@ -7636,7 +7636,7 @@ function Home() {
                     <li><b>Agarre:</b> sujeta el mango con ambas manos y mantén las muñecas alineadas con los antebrazos.</li>
                     <li><b>Movimiento:</b> gira el mango de forma alternada para enrollar y desenrollar la cuerda, elevando y descendiendo la carga con control.</li>
                     <li><b>Estabilidad:</b> mantén hombros y codos quietos; evita encoger los hombros, doblar los codos o balancear el torso.</li>
-                    <li><b>Encuadre:</b> usa una vista frontal o en 3/4 y deja visibles ambos hombros, codos y muñecas durante toda la serie.</li>
+                    <li><b>Encuadre:</b> usa una vista lateral y deja visibles el hombro, codo y muñeca del lado que trabaja durante toda la serie.</li>
                   </ul>
                 </details>
               )}
