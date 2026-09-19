@@ -860,6 +860,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'maquina-aductores',
     name: 'Máquina de aductores',
+    muscleGroup: 'pierna',
     description: 'Controla el movimiento de las piernas y mantén los tobillos visibles durante todo el recorrido.',
     angleLabel: 'Tobillos',
     cameraNote: 'Nota: vista frontal; deja visibles ambos tobillos y la máquina durante todo el ejercicio.',
