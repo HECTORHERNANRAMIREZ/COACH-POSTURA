@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps' | 'abdomen';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -929,6 +929,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'plancha',
     name: 'Plancha',
+    muscleGroup: 'abdomen',
     description: 'Mantén la cadera alineada y el cuerpo recto.',
     angleLabel: 'Codo · objetivo 90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -963,6 +964,10 @@ const exerciseGroups = [
   {
     label: 'Tríceps',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'triceps'),
+  },
+  {
+    label: 'Abdomen',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'abdomen'),
   },
   {
     label: 'Por clasificar',
