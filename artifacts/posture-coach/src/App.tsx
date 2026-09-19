@@ -50,12 +50,6 @@ import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_178
 import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
 import floorLegRaiseImage from '@assets/ChatGPT_Image_19_sept_2026,_05_53_59_p.m._1789858489259.png';
 import barraRelojImage from '@assets/ChatGPT_Image_19_sept_2026,_06_12_46_p.m._1789859575950.png';
-import pullupScrollFrame01 from '@assets/ChatGPT_Image_19_sept_2026,_18_25_19_1789860844208.png';
-import pullupScrollFrame02 from '@assets/ChatGPT_Image_19_sept_2026,_18_27_22_1789860844208.png';
-import pullupScrollFrame03 from '@assets/ChatGPT_Image_19_sept_2026,_18_28_16_1789860844207.png';
-import pullupScrollFrame04 from '@assets/ChatGPT_Image_19_sept_2026,_18_29_16_1789860844206.png';
-import pullupScrollFrame05 from '@assets/ChatGPT_Image_19_sept_2026,_18_30_10_1789860844206.png';
-import pullupScrollFrame06 from '@assets/ChatGPT_Image_19_sept_2026,_18_30_52_1789860844204.png';
 import pallofPressImage from '@assets/ChatGPT_Image_18_sept_2026,_21_47_36_1789786072344.png';
 import russianTwistImage from '@assets/ChatGPT_Image_18_sept_2026,_21_56_46_1789786639535.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
@@ -108,15 +102,6 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
-const pullupScrollFrames = [
-  pullupScrollFrame01,
-  pullupScrollFrame02,
-  pullupScrollFrame03,
-  pullupScrollFrame04,
-  pullupScrollFrame05,
-  pullupScrollFrame06,
-];
-const PULLUP_SCROLL_CYCLES = 4;
 
 // MODO TEMPORAL DE DESARROLLO:
 // Se conserva todo el código de Clerk y Lemon Squeezy, pero NetPosture abre
@@ -9174,121 +9159,10 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
-function ScrollPullupBackground() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    const images = pullupScrollFrames.map((source) => {
-      const image = new Image();
-      image.decoding = 'async';
-      image.loading = 'eager';
-      image.src = source;
-      return image;
-    });
-
-    let frameIndex = 0;
-    let renderFrame = 0;
-    let renderQueued = false;
-    const scrollContainer = document.querySelector<HTMLElement>('.posture-app');
-
-    const draw = () => {
-      renderQueued = false;
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-
-      canvas.width = Math.max(1, Math.floor(width * devicePixelRatio));
-      canvas.height = Math.max(1, Math.floor(height * devicePixelRatio));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-      context.fillStyle = '#000';
-      context.fillRect(0, 0, width, height);
-
-      const image = images[frameIndex];
-      if (!image?.naturalWidth || !image.naturalHeight) return;
-
-      const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
-      const drawWidth = image.naturalWidth * scale;
-      const drawHeight = image.naturalHeight * scale;
-      const offsetX = (width - drawWidth) / 2;
-      const offsetY = (height - drawHeight) / 2;
-      context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-    };
-
-    const queueDraw = () => {
-      if (renderQueued) return;
-      renderQueued = true;
-      renderFrame = window.requestAnimationFrame(draw);
-    };
-
-    const updateFrameFromScroll = () => {
-      const usesLocalScroll = Boolean(
-        scrollContainer && scrollContainer.scrollHeight > scrollContainer.clientHeight,
-      );
-      const scrollTop = usesLocalScroll
-        ? scrollContainer?.scrollTop ?? 0
-        : window.scrollY;
-      const scrollHeight = usesLocalScroll
-        ? scrollContainer?.scrollHeight ?? window.innerHeight
-        : document.documentElement.scrollHeight;
-      const viewportHeight = usesLocalScroll
-        ? scrollContainer?.clientHeight ?? window.innerHeight
-        : window.innerHeight;
-      const maxScroll = Math.max(0, scrollHeight - viewportHeight);
-      const scrollProgress = maxScroll === 0
-        ? 0
-        : Math.min(1, Math.max(0, scrollTop / maxScroll));
-      const repeatedProgress = (scrollProgress * PULLUP_SCROLL_CYCLES) % 2;
-      const movementProgress = repeatedProgress <= 1
-        ? repeatedProgress
-        : 2 - repeatedProgress;
-
-      frameIndex = Math.min(
-        images.length - 1,
-        Math.round(movementProgress * (images.length - 1)),
-      );
-      queueDraw();
-    };
-
-    const handleResize = () => {
-      updateFrameFromScroll();
-    };
-
-    images.forEach((image) => {
-      image.addEventListener('load', queueDraw);
-    });
-    window.addEventListener('scroll', updateFrameFromScroll, { passive: true });
-    document.addEventListener('scroll', updateFrameFromScroll, { capture: true, passive: true });
-    window.addEventListener('resize', handleResize);
-    updateFrameFromScroll();
-
-    return () => {
-      window.cancelAnimationFrame(renderFrame);
-      images.forEach((image) => {
-        image.removeEventListener('load', queueDraw);
-      });
-      window.removeEventListener('scroll', updateFrameFromScroll);
-      document.removeEventListener('scroll', updateFrameFromScroll, true);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="scroll-pullup-background" aria-hidden="true" />;
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ScrollPullupBackground />
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <Router />
         </WouterRouter>

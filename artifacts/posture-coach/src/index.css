@@ -139,17 +139,6 @@
   background: transparent;
 }
 
-.scroll-pullup-background {
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-  background: #000;
-}
-
 .app-intro {
   position: fixed;
   z-index: 1000;
