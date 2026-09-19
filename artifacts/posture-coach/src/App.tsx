@@ -151,7 +151,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -192,6 +192,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-plano-inclinado': inclineDumbbellPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'triceps-tras-nuca-polea-alta': overheadTricepsExtensionImage,
+  'copa-mancuernas': overheadTricepsExtensionImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
@@ -769,6 +770,26 @@ const exercises: ExerciseDefinition[] = [
       'Hombro: brazo elevado 145–180°',
       'Codo: inicio 70–120° · extensión final 145–180°',
       'Muñeca: alineada con el antebrazo',
+    ],
+  },
+  {
+    id: 'copa-mancuernas',
+    name: 'Copa con mancuernas',
+    muscleGroup: 'triceps',
+    description: 'Sujeta la mancuerna por encima de la cabeza y extiende los codos sin mover los hombros ni doblar las muñecas.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: flexión y extensión de codos por encima de la cabeza',
     ],
   },
   {
@@ -1350,6 +1371,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: 180,
     endLabel: 'extensión entre 145–180°',
   },
+  'copa-mancuernas': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 70,
+    endMaxAngle: 120,
+    endLabel: 'flexión de codo entre 70–120°',
+  },
   'extension-horizontal-barra': {
     direction: 'decrease',
     startMinAngle: 150,
@@ -1690,6 +1720,14 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio: codo 70–120°',
         'Final / extensión: codo 145–180°',
         'Muñeca alineada con el antebrazo',
+      ];
+    case 'copa-mancuernas':
+      return [
+        'Hombros: brazos elevados por encima de la cabeza',
+        'Inicio / regreso: codo 145–180°',
+        'Activación: flexión <135°',
+        'Final: codo 70–120°',
+        'Muñecas alineadas con los antebrazos',
       ];
     case 'extension-horizontal-barra':
       return [
@@ -2443,6 +2481,8 @@ function getCameraGuidance(
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
           : exercise === 'triceps-tras-nuca-polea-alta'
             ? 'Ponte de lado o en 3/4 frente a la polea alta y deja visibles el hombro, el codo y la muñeca durante todo el recorrido.'
+          : exercise === 'copa-mancuernas'
+            ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
           : exercise === 'prensa-piernas' || exercise === 'extensiones-maquina'
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
            : exercise === 'curl-femoral'
@@ -3166,6 +3206,7 @@ function getTricepsPushdownTechniqueFeedback(
 function getOverheadTricepsTechniqueFeedback(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  movementLabel = 'tras nuca',
 ): TechniqueFeedback {
   if (!keypoints || !side) return defaultTechniqueFeedback;
 
@@ -3210,7 +3251,7 @@ function getOverheadTricepsTechniqueFeedback(
 
   return {
     tone: 'success',
-    message: 'Extensión tras nuca controlada',
+    message: `Extensión ${movementLabel} controlada`,
     detail: `Hombro ${shoulderAngle}° · codo ${elbowAngle}° · muñeca ${wristAngle}°. Mantén los codos apuntando al frente y extiende sin balancearte.`,
   };
 }
@@ -4087,6 +4128,7 @@ function calculateExerciseAngle(
     || exercise === 'press-militar'
     || exercise === 'triceps-polea-alta'
     || exercise === 'triceps-tras-nuca-polea-alta'
+    || exercise === 'copa-mancuernas'
     || exercise === 'extension-horizontal-barra'
     || exercise === 'curl-biceps'
     || exercise === 'zancadas'
@@ -4355,6 +4397,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'triceps-tras-nuca-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'copa-mancuernas': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -4806,6 +4853,12 @@ function calculateLiveAngleReadings(
           empty('Codo', 'Inicio 70–120° · activa >135° · final 145–180°'),
           empty('Muñeca', `Alineada · mínimo ${OVERHEAD_TRICEPS_WRIST_MIN_ANGLE}°`),
         ];
+      case 'copa-mancuernas':
+        return [
+          empty('Hombros', 'Brazos elevados por encima de la cabeza'),
+          empty('Codos', 'Inicio / regreso 145–180° · final 70–120°'),
+          empty('Muñecas', 'Alineadas con los antebrazos'),
+        ];
       case 'extension-horizontal-barra':
         return [empty('Codo', 'Inicio 150–180° · activa <135° · final 70–105°')];
       case 'curl-biceps':
@@ -5030,6 +5083,18 @@ function calculateLiveAngleReadings(
           OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE,
         ),
         value(elbow, 'Codo', 'Inicio 70–120° · activa >135° · final 145–180°', 145, 180),
+        value(wrist, 'Muñeca', `Alineada · mínimo ${OVERHEAD_TRICEPS_WRIST_MIN_ANGLE}°`, OVERHEAD_TRICEPS_WRIST_MIN_ANGLE, 180),
+      ];
+    case 'copa-mancuernas':
+      return [
+        value(
+          shoulder,
+          'Hombro',
+          `Brazo elevado · ${OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}–${OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}°`,
+          OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE,
+          OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE,
+        ),
+        value(elbow, 'Codo', 'Inicio / regreso 145–180° · activa <135° · final 70–120°', 70, 120),
         value(wrist, 'Muñeca', `Alineada · mínimo ${OVERHEAD_TRICEPS_WRIST_MIN_ANGLE}°`, OVERHEAD_TRICEPS_WRIST_MIN_ANGLE, 180),
       ];
     case 'extension-horizontal-barra':
@@ -5689,6 +5754,8 @@ function Home() {
             ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'triceps-tras-nuca-polea-alta'
             ? getOverheadTricepsTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'copa-mancuernas'
+            ? getOverheadTricepsTechniqueFeedback(pose?.keypoints, nextDominantSide, 'con mancuerna')
            : selectedExerciseRef.current === 'extension-horizontal-barra'
              ? getHorizontalBarExtensionTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'curl-biceps'
@@ -6276,6 +6343,7 @@ function Home() {
                      || exercise.id === 'press-plano-inclinado'
                     || exercise.id === 'triceps-polea-alta'
                      || exercise.id === 'triceps-tras-nuca-polea-alta'
+                     || exercise.id === 'copa-mancuernas'
                     || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'peso-muerto-rumano'
                      || exercise.id === 'hip-thrust-barra'
@@ -6670,6 +6738,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'copa-mancuernas' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Vista:</b> colócate de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.</li>
+                    <li><b>Posición:</b> sujeta una mancuerna con las dos manos por encima de la cabeza y mantén los brazos elevados.</li>
+                    <li><b>Codos:</b> mantenlos apuntando hacia delante y relativamente juntos; flexiona y extiende solo los codos.</li>
+                    <li><b>Muñecas:</b> mantenlas neutras y alineadas con los antebrazos durante todo el recorrido.</li>
+                    <li><b>Movimiento:</b> baja la mancuerna detrás de la cabeza con control hasta flexionar los codos entre 70° y 120°, y vuelve a extenderlos sin arquear el torso.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'extension-horizontal-barra' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -6802,6 +6882,7 @@ function Home() {
                        || selectedExercise === 'press-plano-inclinado'
                       || selectedExercise === 'triceps-polea-alta'
                        || selectedExercise === 'triceps-tras-nuca-polea-alta'
+                       || selectedExercise === 'copa-mancuernas'
                       || selectedExercise === 'extension-horizontal-barra'
                       || selectedExercise === 'curl-biceps'
                       || selectedExercise === 'fondos'
