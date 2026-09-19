@@ -165,7 +165,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps' | 'abdomen' | 'biceps';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps' | 'abdomen' | 'biceps' | 'antebrazo';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -966,7 +966,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'curl-inverso-barra',
     name: 'Curl inverso con barra',
-    muscleGroup: 'biceps',
+    muscleGroup: 'antebrazo',
     description: 'Sujeta la barra con agarre prono y flexiona los codos sin despegar los brazos del cuerpo.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
@@ -1280,6 +1280,10 @@ const exerciseGroups = [
   {
     label: 'Bíceps',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'biceps'),
+  },
+  {
+    label: 'Antebrazo',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'antebrazo'),
   },
   {
     label: 'Por clasificar',
