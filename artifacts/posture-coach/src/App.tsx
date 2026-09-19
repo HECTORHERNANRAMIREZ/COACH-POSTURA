@@ -59,6 +59,7 @@ import inclineBenchPressImage from '@assets/ChatGPT_Image_18_sept_2026,_12_52_44
 import dumbbellFlatPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_04_03_1789754734704.png';
 import inclineDumbbellPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_06_02_1789754793034.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
+import overheadTricepsExtensionImage from '@assets/ChatGPT_Image_18_sept_2026,_22_16_00_1789787891725.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
@@ -150,7 +151,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -190,6 +191,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-plano-mancuernas': dumbbellFlatPressImage,
   'press-plano-inclinado': inclineDumbbellPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
+  'triceps-tras-nuca-polea-alta': overheadTricepsExtensionImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
@@ -752,6 +754,24 @@ const exercises: ExerciseDefinition[] = [
     trackedAngleLabels: ['Codo: inicio 70–120°, extensión final 145–180°', 'Línea corporal: 160–180°'],
   },
   {
+    id: 'triceps-tras-nuca-polea-alta',
+    name: 'Extensión de tríceps tras nuca con polea alta',
+    muscleGroup: 'triceps',
+    description: 'Extiende los codos por encima de la cabeza sin mover los hombros ni doblar las muñecas.',
+    angleLabel: 'Hombro · codo · muñeca',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles hombro, codo y muñeca junto a la polea.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombro' },
+      { joint: 'elbow', label: 'codo' },
+      { joint: 'wrist', label: 'muñeca' },
+    ],
+    trackedAngleLabels: [
+      'Hombro: brazo elevado 145–180°',
+      'Codo: inicio 70–120° · extensión final 145–180°',
+      'Muñeca: alineada con el antebrazo',
+    ],
+  },
+  {
     id: 'extension-horizontal-barra',
     name: 'Extensión horizontal con barra',
     muscleGroup: 'triceps',
@@ -1177,6 +1197,9 @@ const PALLOF_ACTIVATION_ANGLE = 135;
 const PALLOF_END_MIN_ANGLE = 150;
 const PALLOF_END_MAX_ANGLE = 180;
 const PALLOF_WRIST_MIN_ANGLE = 135;
+const OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE = 145;
+const OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE = 180;
+const OVERHEAD_TRICEPS_WRIST_MIN_ANGLE = 135;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
@@ -1310,6 +1333,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endLabel: `hombro entre ${LATERAL_RAISE_END_MIN_ANGLE}–${LATERAL_RAISE_END_MAX_ANGLE}°`,
   },
   'triceps-polea-alta': {
+    direction: 'increase',
+    startMinAngle: 70,
+    startMaxAngle: 120,
+    activationAngle: 135,
+    endMinAngle: 145,
+    endMaxAngle: 180,
+    endLabel: 'extensión entre 145–180°',
+  },
+  'triceps-tras-nuca-polea-alta': {
     direction: 'increase',
     startMinAngle: 70,
     startMaxAngle: 120,
@@ -1651,6 +1683,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio: codo 70–120°',
         'Activación: extensión >135°',
         'Final / extensión: codo 145–180°',
+      ];
+    case 'triceps-tras-nuca-polea-alta':
+      return [
+        `Hombro elevado: ${OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}–${OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}°`,
+        'Inicio: codo 70–120°',
+        'Final / extensión: codo 145–180°',
+        'Muñeca alineada con el antebrazo',
       ];
     case 'extension-horizontal-barra':
       return [
@@ -2402,6 +2441,8 @@ function getCameraGuidance(
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
           : exercise === 'press-plano-inclinado'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
+          : exercise === 'triceps-tras-nuca-polea-alta'
+            ? 'Ponte de lado o en 3/4 frente a la polea alta y deja visibles el hombro, el codo y la muñeca durante todo el recorrido.'
           : exercise === 'prensa-piernas' || exercise === 'extensiones-maquina'
            ? 'Ponte de lado y deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.'
            : exercise === 'curl-femoral'
@@ -3119,6 +3160,58 @@ function getTricepsPushdownTechniqueFeedback(
     tone: 'success',
     message: 'Extensión de tríceps controlada',
     detail: `Codo ${elbowAngle}° · torso estable. Mantén los brazos cerca del cuerpo y extiende sin balancearte.`,
+  };
+}
+
+function getOverheadTricepsTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) return defaultTechniqueFeedback;
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const wristTip = keypoints[WRIST_TIP_INDEX[side]];
+  const shoulderAngle = calculateAngle(
+    keypoints[indexes.hip],
+    shoulder,
+    elbow,
+  );
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const wristAngle = calculateAngle(elbow, wrist, wristTip);
+
+  if (shoulderAngle === null || elbowAngle === null || wristAngle === null) {
+    return defaultTechniqueFeedback;
+  }
+
+  if (shoulderAngle < OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Eleva los brazos sin mover el torso',
+      detail: `El hombro está a ${shoulderAngle}°. Mantén el brazo por encima de la cabeza, entre ${OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}° y ${OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}°.`,
+    };
+  }
+  if (wristAngle < OVERHEAD_TRICEPS_WRIST_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Mantén las muñecas neutras',
+      detail: `La muñeca está a ${wristAngle}°. Alinea la mano con el antebrazo y evita doblarla al tirar de la cuerda.`,
+    };
+  }
+  if (elbowAngle < 65) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado el codo',
+      detail: `El codo está a ${elbowAngle}°. Regresa un poco la cuerda y mantén un rango cómodo tras la cabeza.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Extensión tras nuca controlada',
+    detail: `Hombro ${shoulderAngle}° · codo ${elbowAngle}° · muñeca ${wristAngle}°. Mantén los codos apuntando al frente y extiende sin balancearte.`,
   };
 }
 
@@ -3993,6 +4086,7 @@ function calculateExerciseAngle(
     || exercise === 'flexiones-pica'
     || exercise === 'press-militar'
     || exercise === 'triceps-polea-alta'
+    || exercise === 'triceps-tras-nuca-polea-alta'
     || exercise === 'extension-horizontal-barra'
     || exercise === 'curl-biceps'
     || exercise === 'zancadas'
@@ -4256,6 +4350,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'triceps-polea-alta': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'triceps-tras-nuca-polea-alta': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -4701,6 +4800,12 @@ function calculateLiveAngleReadings(
           empty('Codo', 'Inicio 70–120° · activa >135° · final 145–180°'),
           empty('Torso', '160–180°'),
         ];
+      case 'triceps-tras-nuca-polea-alta':
+        return [
+          empty('Hombro', `${OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}–${OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}° · brazo elevado`),
+          empty('Codo', 'Inicio 70–120° · activa >135° · final 145–180°'),
+          empty('Muñeca', `Alineada · mínimo ${OVERHEAD_TRICEPS_WRIST_MIN_ANGLE}°`),
+        ];
       case 'extension-horizontal-barra':
         return [empty('Codo', 'Inicio 150–180° · activa <135° · final 70–105°')];
       case 'curl-biceps':
@@ -4754,6 +4859,16 @@ function calculateLiveAngleReadings(
     keypoints[indexes.shoulder],
     keypoints[indexes.elbow],
     keypoints[indexes.wrist],
+  );
+  const shoulder = () => calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+  );
+  const wrist = () => calculateAngle(
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+    keypoints[WRIST_TIP_INDEX[side ?? 'left']],
   );
   const torso = () => calculateForwardLeanAngle(
     keypoints[indexes.shoulder],
@@ -4904,6 +5019,18 @@ function calculateLiveAngleReadings(
       return [
         value(elbow, 'Codo', 'Inicio 70–120° · activa >135° · final 145–180°', 145, 180),
         value(bodyLine, 'Torso', '160–180°', 160, 180),
+      ];
+    case 'triceps-tras-nuca-polea-alta':
+      return [
+        value(
+          shoulder,
+          'Hombro',
+          `Brazo elevado · ${OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}–${OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}°`,
+          OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE,
+          OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE,
+        ),
+        value(elbow, 'Codo', 'Inicio 70–120° · activa >135° · final 145–180°', 145, 180),
+        value(wrist, 'Muñeca', `Alineada · mínimo ${OVERHEAD_TRICEPS_WRIST_MIN_ANGLE}°`, OVERHEAD_TRICEPS_WRIST_MIN_ANGLE, 180),
       ];
     case 'extension-horizontal-barra':
       return [value(elbow, 'Codo', 'Inicio 150–180° · activa <135° · final 70–105°', 70, 105)];
@@ -5560,6 +5687,8 @@ function Home() {
             ? getLateralRaiseTechniqueFeedback(pose?.keypoints)
           : selectedExerciseRef.current === 'triceps-polea-alta'
             ? getTricepsPushdownTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'triceps-tras-nuca-polea-alta'
+            ? getOverheadTricepsTechniqueFeedback(pose?.keypoints, nextDominantSide)
            : selectedExerciseRef.current === 'extension-horizontal-barra'
              ? getHorizontalBarExtensionTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'curl-biceps'
@@ -6146,6 +6275,7 @@ function Home() {
                      || exercise.id === 'press-plano-mancuernas'
                      || exercise.id === 'press-plano-inclinado'
                     || exercise.id === 'triceps-polea-alta'
+                     || exercise.id === 'triceps-tras-nuca-polea-alta'
                     || exercise.id === 'extension-horizontal-barra'
                     || exercise.id === 'peso-muerto-rumano'
                      || exercise.id === 'hip-thrust-barra'
@@ -6528,6 +6658,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'triceps-tras-nuca-polea-alta' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Posición:</b> colócate de lado o en 3/4 frente a la polea alta, con la cuerda detrás de la cabeza y los brazos elevados.</li>
+                    <li><b>Hombros:</b> mantén los brazos por encima de la cabeza, con el hombro entre {OVERHEAD_TRICEPS_SHOULDER_MIN_ANGLE}° y {OVERHEAD_TRICEPS_SHOULDER_MAX_ANGLE}°; evita encogerlos o moverlos hacia delante.</li>
+                    <li><b>Codos:</b> mantenlos apuntando al frente y relativamente juntos; flexiona y extiende solo el codo, sin abrir los brazos.</li>
+                    <li><b>Muñecas:</b> mantenlas neutras y alineadas con los antebrazos durante todo el recorrido.</li>
+                    <li><b>Movimiento:</b> lleva la cuerda detrás de la nuca con control y extiende hasta acercarte a 145°–180°, sin bloquear de golpe ni arquear el torso.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'extension-horizontal-barra' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -6659,6 +6801,7 @@ function Home() {
                        || selectedExercise === 'press-plano-mancuernas'
                        || selectedExercise === 'press-plano-inclinado'
                       || selectedExercise === 'triceps-polea-alta'
+                       || selectedExercise === 'triceps-tras-nuca-polea-alta'
                       || selectedExercise === 'extension-horizontal-barra'
                       || selectedExercise === 'curl-biceps'
                       || selectedExercise === 'fondos'
