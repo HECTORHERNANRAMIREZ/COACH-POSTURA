@@ -746,6 +746,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'extension-horizontal-barra',
     name: 'Extensión horizontal con barra',
+    muscleGroup: 'triceps',
     description: 'Túmbate, mantén los brazos estables y lleva la barra hacia la frente con control.',
     angleLabel: 'Codo · objetivo 70–105°',
     cameraNote: 'Nota: vista lateral; coloca el móvil bajo o a la altura del banco.',
