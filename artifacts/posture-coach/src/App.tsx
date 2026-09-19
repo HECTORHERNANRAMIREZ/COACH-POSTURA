@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda' | 'hombros';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -769,6 +769,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'sentadillas',
     name: 'Sentadillas',
+    muscleGroup: 'pierna',
     description: 'Mide la profundidad y el control de tus piernas.',
     angleLabel: 'Cadera · rodilla · tobillo',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -782,6 +783,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'prensa-piernas',
     name: 'Prensa de piernas',
+    muscleGroup: 'pierna',
     description: 'Empuja la plataforma con control y mantén alineadas las rodillas y los tobillos.',
     angleLabel: 'Rodillas · tobillos',
     cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.',
@@ -799,6 +801,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'extensiones-maquina',
     name: 'Extensiones en máquina',
+    muscleGroup: 'pierna',
     description: 'Extiende las piernas con control y mantén alineadas las rodillas y los tobillos.',
     angleLabel: 'Rodillas · tobillos',
     cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos durante todo el recorrido.',
@@ -816,6 +819,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'curl-femoral',
     name: 'Curl de femoral (Sentado o Tumbado)',
+    muscleGroup: 'pierna',
     description: 'Flexiona las rodillas con control y mantén las caderas estables durante todo el recorrido.',
     angleLabel: 'Rodillas · tobillos',
     cameraNote: 'Nota: vista lateral; deja visibles ambas rodillas y ambos tobillos, tanto sentado como tumbado.',
@@ -833,6 +837,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'elevacion-talones-pie',
     name: 'Elevación de talones de pie',
+    muscleGroup: 'pierna',
     description: 'Eleva los talones con control sin perder la alineación del torso ni bloquear las rodillas.',
     angleLabel: 'Tobillos · rodillas · torso',
     cameraNote: 'Nota: vista lateral; deja visibles hombro, cadera, rodilla, tobillo y pie durante todo el movimiento.',
@@ -866,6 +871,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'hip-thrust-barra',
     name: 'Hip Thrust con barra',
+    muscleGroup: 'pierna',
     description: 'Eleva la cadera con control, mantén los pies firmes y bloquea arriba sin hiperextender la espalda.',
     angleLabel: 'Cadera · rodillas · tobillos · brazos',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos, ambas piernas, el banco y la barra.',
@@ -887,6 +893,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'zancadas',
     name: 'Zancadas dinámicas',
+    muscleGroup: 'pierna',
     description: 'Baja con control hasta formar 90° en las piernas.',
     angleLabel: 'Rodilla delantera · objetivo 90°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -902,6 +909,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'zancada-banco',
     name: 'Zancada en banco',
+    muscleGroup: 'pierna',
     description: 'Eleva el pie trasero y controla la rodilla delantera.',
     angleLabel: 'Rodilla 80–100° · torso 15–20°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -943,6 +951,10 @@ const exerciseGroups = [
   {
     label: 'Hombros',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'hombros'),
+  },
+  {
+    label: 'Pierna',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'pierna'),
   },
   {
     label: 'Por clasificar',
