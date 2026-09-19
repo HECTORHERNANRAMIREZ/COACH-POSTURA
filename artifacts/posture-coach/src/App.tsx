@@ -152,7 +152,7 @@ type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
 };
-type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps' | 'abdomen';
+type MuscleGroup = 'pecho' | 'espalda' | 'hombros' | 'pierna' | 'triceps' | 'abdomen' | 'biceps';
 type ExerciseDefinition = {
   id: ExerciseId;
   name: string;
@@ -760,6 +760,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'curl-biceps',
     name: 'Curl de bíceps',
+    muscleGroup: 'biceps',
     description: 'Sube las manos casi hasta el pecho y baja sin extender por completo.',
     angleLabel: 'Codo · objetivo 30–60°',
     cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
@@ -969,6 +970,10 @@ const exerciseGroups = [
   {
     label: 'Abdomen',
     exercises: exercises.filter((exercise) => exercise.muscleGroup === 'abdomen'),
+  },
+  {
+    label: 'Bíceps',
+    exercises: exercises.filter((exercise) => exercise.muscleGroup === 'biceps'),
   },
   {
     label: 'Por clasificar',
