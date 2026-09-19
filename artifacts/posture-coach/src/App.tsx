@@ -704,7 +704,7 @@ const exercises: ExerciseDefinition[] = [
   {
     id: 'press-banca-agarre-cerrado',
     name: 'Press de banca con agarre cerrado',
-    muscleGroup: 'pecho',
+    muscleGroup: 'triceps',
     description: 'Empuja la barra con las manos más juntas, manteniendo hombros, codos y muñecas alineados.',
     angleLabel: 'Hombros · codos · muñecas',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
