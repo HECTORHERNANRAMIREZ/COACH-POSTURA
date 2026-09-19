@@ -154,7 +154,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -200,6 +200,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'copa-mancuernas': dumbbellOverheadTricepsImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
+  'remo-sentado-polea-agarre-cerrado': barbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
   'curl-biceps': bicepsCurlImage,
   sentadillas: squatImage,
@@ -453,6 +454,27 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'ankle', label: 'tobillo' },
     ],
     trackedAngleLabels: ['Torso: 30–45°', 'Rodilla: 150–180°', 'Elevación del codo: 15–30°', 'Flexión del codo: final 70–115°'],
+  },
+  {
+    id: 'remo-sentado-polea-agarre-cerrado',
+    name: 'Remo sentado en polea con agarre cerrado (Gironde)',
+    muscleGroup: 'espalda',
+    description: 'Tira del agarre hacia el abdomen con el torso estable y mantén hombros, codos y muñecas alineados.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas junto a la polea.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: agarre cerrado hacia el abdomen con el torso estable',
+      'Calibración del recorrido: pendiente',
+    ],
   },
   {
     id: 'peso-muerto-rumano',
@@ -1705,6 +1727,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Torso ${ROW_TORSO_MIN_ANGLE}–${ROW_TORSO_MAX_ANGLE}° · rodilla ${ROW_KNEE_MIN_ANGLE}–${ROW_KNEE_MAX_ANGLE}°`,
         `Elevación de codos ${ROW_ELBOW_TORSO_MIN_ANGLE}–${ROW_ELBOW_TORSO_MAX_ANGLE}°`,
       ];
+    case 'remo-sentado-polea-agarre-cerrado':
+      return [
+        'Lecturas en vivo: hombros, codos y muñecas',
+        'Se muestran ambos lados para revisar la simetría',
+        'Torso estable y agarre cerrado hacia el abdomen',
+        'Calibración del recorrido: pendiente',
+      ];
     case 'flexiones':
       return [
         'Inicio / regreso: codo 150–180°',
@@ -2553,6 +2582,8 @@ function getCameraGuidance(
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : exercise === 'pull-over-polea-alta'
           ? 'Ponte de lado frente a la polea alta y deja visibles ambos hombros, codos, caderas y muñecas durante todo el recorrido.'
+         : exercise === 'remo-sentado-polea-agarre-cerrado'
+           ? 'Ponte de lado o en 3/4 frente a la polea baja y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'press-banca-agarre-cerrado'
@@ -2713,6 +2744,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'pull-over-polea-alta'
         ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
+      : exercise === 'remo-sentado-polea-agarre-cerrado'
+        ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y la polea baja dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-banca-agarre-cerrado'
@@ -4419,6 +4452,11 @@ function getAngleDiagnosticPoints(
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
     ],
+    'remo-sentado-polea-agarre-cerrado': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
     flexiones: [
       { label: 'Cadera', joint: 'hip' },
       { label: 'Hombro', joint: 'shoulder' },
@@ -4937,6 +4975,15 @@ function calculateLiveAngleReadings(
           empty('Rodilla', '150–180°'),
           empty('Codos', '15–30°'),
           empty('Flexión', 'Inicio 145–180° · activa <130° · final 70–115°'),
+        ];
+      case 'remo-sentado-polea-agarre-cerrado':
+        return [
+          empty('Hombro izq.', 'Ángulo articular'),
+          empty('Hombro der.', 'Ángulo articular'),
+          empty('Codo izq.', 'Ángulo articular'),
+          empty('Codo der.', 'Ángulo articular'),
+          empty('Muñeca izq.', 'Ángulo articular'),
+          empty('Muñeca der.', 'Ángulo articular'),
         ];
       case 'flexiones':
       case 'flexiones-declinadas':
@@ -6442,6 +6489,7 @@ function Home() {
                     || exercise.id === 'jalon'
                     || exercise.id === 'pull-over-polea-alta'
                     || exercise.id === 'remo-barra'
+                    || exercise.id === 'remo-sentado-polea-agarre-cerrado'
                     || exercise.id === 'flexiones'
                     || exercise.id === 'flexiones-declinadas'
                     || exercise.id === 'flexiones-pica'
@@ -7008,6 +7056,7 @@ function Home() {
                        || selectedExercise === 'dominadas-supinas'
                       || selectedExercise === 'muscle-up'
                        || selectedExercise === 'pull-over-polea-alta'
+                       || selectedExercise === 'remo-sentado-polea-agarre-cerrado'
                       || selectedExercise === 'zancadas'
                       || selectedExercise === 'zancada-banco'
                       || selectedExercise === 'jalon'
