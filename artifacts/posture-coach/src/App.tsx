@@ -31,7 +31,7 @@ import {
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
 import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
-import commandoPullupImage from '@assets/image_1789794602746.png';
+import commandoPullupImage from '@assets/ChatGPT_Image_19_sept_2026,_00_11_59_1789794729985.png';
 import muscleUpImage from '@assets/ChatGPT_Image_14_sept_2026,_13_48_26_1789411716868.png';
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
 import pullOverImage from '@assets/ChatGPT_Image_18_sept_2026,_23_33_58_1789792689595.png';
