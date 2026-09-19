@@ -45,6 +45,7 @@ import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_1789784284541.png';
 import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
+import pallofPressImage from '@assets/ChatGPT_Image_18_sept_2026,_21_47_36_1789786072344.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m._1789741994699.png';
 import lowCableLateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_11_52_57_1789750471669.png';
@@ -204,7 +205,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   plancha: plankImage,
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
-  'press-pallof-polea-banda': lowCableLateralRaiseImage,
+  'press-pallof-polea-banda': pallofPressImage,
 };
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
