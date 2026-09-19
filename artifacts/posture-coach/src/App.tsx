@@ -94,7 +94,7 @@ import {
 const queryClient = new QueryClient();
 
 // MODO TEMPORAL DE DESARROLLO:
-// Se conserva todo el código de Clerk y Lemon Squeezy, pero LiftForm abre
+// Se conserva todo el código de Clerk y Lemon Squeezy, pero NetPosture abre
 // directamente mientras agregamos y ajustamos ejercicios.
 // Para reactivar login y pagos, cambiar este valor a true.
 const AUTH_AND_BILLING_ENABLED = false;
@@ -6802,7 +6802,7 @@ function Home() {
             </button>
           ) : (
             <div className="wordmark">
-              <span>LiftForm</span>
+              <span>NetPosture</span>
             </div>
           )}
           <div className="topbar-actions">
@@ -7860,7 +7860,7 @@ function PublicWelcome() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span>LiftForm</span>
+            <span>NetPosture</span>
           </div>
           <div className="privacy-chip">
             <ShieldCheck size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -7937,7 +7937,7 @@ function SubscriptionRequired() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span>LiftForm</span>
+            <span>NetPosture</span>
           </div>
           <UserMenu />
         </header>
@@ -7951,10 +7951,10 @@ function SubscriptionRequired() {
             <div className="account-mark account-mark--paid" aria-hidden="true">
               <CheckCircle2 size={22} strokeWidth={1.8} />
             </div>
-            <h1 id="plan-title" className="welcome-title">Activa LiftForm.</h1>
+            <h1 id="plan-title" className="welcome-title">Activa NetPosture.</h1>
             <p className="welcome-subtitle">
               Hola{user?.firstName ? `, ${user.firstName}` : ''}. Tu cuenta ya está lista.
-              Activa el plan anual por <strong>US$2</strong> para abrir tus sesiones en LiftForm.
+              Activa el plan anual por <strong>US$2</strong> para abrir tus sesiones en NetPosture.
             </p>
             <button
               type="button"
@@ -8019,7 +8019,7 @@ function PaymentReturnPage() {
         <main className="coach-layout">
           <header className="topbar">
             <div className="wordmark">
-            <span>LiftForm</span>
+            <span>NetPosture</span>
             </div>
             <UserMenu />
           </header>
@@ -8030,7 +8030,7 @@ function PaymentReturnPage() {
               </div>
               <h1 id="payment-confirmed-title" className="welcome-title">Pago confirmado.</h1>
               <p className="welcome-subtitle">
-                 Tu plan está activo para esta cuenta de Clerk. Ya puedes abrir LiftForm.
+                 Tu plan está activo para esta cuenta de Clerk. Ya puedes abrir NetPosture.
               </p>
               <div className="account-actions">
                 <button
@@ -8038,7 +8038,7 @@ function PaymentReturnPage() {
                   className="primary-action"
                   onClick={() => setLocation('/')}
                 >
-                  Entrar a LiftForm
+                  Entrar a NetPosture
                   <ArrowRight size={17} aria-hidden="true" />
                 </button>
                 {billing.data.receiptUrl && (
@@ -8071,7 +8071,7 @@ function PaymentReturnPage() {
       <main className="coach-layout">
         <header className="topbar">
           <div className="wordmark">
-            <span>LiftForm</span>
+            <span>NetPosture</span>
           </div>
           <UserMenu />
         </header>
@@ -8086,7 +8086,7 @@ function PaymentReturnPage() {
             <p className="welcome-subtitle">
               {timedOut
                 ? 'El pago puede estar confirmado, pero todavía no recibimos el aviso de Lemon Squeezy.'
-                 : 'Lemon Squeezy está confirmando tu pago. LiftForm se abrirá automáticamente en cuanto recibamos la confirmación.'}
+                 : 'Lemon Squeezy está confirmando tu pago. NetPosture se abrirá automáticamente en cuanto recibamos la confirmación.'}
             </p>
             {!timedOut && (
               <div className="payment-checking" role="status" aria-live="polite">
@@ -8253,13 +8253,13 @@ function ClerkProviderWithRoutes() {
         signIn: {
           start: {
             title: 'Bienvenido de nuevo',
-             subtitle: 'Entra para continuar con LiftForm',
+             subtitle: 'Entra para continuar con NetPosture',
           },
         },
         signUp: {
           start: {
             title: 'Crea tu cuenta',
-             subtitle: 'Activa tu espacio en LiftForm',
+             subtitle: 'Activa tu espacio en NetPosture',
           },
         },
       }}
