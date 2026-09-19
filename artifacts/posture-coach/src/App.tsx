@@ -149,7 +149,7 @@ const clerkAppearance = {
 const GREEN = '#39ff6a';
 
 type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal';
-type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
+type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
   label: string;
@@ -972,16 +972,24 @@ const exercises: ExerciseDefinition[] = [
     id: 'rueda-abdominal',
     name: 'Rueda abdominal',
     muscleGroup: 'abdomen',
-    description: 'Desliza la rueda hacia delante con control y vuelve sin perder la alineación de la cadera.',
-    angleLabel: 'Cadera · rodillas · tobillos',
-    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.',
+    description: 'Desliza la rueda hacia delante con control y vuelve sin perder la alineación de la cabeza, los hombros y la cadera.',
+    angleLabel: 'Cabeza · hombros · codos · muñecas · cadera · rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles la cabeza, ambos hombros, codos, muñecas, cadera, rodillas y tobillos durante todo el recorrido.',
     trackedJoints: [
+      { joint: 'head', label: 'cabeza' },
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
       { joint: 'hip', label: 'cadera' },
       { joint: 'knee', label: 'rodillas' },
       { joint: 'ankle', label: 'tobillos' },
     ],
     trackBothSides: true,
     trackedAngleLabels: [
+      'Cabeza: punto facial visible',
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
       'Cadera: lectura izquierda y derecha',
       'Rodillas: lectura izquierda y derecha',
       'Tobillos: lectura izquierda y derecha',
@@ -2254,12 +2262,16 @@ function getTrackedPointsForExercise(
       ? [dominantSide]
       : [];
 
-  return sides.flatMap((side) => definition.trackedJoints.map(({ joint, label }) => {
-    const index = joint === 'foot'
-      ? MUSCLE_UP_FOOT_INDEX[side]
-      : sideKeypoints[side][joint];
+  return sides.flatMap((side, sideIndex) => definition.trackedJoints
+    .filter(({ joint }) => joint !== 'head' || sideIndex === 0)
+    .map(({ joint, label }) => {
+    const index = joint === 'head'
+      ? 0
+      : joint === 'foot'
+        ? MUSCLE_UP_FOOT_INDEX[side]
+        : sideKeypoints[side][joint];
     return {
-      label: definition.trackBothSides
+      label: definition.trackBothSides && joint !== 'head'
         ? `${label} (${side === 'left' ? 'izq.' : 'der.'})`
         : label,
       point: keypoints[index],
@@ -2323,7 +2335,7 @@ function getCameraGuidance(
          : exercise === 'crunch-invertido'
            ? 'Ponte de lado y deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.'
          : exercise === 'rueda-abdominal'
-           ? 'Ponte de lado o en 3/4 y deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.'
+           ? 'Ponte de lado o en 3/4 y deja visibles la cabeza, ambos hombros, codos, muñecas, cadera, rodillas y tobillos durante todo el recorrido.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -4140,6 +4152,10 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     'rueda-abdominal': [
+      { label: 'Cabeza', joint: 'head' },
+      { label: 'Hombros', joint: 'shoulder' },
+      { label: 'Codos', joint: 'elbow' },
+      { label: 'Muñecas', joint: 'wrist' },
       { label: 'Cadera', joint: 'hip' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
@@ -4150,9 +4166,11 @@ function getAngleDiagnosticPoints(
     ?? labels[exercise];
 
   return diagnosticJoints.map(({ label, joint }) => {
-    const pointIndex = joint === 'foot'
-      ? side ? MUSCLE_UP_FOOT_INDEX[side] : undefined
-      : indexes?.[joint];
+    const pointIndex = joint === 'head'
+      ? 0
+      : joint === 'foot'
+        ? side ? MUSCLE_UP_FOOT_INDEX[side] : undefined
+        : indexes?.[joint];
     const point = pointIndex === undefined ? undefined : keypoints?.[pointIndex];
     return {
       label: label.charAt(0).toUpperCase() + label.slice(1),
