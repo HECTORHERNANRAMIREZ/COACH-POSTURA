@@ -73,6 +73,7 @@ import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import inclineDumbbellCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_15_05_16_1789848409357.png';
 import preacherCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_15_11_16_1789848685122.png';
+import spiderCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_15_15_53_1789848964476.png';
 import reverseBarbellCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_14_34_07_1789846459015.png';
 import seatedWristCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_14_39_55_1789846843665.png';
 import wristRollerImage from '@assets/ChatGPT_Image_19_sept_2026,_14_54_13_1789847660575.png';
@@ -163,7 +164,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -217,6 +218,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'curl-biceps': bicepsCurlImage,
   'curl-inclinado-mancuernas': inclineDumbbellCurlImage,
   'curl-predicador': preacherCurlImage,
+  'curl-arana': spiderCurlImage,
   'curl-inverso-barra': reverseBarbellCurlImage,
   'curl-muneca-sentado': seatedWristCurlImage,
   'rodillo-muneca': wristRollerImage,
@@ -992,6 +994,46 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
   {
+    id: 'curl-predicador',
+    name: 'Curl predicador',
+    muscleGroup: 'biceps',
+    description: 'Apoya los brazos en el banco predicador y flexiona los codos con control, sin despegar los hombros del respaldo.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas junto al banco predicador durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: inicio 85–135°, activación <70°, final 30–60°',
+      'Muñecas: lectura izquierda y derecha',
+      'Posición: brazos apoyados en el banco predicador',
+    ],
+  },
+  {
+    id: 'curl-arana',
+    name: 'Curl de araña',
+    muscleGroup: 'biceps',
+    description: 'Apoya el pecho en un banco inclinado y flexiona los codos con los brazos colgando, sin balancear los hombros.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4 frente al banco inclinado; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: inicio 85–135°, activación <70°, final 30–60°',
+      'Muñecas: lectura izquierda y derecha',
+      'Posición: pecho apoyado y brazos colgando del banco inclinado',
+    ],
+  },
+  {
     id: 'curl-inverso-barra',
     name: 'Curl inverso con barra',
     muscleGroup: 'antebrazo',
@@ -1682,6 +1724,24 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: 60,
     endLabel: 'flexión entre 30–60°',
   },
+  'curl-predicador': {
+    direction: 'decrease',
+    startMinAngle: 85,
+    startMaxAngle: 135,
+    activationAngle: 70,
+    endMinAngle: 30,
+    endMaxAngle: 60,
+    endLabel: 'flexión entre 30–60°',
+  },
+  'curl-arana': {
+    direction: 'decrease',
+    startMinAngle: 85,
+    startMaxAngle: 135,
+    activationAngle: 70,
+    endMinAngle: 30,
+    endMaxAngle: 60,
+    endLabel: 'flexión entre 30–60°',
+  },
   'curl-inverso-barra': {
     direction: 'decrease',
     startMinAngle: 85,
@@ -2109,6 +2169,14 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Activación: flexión <70°',
         'Final: codos 30–60°',
         'Brazos apoyados en el banco predicador',
+      ];
+    case 'curl-arana':
+      return [
+        'Lecturas en vivo: hombros, codos y muñecas izquierda y derecha',
+        'Inicio / regreso: codos 85–135°',
+        'Activación: flexión <70°',
+        'Final: codos 30–60°',
+        'Pecho apoyado y brazos colgando del banco inclinado',
       ];
     case 'curl-inverso-barra':
       return [
@@ -2932,6 +3000,8 @@ function getCameraGuidance(
             ? 'Ponte de lado o en 3/4 junto al banco y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
           : exercise === 'curl-predicador'
             ? 'Ponte de frente o en 3/4 frente al banco predicador y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+          : exercise === 'curl-arana'
+            ? 'Ponte de frente o en 3/4 frente al banco inclinado y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
           : exercise === 'curl-muneca-sentado'
             ? 'Ponte de lado junto al banco y deja visibles el hombro, codo y muñeca del lado que trabaja durante todo el recorrido.'
           : exercise === 'rodillo-muneca'
@@ -3048,6 +3118,7 @@ function getCameraGuidance(
       && exercise !== 'press-plano-inclinado'
       && exercise !== 'curl-inclinado-mancuernas'
       && exercise !== 'curl-predicador'
+      && exercise !== 'curl-arana'
       && torsoLength > 0
       && shoulderWidth / torsoLength > MAX_FRONT_VIEW_RATIO
     ) {
@@ -5144,6 +5215,11 @@ function getAngleDiagnosticPoints(
       { label: 'Codos', joint: 'elbow' },
       { label: 'Muñecas', joint: 'wrist' },
     ],
+    'curl-arana': [
+      { label: 'Hombros', joint: 'shoulder' },
+      { label: 'Codos', joint: 'elbow' },
+      { label: 'Muñecas', joint: 'wrist' },
+    ],
     'curl-inverso-barra': [
       { label: 'Hombros', joint: 'shoulder' },
       { label: 'Codos', joint: 'elbow' },
@@ -5647,6 +5723,15 @@ function calculateLiveAngleReadings(
           empty('Muñeca izq.', 'Ángulo articular'),
           empty('Muñeca der.', 'Ángulo articular'),
         ];
+      case 'curl-arana':
+        return [
+          empty('Hombro izq.', 'Ángulo articular'),
+          empty('Hombro der.', 'Ángulo articular'),
+          empty('Codo izq.', 'Inicio 85–135° · activa <70° · final 30–60°'),
+          empty('Codo der.', 'Inicio 85–135° · activa <70° · final 30–60°'),
+          empty('Muñeca izq.', 'Ángulo articular'),
+          empty('Muñeca der.', 'Ángulo articular'),
+        ];
       case 'curl-inverso-barra':
         return [
           empty('Hombro izq.', 'Ángulo articular'),
@@ -5952,6 +6037,12 @@ function calculateLiveAngleReadings(
     case 'curl-predicador':
       return [
         value(shoulder, 'Hombro', 'Hombros estables junto al banco'),
+        value(elbow, 'Codo', 'Inicio 85–135° · activa <70° · final 30–60°', 30, 60),
+        value(wrist, 'Muñeca', 'Alineada con el antebrazo'),
+      ];
+    case 'curl-arana':
+      return [
+        value(shoulder, 'Hombro', 'Hombros estables sobre el banco'),
         value(elbow, 'Codo', 'Inicio 85–135° · activa <70° · final 30–60°', 30, 60),
         value(wrist, 'Muñeca', 'Alineada con el antebrazo'),
       ];
@@ -6657,6 +6748,8 @@ function Home() {
               ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : selectedExerciseRef.current === 'curl-predicador'
               ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
+            : selectedExerciseRef.current === 'curl-arana'
+              ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
            : selectedExerciseRef.current === 'curl-inverso-barra'
              ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
            : selectedExerciseRef.current === 'curl-muneca-sentado'
@@ -7266,6 +7359,7 @@ function Home() {
                     || exercise.id === 'curl-biceps'
                      || exercise.id === 'curl-inclinado-mancuernas'
                      || exercise.id === 'curl-predicador'
+                     || exercise.id === 'curl-arana'
                      || exercise.id === 'curl-inverso-barra'
                      || exercise.id === 'curl-muneca-sentado'
                      || exercise.id === 'rodillo-muneca'
@@ -7729,6 +7823,18 @@ function Home() {
                   </ul>
                 </details>
               )}
+              {selectedExercise === 'curl-arana' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Posición:</b> coloca el pecho sobre un banco inclinado y deja los brazos colgando hacia el suelo, con los hombros estables.</li>
+                    <li><b>Vista:</b> colócate de frente o en 3/4 frente al banco para que se vean ambos hombros, codos y muñecas.</li>
+                    <li><b>Subida:</b> flexiona ambos codos y lleva la barra hacia los hombros sin despegar el pecho del banco.</li>
+                    <li><b>Bajada:</b> desciende con control hasta 85°–135° sin bloquear ni hiperextender los codos.</li>
+                    <li><b>Muñecas:</b> mantenlas alineadas con los antebrazos y evita balancear los brazos para completar la repetición.</li>
+                  </ul>
+                </details>
+              )}
               {selectedExercise === 'curl-inverso-barra' && (
                 <details className="pulldown-instructions">
                   <summary>Cómo hacerlo</summary>
@@ -7882,6 +7988,7 @@ function Home() {
                       || selectedExercise === 'curl-biceps'
                        || selectedExercise === 'curl-inclinado-mancuernas'
                        || selectedExercise === 'curl-predicador'
+                       || selectedExercise === 'curl-arana'
                        || selectedExercise === 'curl-inverso-barra'
                       || selectedExercise === 'fondos'
                         || selectedExercise === 'dominadas'
