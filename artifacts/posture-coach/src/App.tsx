@@ -31,6 +31,7 @@ import {
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
 import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
+import commandoPullupImage from '@assets/image_1789794602746.png';
 import muscleUpImage from '@assets/ChatGPT_Image_14_sept_2026,_13_48_26_1789411716868.png';
 import pulldownImage from '@assets/ChatGPT_Image_8_sept_2026,_23_45_23_1788929140639.png';
 import pullOverImage from '@assets/ChatGPT_Image_18_sept_2026,_23_33_58_1789792689595.png';
@@ -156,7 +157,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -178,6 +179,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   fondos: dipImage,
   dominadas: pullupImage,
   'dominadas-supinas': supinePullupImage,
+  'dominadas-comando': commandoPullupImage,
   'muscle-up': muscleUpImage,
   jalon: pulldownImage,
   'pull-over-polea-alta': pullOverImage,
@@ -384,6 +386,28 @@ const exercises: ExerciseDefinition[] = [
     ],
     trackBothSides: true,
     trackedAngleLabels: ['Codo: inicio/regreso 160–180°', 'Altura: cabeza por encima de las muñecas'],
+  },
+  {
+    id: 'dominadas-comando',
+    name: 'Dominadas comando',
+    muscleGroup: 'espalda',
+    description: 'Alterna el agarre sobre la barra y sube con control, manteniendo hombros, codos, muñecas y cabeza visibles.',
+    angleLabel: 'Hombros · codos · muñecas · cabeza',
+    cameraNote: 'Nota: vista trasera o en 3/4; deja visibles ambos hombros, codos, muñecas y la cabeza durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'head', label: 'cabeza' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Cabeza: posición respecto a las muñecas',
+      'Calibración del recorrido: pendiente',
+    ],
   },
   {
     id: 'muscle-up',
@@ -1726,6 +1750,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Activación: codo <${PULLUP_NO_LOCKOUT_ANGLE}°`,
         'Parte alta: cabeza por encima de las muñecas',
       ];
+    case 'dominadas-comando':
+      return [
+        'Lecturas en vivo: hombros, codos y muñecas izquierda y derecha',
+        'Cabeza: posición respecto a las muñecas',
+        'Agarre comando y recorrido: pendiente de calibración',
+      ];
     case 'muscle-up':
       return [
         'Codos, rodillas y tobillos: rango pendiente',
@@ -2607,7 +2637,7 @@ function getCameraGuidance(
           ? 'Ponte de lado y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
-        : exercise === 'dominadas' || exercise === 'dominadas-supinas'
+        : exercise === 'dominadas' || exercise === 'dominadas-supinas' || exercise === 'dominadas-comando'
           ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
@@ -2734,6 +2764,7 @@ function getCameraGuidance(
        && exercise !== 'press-pallof-polea-banda'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
+      && exercise !== 'dominadas-comando'
       && exercise !== 'pull-over-polea-alta'
       && exercise !== 'press-banca-agarre-cerrado'
       && exercise !== 'press-banca-inclinado'
@@ -2777,6 +2808,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'pull-over-polea-alta'
         ? 'Usa una vista lateral, con ambos brazos completos, las caderas y la polea dentro del encuadre.'
+      : exercise === 'dominadas-comando'
+        ? 'Usa una vista trasera o en 3/4, con la barra, ambos brazos y la cabeza dentro del encuadre.'
       : exercise === 'remo-sentado-polea-agarre-cerrado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y la polea baja dentro del encuadre.'
       : exercise === 'remo-mancuerna-una-mano'
@@ -2881,6 +2914,12 @@ const muscleUpReferenceFeedback: TechniqueFeedback = {
   tone: 'checking',
   message: 'Lecturas de referencia activas',
   detail: 'Observa codos, rodillas y tobillos. Definiremos los rangos después de revisar tu ejecución correcta.',
+};
+
+const commandoPullupReferenceFeedback: TechniqueFeedback = {
+  tone: 'checking',
+  message: 'Lecturas de referencia activas',
+  detail: 'Observa hombros, codos, muñecas y cabeza. Definiremos el recorrido de la dominada comando después de revisar una ejecución correcta.',
 };
 
 function calculatePushupTechniqueAngles(
@@ -4285,6 +4324,7 @@ function calculateExerciseAngle(
     exercise === 'fondos'
     || exercise === 'dominadas'
     || exercise === 'dominadas-supinas'
+    || exercise === 'dominadas-comando'
     || exercise === 'jalon'
     || exercise === 'remo-barra'
     || exercise === 'flexiones'
@@ -4458,6 +4498,12 @@ function getAngleDiagnosticPoints(
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'dominadas-comando': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cabeza', joint: 'head' },
     ],
     'muscle-up': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -5939,7 +5985,9 @@ function Home() {
           : [],
       );
       setPullupJointReadings(
-        selectedExerciseForFrame === 'dominadas' || selectedExerciseForFrame === 'dominadas-supinas'
+        selectedExerciseForFrame === 'dominadas'
+          || selectedExerciseForFrame === 'dominadas-supinas'
+          || selectedExerciseForFrame === 'dominadas-comando'
           ? calculatePullupJointReadings(pose?.keypoints)
           : [],
       );
@@ -6381,6 +6429,8 @@ function Home() {
     ? squatFeedback
     : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
       ? pullupFeedback
+      : selectedExercise === 'dominadas-comando'
+        ? commandoPullupReferenceFeedback
       : selectedExercise === 'muscle-up'
         ? muscleUpReferenceFeedback
       : techniqueFeedback;
@@ -6396,7 +6446,7 @@ function Home() {
       ? 'AJUSTAR CÁMARA'
       : !exerciseStarted
         ? 'LISTO PARA INICIAR'
-        : selectedExercise === 'muscle-up'
+        : selectedExercise === 'muscle-up' || selectedExercise === 'dominadas-comando'
           ? 'CALIBRACIÓN PENDIENTE'
         : angle === null
       ? 'ESPERANDO'
@@ -6533,6 +6583,7 @@ function Home() {
                       const ExerciseIcon = exercise.id === 'fondos'
                     || exercise.id === 'dominadas'
                     || exercise.id === 'dominadas-supinas'
+                    || exercise.id === 'dominadas-comando'
                     || exercise.id === 'muscle-up'
                     || exercise.id === 'jalon'
                     || exercise.id === 'pull-over-polea-alta'
@@ -7068,7 +7119,9 @@ function Home() {
                 className={`video-stage ${
                   selectedExercise === 'fondos' ? 'video-stage--dip' : ''
                 }${
-                  selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+                  selectedExercise === 'dominadas'
+                    || selectedExercise === 'dominadas-supinas'
+                    || selectedExercise === 'dominadas-comando'
                     ? ' video-stage--pullup'
                     : ''
                 }`}
@@ -7101,8 +7154,9 @@ function Home() {
                       || selectedExercise === 'extension-horizontal-barra'
                       || selectedExercise === 'curl-biceps'
                       || selectedExercise === 'fondos'
-                       || selectedExercise === 'dominadas'
-                       || selectedExercise === 'dominadas-supinas'
+                        || selectedExercise === 'dominadas'
+                        || selectedExercise === 'dominadas-supinas'
+                        || selectedExercise === 'dominadas-comando'
                       || selectedExercise === 'muscle-up'
                        || selectedExercise === 'pull-over-polea-alta'
                        || selectedExercise === 'remo-sentado-polea-agarre-cerrado'
@@ -7115,7 +7169,9 @@ function Home() {
                        || selectedExercise === 'curl-femoral'
                        || selectedExercise === 'elevacion-talones-pie'
                       || selectedExercise === 'plancha'
-                       ? selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+                        ? selectedExercise === 'dominadas'
+                          || selectedExercise === 'dominadas-supinas'
+                          || selectedExercise === 'dominadas-comando'
                          ? 'trasera'
                          : 'lateral'
                       : 'frontal'
@@ -7142,7 +7198,8 @@ function Home() {
                 </button>
                   {selectedExercise !== 'fondos'
                     && selectedExercise !== 'dominadas'
-                    && selectedExercise !== 'dominadas-supinas' && (
+                    && selectedExercise !== 'dominadas-supinas'
+                    && selectedExercise !== 'dominadas-comando' && (
                       <div
                         className={`live-angle-hud live-angle-hud--${liveAngleReadings.length > 3 ? 'wide' : 'compact'}`}
                         aria-label={`Ángulos de extremidades medidos en tiempo real de ${activeExercise?.name ?? 'este ejercicio'}`}
@@ -7188,7 +7245,9 @@ function Home() {
                       </div>
                     </div>
                   )}
-                  {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') && (
+                  {(selectedExercise === 'dominadas'
+                    || selectedExercise === 'dominadas-supinas'
+                    || selectedExercise === 'dominadas-comando') && (
                     <div
                       className="dip-joints-hud pullup-joints-hud"
                       aria-label="Medición en vivo de ambos hombros, codos, muñecas y posición de la cabeza"
