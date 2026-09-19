@@ -148,7 +148,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -204,6 +204,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   plancha: plankImage,
   'crunch-invertido': reverseCrunchImage,
   'rueda-abdominal': abWheelImage,
+  'press-pallof-polea-banda': lowCableLateralRaiseImage,
 };
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
@@ -996,6 +997,26 @@ const exercises: ExerciseDefinition[] = [
       'Recorrido: extensión y regreso con cadera alineada',
     ],
   },
+  {
+    id: 'press-pallof-polea-banda',
+    name: 'Press Pallof con polea o banda',
+    muscleGroup: 'abdomen',
+    description: 'Extiende las manos al frente sin girar el torso y vuelve al pecho con control.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: manos desde el pecho hasta la extensión y regreso',
+    ],
+  },
 ];
 
 const exerciseGroups = [
@@ -1121,6 +1142,12 @@ const HAMSTRING_CURL_START_MAX_ANGLE = 180;
 const HAMSTRING_CURL_ACTIVATION_ANGLE = 110;
 const HAMSTRING_CURL_END_MIN_ANGLE = 30;
 const HAMSTRING_CURL_END_MAX_ANGLE = 90;
+const PALLOF_START_MIN_ANGLE = 75;
+const PALLOF_START_MAX_ANGLE = 125;
+const PALLOF_ACTIVATION_ANGLE = 135;
+const PALLOF_END_MIN_ANGLE = 150;
+const PALLOF_END_MAX_ANGLE = 180;
+const PALLOF_WRIST_MIN_ANGLE = 135;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
@@ -1297,6 +1324,16 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: HAMSTRING_CURL_END_MIN_ANGLE,
     endMaxAngle: HAMSTRING_CURL_END_MAX_ANGLE,
     endLabel: `rodilla entre ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°`,
+  },
+  'press-pallof-polea-banda': {
+    direction: 'increase',
+    startMinAngle: PALLOF_START_MIN_ANGLE,
+    startMaxAngle: PALLOF_START_MAX_ANGLE,
+    activationAngle: PALLOF_ACTIVATION_ANGLE,
+    endMinAngle: PALLOF_END_MIN_ANGLE,
+    endMaxAngle: PALLOF_END_MAX_ANGLE,
+    endLabel: `codo extendido entre ${PALLOF_END_MIN_ANGLE}–${PALLOF_END_MAX_ANGLE}°`,
+    countOnReturn: true,
   },
   zancadas: {
     direction: 'decrease',
@@ -1535,6 +1572,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio / regreso: codo 145–180°',
         `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
         'Codos aproximadamente 45° respecto al torso',
+      ];
+    case 'press-pallof-polea-banda':
+      return [
+        `Inicio / regreso: codos ${PALLOF_START_MIN_ANGLE}–${PALLOF_START_MAX_ANGLE}°`,
+        `Extensión: codos ${PALLOF_END_MIN_ANGLE}–${PALLOF_END_MAX_ANGLE}°`,
+        'Lecturas bilaterales: hombros, codos y muñecas',
       ];
     case 'elevaciones-laterales':
     case 'elevaciones-laterales-polea-baja':
@@ -2306,6 +2349,8 @@ function getCameraGuidance(
           ? 'Ponte de frente o en 3/4 a la máquina y deja visibles ambos hombros, codos y muñecas junto al respaldo durante todo el recorrido.'
         : exercise === 'cruces-polea-baja-alta'
           ? 'Ponte de frente o en 3/4 frente a las poleas y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
+        : exercise === 'press-pallof-polea-banda'
+          ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -2420,6 +2465,7 @@ function getCameraGuidance(
       && exercise !== 'face-pulls-polea-alta'
       && exercise !== 'aperturas-inversas-maquina'
       && exercise !== 'cruces-polea-baja-alta'
+       && exercise !== 'press-pallof-polea-banda'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && exercise !== 'press-banca-inclinado'
@@ -2457,6 +2503,8 @@ function getCameraGuidance(
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la máquina dentro del encuadre.'
       : exercise === 'cruces-polea-baja-alta'
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y las dos poleas dentro del encuadre.'
+      : exercise === 'press-pallof-polea-banda'
+        ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la polea o banda dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-mancuernas'
@@ -2904,6 +2952,96 @@ function getLateralRaiseTechniqueFeedback(
     message: 'Elevación lateral controlada',
     detail: `Hombros a ${Math.round(averageShoulderAngle)}° de media. Mantén las muñecas alineadas y baja con control.`,
   };
+}
+
+function getPallofTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+): TechniqueFeedback {
+  if (!keypoints) {
+    return {
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Ponte de frente o en 3/4 y muestra ambos hombros, codos y muñecas.',
+    };
+  }
+
+  const readings = (['left', 'right'] as PoseSide[]).map((side) => {
+    const indexes = sideKeypoints[side];
+    return {
+      shoulderVisible: (keypoints[indexes.shoulder]?.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+      elbow: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+      wrist: calculateAngle(
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+        keypoints[WRIST_TIP_INDEX[side]],
+      ),
+    };
+  });
+
+  if (readings.some(({ shoulderVisible, elbow, wrist }) => (
+    !shoulderVisible || elbow === null || wrist === null
+  ))) {
+    return {
+      tone: 'checking',
+      message: 'Muestra ambos brazos',
+      detail: 'Necesitamos ver hombros, codos y muñecas de los dos lados para comparar la extensión.',
+    };
+  }
+
+  const elbowAngles = readings.map(({ elbow }) => elbow as number);
+  const wristAngles = readings.map(({ wrist }) => wrist as number);
+  const elbowDifference = Math.abs(elbowAngles[0] - elbowAngles[1]);
+  const minimumWristAngle = Math.min(...wristAngles);
+
+  if (elbowDifference > 30) {
+    return {
+      tone: 'warning',
+      message: 'Extiende ambos brazos al mismo nivel',
+      detail: 'Evita que un codo se adelante o se eleve más que el otro; mantén las manos juntas y el torso estable.',
+    };
+  }
+  if (minimumWristAngle < PALLOF_WRIST_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Mantén las muñecas neutras',
+      detail: `Una muñeca está a ${minimumWristAngle}°. Alinea las manos con los antebrazos y no las dobles contra la resistencia.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Press Pallof controlado',
+    detail: `Hombros equilibrados · diferencia de codos ${elbowDifference}°. Presiona al frente sin girar el torso y regresa lentamente.`,
+  };
+}
+
+function isPallofTechniqueValid(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return false;
+
+  const readings = (['left', 'right'] as PoseSide[]).map((side) => {
+    const indexes = sideKeypoints[side];
+    const points = [
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+      keypoints[indexes.wrist],
+      keypoints[WRIST_TIP_INDEX[side]],
+    ];
+    return {
+      points,
+    };
+  });
+
+  if (readings.some(({ points }) => (
+    points.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+  ))) {
+    return false;
+  }
+
+  return true;
 }
 
 function getTricepsPushdownTechniqueFeedback(
@@ -4069,6 +4207,11 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
     ],
     'press-plano-inclinado': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'press-pallof-polea-banda': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -5251,9 +5394,12 @@ function Home() {
           nextDominantSide,
           selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
         );
+      const pallofTechniqueReady = selectedExerciseForFrame !== 'press-pallof-polea-banda'
+        || isPallofTechniqueValid(pose?.keypoints);
       const repetitionTechniqueReady = rowTechniqueReady
         && dipTechniqueReady
-        && pushupTechniqueReady;
+        && pushupTechniqueReady
+        && pallofTechniqueReady;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -5267,7 +5413,11 @@ function Home() {
           exerciseRepTrackerRef.current,
           repetitionAngle,
           repetitionConfig,
-          selectedExerciseForFrame === 'jalon' ? pulldownTechniqueReady : true,
+          selectedExerciseForFrame === 'jalon'
+            ? pulldownTechniqueReady
+            : selectedExerciseForFrame === 'press-pallof-polea-banda'
+              ? pallofTechniqueReady
+              : true,
         );
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
@@ -5279,7 +5429,8 @@ function Home() {
       } else if (
         (selectedExerciseForFrame === 'remo-barra'
           || selectedExerciseForFrame === 'fondos'
-          || selectedExerciseForFrame === 'jalon')
+          || selectedExerciseForFrame === 'jalon'
+          || selectedExerciseForFrame === 'press-pallof-polea-banda')
         && exerciseStartedRef.current
         && (
           !hasFreshPose
@@ -5287,6 +5438,7 @@ function Home() {
           || repetitionAngle === null
           || (selectedExerciseForFrame === 'remo-barra' && !rowTechniqueReady)
           || (selectedExerciseForFrame === 'fondos' && !dipTechniqueReady)
+           || (selectedExerciseForFrame === 'press-pallof-polea-banda' && !pallofTechniqueReady)
         )
       ) {
         const resetTracker = createExerciseRepTracker();
@@ -5365,6 +5517,8 @@ function Home() {
              ? getHorizontalBarExtensionTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'curl-biceps'
             ? getBicepsCurlTechniqueFeedback(pose?.keypoints, nextDominantSide)
+          : selectedExerciseRef.current === 'press-pallof-polea-banda'
+            ? getPallofTechniqueFeedback(pose?.keypoints)
           : selectedExerciseRef.current === 'fondos'
             ? getDipTechniqueFeedback(pose?.keypoints, nextDominantSide)
              : selectedExerciseRef.current === 'dominadas'
@@ -6189,6 +6343,8 @@ function Home() {
                         ? `Solo cuenta si partes con la rodilla entre ${HAMSTRING_CURL_START_MIN_ANGLE}° y ${HAMSTRING_CURL_START_MAX_ANGLE}° y flexionas hasta ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°, manteniendo ambos lados visibles.`
                       : selectedExercise === 'flexiones'
                         ? `Solo cuenta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°, además de completar el recorrido del codo.`
+                      : selectedExercise === 'press-pallof-polea-banda'
+                        ? `Solo cuenta si extiendes ambos codos entre ${PALLOF_END_MIN_ANGLE}° y ${PALLOF_END_MAX_ANGLE}° y mantienes hombros, codos y muñecas alineados; la repetición se cierra al regresar al pecho.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
                 </div>
@@ -6260,6 +6416,18 @@ function Home() {
                     <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'press-pallof-polea-banda' && (
+                <details className="pulldown-instructions">
+                  <summary>Cómo hacerlo</summary>
+                  <ul>
+                    <li><b>Montaje:</b> usa una polea o una banda anclada a la altura del pecho y colócate de lado al punto de anclaje.</li>
+                    <li><b>Inicio:</b> sujeta el asa con ambas manos cerca del pecho, con los codos flexionados entre {PALLOF_START_MIN_ANGLE}° y {PALLOF_START_MAX_ANGLE}°.</li>
+                    <li><b>Press:</b> extiende las manos al frente hasta que ambos codos lleguen a {PALLOF_END_MIN_ANGLE}°–{PALLOF_END_MAX_ANGLE}°, sin girar los hombros ni el torso.</li>
+                    <li><b>Muñecas:</b> mantenlas neutras y alineadas con los antebrazos durante todo el recorrido.</li>
+                    <li><b>Regreso:</b> vuelve lentamente al pecho; el contador cierra la repetición al completar la extensión y el regreso.</li>
                   </ul>
                 </details>
               )}
