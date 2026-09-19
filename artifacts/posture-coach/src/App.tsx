@@ -55,6 +55,7 @@ import facePullImage from '@assets/ChatGPT_Image_18_sept_2026,_12_10_35_17897514
 import reverseMachineFlyImage from '@assets/ChatGPT_Image_18_sept_2026,_12_23_41_1789752227304.png';
 import lowToHighCableCrossoverImage from '@assets/ChatGPT_Image_18_sept_2026,_12_58_09_1789754327739.png';
 import benchPressImage from '@assets/ChatGPT_Image_16_sept_2026,_22_36_13_1789621905499.png';
+import closeGripBenchPressImage from '@assets/ChatGPT_Image_18_sept_2026,_23_10_43_1789791055423.png';
 import inclineBenchPressImage from '@assets/ChatGPT_Image_18_sept_2026,_12_52_44_1789753996627.png';
 import dumbbellFlatPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_04_03_1789754734704.png';
 import inclineDumbbellPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_06_02_1789754793034.png';
@@ -152,7 +153,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -188,6 +189,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'aperturas-inversas-maquina': reverseMachineFlyImage,
   'cruces-polea-baja-alta': lowToHighCableCrossoverImage,
   'press-banca': benchPressImage,
+  'press-banca-agarre-cerrado': closeGripBenchPressImage,
   'press-banca-inclinado': inclineBenchPressImage,
   'press-plano-mancuernas': dumbbellFlatPressImage,
   'press-plano-inclinado': inclineDumbbellPressImage,
@@ -674,6 +676,26 @@ const exercises: ExerciseDefinition[] = [
       'Muñecas: lectura izquierda y derecha',
       'Cadera: lectura izquierda y derecha',
       'Calibración del recorrido: pendiente',
+    ],
+  },
+  {
+    id: 'press-banca-agarre-cerrado',
+    name: 'Press de banca con agarre cerrado',
+    muscleGroup: 'pecho',
+    description: 'Empuja la barra con las manos más juntas, manteniendo hombros, codos y muñecas alineados.',
+    angleLabel: 'Hombros · codos · muñecas',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros: lectura izquierda y derecha',
+      'Codos: lectura izquierda y derecha',
+      'Muñecas: lectura izquierda y derecha',
+      'Recorrido: empuje con agarre cerrado',
     ],
   },
   {
@@ -1381,6 +1403,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: 120,
     endLabel: 'flexión de codo entre 70–120°',
   },
+  'press-banca-agarre-cerrado': {
+    direction: 'decrease',
+    startMinAngle: 150,
+    startMaxAngle: 180,
+    activationAngle: 135,
+    endMinAngle: 70,
+    endMaxAngle: 105,
+    endLabel: 'flexión de codo entre 70–105°',
+  },
   'extension-horizontal-barra': {
     direction: 'decrease',
     startMinAngle: 150,
@@ -1690,6 +1721,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Lecturas en vivo: hombros, codos, muñecas y caderas',
         'Se muestran ambos lados para comparar el movimiento',
         'Calibración del recorrido: pendiente',
+      ];
+    case 'press-banca-agarre-cerrado':
+      return [
+        'Lecturas en vivo: hombros, codos y muñecas',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Inicio / regreso: codo 150–180°',
+        'Final: codo 70–105° con agarre cerrado',
       ];
     case 'press-banca-inclinado':
       return [
@@ -2474,6 +2512,8 @@ function getCameraGuidance(
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : exercise === 'press-banca'
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
+          : exercise === 'press-banca-agarre-cerrado'
+            ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas junto al banco.'
           : exercise === 'press-banca-inclinado'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
           : exercise === 'press-plano-mancuernas'
@@ -2587,6 +2627,7 @@ function getCameraGuidance(
        && exercise !== 'press-pallof-polea-banda'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
+      && exercise !== 'press-banca-agarre-cerrado'
       && exercise !== 'press-banca-inclinado'
       && exercise !== 'press-plano-mancuernas'
       && exercise !== 'press-plano-inclinado'
@@ -2627,6 +2668,8 @@ function getCameraGuidance(
       : exercise === 'giros-rusos'
         ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
+        ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
+      : exercise === 'press-banca-agarre-cerrado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-mancuernas'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
@@ -4371,6 +4414,11 @@ function getAngleDiagnosticPoints(
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
       { label: 'Cadera', joint: 'hip' },
+    ],
+    'press-banca-agarre-cerrado': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
     ],
     'press-banca-inclinado': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -6339,6 +6387,7 @@ function Home() {
                     || exercise.id === 'aperturas-inversas-maquina'
                      || exercise.id === 'cruces-polea-baja-alta'
                     || exercise.id === 'press-banca'
+                     || exercise.id === 'press-banca-agarre-cerrado'
                      || exercise.id === 'press-banca-inclinado'
                      || exercise.id === 'press-plano-mancuernas'
                      || exercise.id === 'press-plano-inclinado'
@@ -6878,6 +6927,7 @@ function Home() {
                       || selectedExercise === 'elevaciones-laterales-polea-baja'
                       || selectedExercise === 'cruces-polea-baja-alta'
                        || selectedExercise === 'press-banca'
+                       || selectedExercise === 'press-banca-agarre-cerrado'
                        || selectedExercise === 'press-banca-inclinado'
                        || selectedExercise === 'press-plano-mancuernas'
                        || selectedExercise === 'press-plano-inclinado'
