@@ -157,7 +157,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -204,6 +204,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'copa-mancuernas': dumbbellOverheadTricepsImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
+  'remos-australianos-elevados': barbellRowImage,
   'remo-sentado-polea-agarre-cerrado': seatedCableRowImage,
   'remo-mancuerna-una-mano': oneArmDumbbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
@@ -481,6 +482,28 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'ankle', label: 'tobillo' },
     ],
     trackedAngleLabels: ['Torso: 30–45°', 'Rodilla: 150–180°', 'Elevación del codo: 15–30°', 'Flexión del codo: final 70–115°'],
+  },
+  {
+    id: 'remos-australianos-elevados',
+    name: 'Remos australianos elevados',
+    muscleGroup: 'espalda',
+    description: 'Tira del pecho hacia el apoyo con el cuerpo firme y los codos cerca del torso.',
+    angleLabel: 'Codos · línea corporal · caderas · rodillas',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos, muñecas, caderas y rodillas. No necesitas mostrar la cabeza ni los tobillos.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros, codos y muñecas: lectura izquierda y derecha',
+      'Caderas y rodillas: lectura izquierda y derecha',
+      'Línea corporal: hombro–cadera–rodilla',
+      'Recorrido: flexión y extensión de codos',
+    ],
   },
   {
     id: 'remo-sentado-polea-agarre-cerrado',
@@ -1301,6 +1324,14 @@ const ROW_KNEE_MIN_ANGLE = 150;
 const ROW_KNEE_MAX_ANGLE = 180;
 const ROW_ELBOW_TORSO_MIN_ANGLE = 15;
 const ROW_ELBOW_TORSO_MAX_ANGLE = 30;
+const AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE = 160;
+const AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE = 180;
+const AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE = 25;
+const AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE = 115;
+const AUSTRALIAN_ROW_TORSO_MIN_LEAN = 65;
+const AUSTRALIAN_ROW_TORSO_MAX_LEAN = 110;
+const AUSTRALIAN_ROW_END_MIN_ANGLE = 70;
+const AUSTRALIAN_ROW_END_MAX_ANGLE = 115;
 const PIKE_ELBOW_BODY_MIN_ANGLE = 45;
 const PIKE_ELBOW_BODY_MAX_ANGLE = 60;
 const PIKE_WRIST_SHOULDER_MIN_ANGLE = 75;
@@ -1424,6 +1455,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: 70,
     endMaxAngle: 115,
     endLabel: 'codo entre 70–115°',
+  },
+  'remos-australianos-elevados': {
+    direction: 'decrease',
+    startMinAngle: 145,
+    startMaxAngle: 180,
+    activationAngle: 130,
+    endMinAngle: AUSTRALIAN_ROW_END_MIN_ANGLE,
+    endMaxAngle: AUSTRALIAN_ROW_END_MAX_ANGLE,
+    endLabel: `codo entre ${AUSTRALIAN_ROW_END_MIN_ANGLE}–${AUSTRALIAN_ROW_END_MAX_ANGLE}°`,
   },
   flexiones: {
     direction: 'decrease',
@@ -1780,6 +1820,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Final: flexión de codo 70–115°',
         `Torso ${ROW_TORSO_MIN_ANGLE}–${ROW_TORSO_MAX_ANGLE}° · rodilla ${ROW_KNEE_MIN_ANGLE}–${ROW_KNEE_MAX_ANGLE}°`,
         `Elevación de codos ${ROW_ELBOW_TORSO_MIN_ANGLE}–${ROW_ELBOW_TORSO_MAX_ANGLE}°`,
+      ];
+    case 'remos-australianos-elevados':
+      return [
+        `Inicio / regreso: codo ${repetitionConfigs['remos-australianos-elevados']?.startMinAngle}–${repetitionConfigs['remos-australianos-elevados']?.startMaxAngle}°`,
+        `Final: flexión de codo ${AUSTRALIAN_ROW_END_MIN_ANGLE}–${AUSTRALIAN_ROW_END_MAX_ANGLE}°`,
+        `Línea corporal ${AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE}–${AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE}°`,
+        `Codos respecto al torso ${AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}–${AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}°`,
       ];
     case 'remo-sentado-polea-agarre-cerrado':
       return [
@@ -2519,6 +2566,49 @@ function getBarbellRowDominantSide(
     : null;
 }
 
+function getElevatedAustralianRowDominantSide(
+  keypoints: PosePoint[] | undefined,
+  previousSide: PoseSide | null,
+): DominantSideResult | null {
+  if (!keypoints) return null;
+
+  const sides: PoseSide[] = ['left', 'right'];
+  const bodyJoints: Array<keyof typeof sideKeypoints.left> = ['shoulder', 'hip', 'knee'];
+  const armJoints: Array<keyof typeof sideKeypoints.left> = ['elbow', 'wrist'];
+  const scores = sides.map((side) => {
+    const indexes = sideKeypoints[side];
+    const bodyScores = bodyJoints.map((joint) => keypoints[indexes[joint]]?.score ?? 0);
+    const armScores = armJoints.map((joint) => keypoints[indexes[joint]]?.score ?? 0);
+    const bodyAverage = bodyScores.reduce((sum, score) => sum + score, 0) / bodyScores.length;
+    const armAverage = armScores.reduce((sum, score) => sum + score, 0) / armScores.length;
+    const bodyCount = bodyScores.filter((score) => score >= CAMERA_POINT_MIN_SCORE).length;
+    return {
+      side,
+      average: bodyAverage * 0.7 + armAverage * 0.3,
+      bodyAverage,
+      bodyCount,
+    };
+  });
+
+  const strongest = scores.sort((first, second) => second.average - first.average)[0];
+  if (!strongest) return null;
+  const previous = previousSide
+    ? scores.find((candidate) => candidate.side === previousSide)
+    : null;
+  const shouldKeepPreviousSide = Boolean(
+    previous
+    && strongest.side !== previous.side
+    && previous.bodyCount >= 2
+    && previous.bodyAverage >= 0.35
+    && strongest.average - previous.average < 0.18,
+  );
+  const selected = shouldKeepPreviousSide && previous ? previous : strongest;
+
+  return selected.bodyCount || selected.average > 0
+    ? { side: selected.side, average: selected.average }
+    : null;
+}
+
 function stabilizePosePoints(
   keypoints: PosePoint[] | undefined,
   memory: PosePointMemoryMap,
@@ -2643,6 +2733,8 @@ function getCameraGuidance(
           ? 'Ponte de lado; la cámara puede estar en el suelo o inclinada. Muestra hombro, codo, muñeca y cadera.'
         : exercise === 'pull-over-polea-alta'
           ? 'Ponte de lado frente a la polea alta y deja visibles ambos hombros, codos, caderas y muñecas durante todo el recorrido.'
+         : exercise === 'remos-australianos-elevados'
+           ? 'Ponte de lado o en 3/4 junto al apoyo y deja visibles ambos hombros, codos, muñecas, caderas y rodillas. No necesitas mostrar la cabeza ni los tobillos.'
          : exercise === 'remo-sentado-polea-agarre-cerrado'
            ? 'Ponte de lado o en 3/4 frente a la polea baja y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
          : exercise === 'remo-mancuerna-una-mano'
@@ -2684,7 +2776,8 @@ function getCameraGuidance(
   const requiredPoints = getTrackedPointsForExercise(exercise, keypoints, side);
   const missingLabels = requiredPoints
     .filter(({ label, point }) => {
-      const minimumScore = exercise === 'remo-barra'
+      const minimumScore = (exercise === 'remo-barra'
+        || exercise === 'remos-australianos-elevados')
         && (label.startsWith('codo') || label.startsWith('muñeca'))
         ? ROW_ARM_POINT_MIN_SCORE
         : CAMERA_POINT_MIN_SCORE;
@@ -4063,6 +4156,134 @@ function getBarbellRowTechniqueFeedback(
   };
 }
 
+function getElevatedAustralianRowTechniqueFeedback(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): TechniqueFeedback {
+  if (!keypoints || !side) {
+    return {
+      tone: 'checking',
+      message: 'Ajustando la cámara',
+      detail: 'Ponte de lado o en 3/4 y muestra hombros, codos, muñecas, caderas y rodillas. No necesitas mostrar la cabeza ni los tobillos.',
+    };
+  }
+
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const elbow = keypoints[indexes.elbow];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const knee = keypoints[indexes.knee];
+  const elbowAngle = calculateAngle(shoulder, elbow, wrist);
+  const elbowTorsoAngle = calculateAngle(hip, shoulder, elbow);
+  const bodyLineAngle = calculateAngle(shoulder, hip, knee);
+  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
+
+  if (
+    elbowAngle === null
+    || elbowTorsoAngle === null
+    || bodyLineAngle === null
+    || torsoLean === null
+  ) {
+    return {
+      tone: 'checking',
+      message: 'Mantén visibles las articulaciones',
+      detail: 'Necesitamos hombro, codo, muñeca, cadera y rodilla para medir el remo sin usar cabeza ni tobillos.',
+    };
+  }
+
+  if (
+    bodyLineAngle < AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE
+    || bodyLineAngle > AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE
+  ) {
+    return {
+      tone: 'warning',
+      message: 'Mantén el cuerpo en línea',
+      detail: `La línea hombro–cadera–rodilla está a ${bodyLineAngle}°. Evita que la cadera se hunda o se eleve.`,
+    };
+  }
+  if (
+    torsoLean < AUSTRALIAN_ROW_TORSO_MIN_LEAN
+    || torsoLean > AUSTRALIAN_ROW_TORSO_MAX_LEAN
+  ) {
+    return {
+      tone: 'warning',
+      message: 'Coloca el cuerpo más paralelo al suelo',
+      detail: `La inclinación del torso está a ${torsoLean}°. Ajusta el apoyo para formar una línea firme y horizontal.`,
+    };
+  }
+  if (elbowTorsoAngle > AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'Acerca los codos al torso',
+      detail: `La separación del codo está a ${elbowTorsoAngle}°. Tira manteniendo los codos entre ${AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}° y ${AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}°.`,
+    };
+  }
+  if (elbowTorsoAngle < AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE) {
+    return {
+      tone: 'warning',
+      message: 'No cierres demasiado los codos',
+      detail: `La separación del codo está a ${elbowTorsoAngle}°. Deja que los brazos sigan una trayectoria natural junto al torso.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Remo australiano elevado correcto',
+    detail: `Cuerpo ${bodyLineAngle}° · codos ${elbowTorsoAngle}° · flexión ${elbowAngle}°. Acerca el pecho al apoyo y regresa con control.`,
+  };
+}
+
+function isElevatedAustralianRowTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  const bodyPoints = [
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
+  ];
+  const armPoints = [
+    keypoints[indexes.elbow],
+    keypoints[indexes.wrist],
+  ];
+  if (
+    bodyPoints.some((point) => (point?.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+    || armPoints.some((point) => (point?.score ?? 0) < ROW_ARM_POINT_MIN_SCORE)
+  ) {
+    return false;
+  }
+
+  const bodyLineAngle = calculateAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+    keypoints[indexes.knee],
+  );
+  const torsoLean = calculateForwardLeanAngle(
+    keypoints[indexes.shoulder],
+    keypoints[indexes.hip],
+  );
+  const elbowTorsoAngle = calculateAngle(
+    keypoints[indexes.hip],
+    keypoints[indexes.shoulder],
+    keypoints[indexes.elbow],
+  );
+
+  return bodyLineAngle !== null
+    && torsoLean !== null
+    && elbowTorsoAngle !== null
+    && isWithinAngle(bodyLineAngle, AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE, AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE)
+    && isWithinAngle(torsoLean, AUSTRALIAN_ROW_TORSO_MIN_LEAN, AUSTRALIAN_ROW_TORSO_MAX_LEAN)
+    && isWithinAngle(
+      elbowTorsoAngle,
+      AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE,
+      AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE,
+    );
+}
+
 function isBarbellRowTechniqueValid(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -4327,6 +4548,7 @@ function calculateExerciseAngle(
     || exercise === 'dominadas-comando'
     || exercise === 'jalon'
     || exercise === 'remo-barra'
+    || exercise === 'remos-australianos-elevados'
     || exercise === 'flexiones'
     || exercise === 'flexiones-declinadas'
     || exercise === 'flexiones-pica'
@@ -4532,6 +4754,13 @@ function getAngleDiagnosticPoints(
       { label: 'Muñeca', joint: 'wrist' },
       { label: 'Rodilla', joint: 'knee' },
       { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'remos-australianos-elevados': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
     ],
     'remo-sentado-polea-agarre-cerrado': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -5063,6 +5292,13 @@ function calculateLiveAngleReadings(
           empty('Codos', '15–30°'),
           empty('Flexión', 'Inicio 145–180° · activa <130° · final 70–115°'),
         ];
+      case 'remos-australianos-elevados':
+        return [
+          empty('Línea corporal', `${AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE}–${AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE}°`),
+          empty('Torso', `${AUSTRALIAN_ROW_TORSO_MIN_LEAN}–${AUSTRALIAN_ROW_TORSO_MAX_LEAN}° respecto a la vertical`),
+          empty('Codos / torso', `${AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}–${AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}°`),
+          empty('Flexión', `Inicio 145–180° · activa <130° · final ${AUSTRALIAN_ROW_END_MIN_ANGLE}–${AUSTRALIAN_ROW_END_MAX_ANGLE}°`),
+        ];
       case 'remo-sentado-polea-agarre-cerrado':
         return [
           empty('Hombro izq.', 'Ángulo articular'),
@@ -5280,6 +5516,37 @@ function calculateLiveAngleReadings(
           ROW_ELBOW_TORSO_MAX_ANGLE,
         ),
         value(elbow, 'Flexión', 'Inicio 145–180° · activa <130° · final 70–115°', 70, 115),
+      ];
+    case 'remos-australianos-elevados':
+      return [
+        value(
+          () => calculateAngle(keypoints[indexes.shoulder], keypoints[indexes.hip], keypoints[indexes.knee]),
+          'Línea corporal',
+          `${AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE}–${AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE}°`,
+          AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE,
+          AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE,
+        ),
+        value(
+          torso,
+          'Torso',
+          `${AUSTRALIAN_ROW_TORSO_MIN_LEAN}–${AUSTRALIAN_ROW_TORSO_MAX_LEAN}° respecto a la vertical`,
+          AUSTRALIAN_ROW_TORSO_MIN_LEAN,
+          AUSTRALIAN_ROW_TORSO_MAX_LEAN,
+        ),
+        value(
+          () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
+          'Codos / torso',
+          `${AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}–${AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}°`,
+          AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE,
+          AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE,
+        ),
+        value(
+          elbow,
+          'Flexión',
+          `Inicio 145–180° · activa <130° · final ${AUSTRALIAN_ROW_END_MIN_ANGLE}–${AUSTRALIAN_ROW_END_MAX_ANGLE}°`,
+          AUSTRALIAN_ROW_END_MIN_ANGLE,
+          AUSTRALIAN_ROW_END_MAX_ANGLE,
+        ),
       ];
     case 'flexiones':
     case 'flexiones-declinadas': {
@@ -5647,6 +5914,8 @@ function Home() {
       const hasFreshPose = Boolean(detectedPose);
       const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
         ? getBarbellRowDominantSide(pose?.keypoints, previousSideRef.current)
+        : selectedExerciseForFrame === 'remos-australianos-elevados'
+          ? getElevatedAustralianRowDominantSide(pose?.keypoints, previousSideRef.current)
         : getDominantSide(pose?.keypoints, previousSideRef.current);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
@@ -5877,6 +6146,8 @@ function Home() {
       }
       const rowTechniqueReady = selectedExerciseForFrame !== 'remo-barra'
         || isBarbellRowTechniqueValid(pose?.keypoints, nextDominantSide);
+      const elevatedAustralianRowTechniqueReady = selectedExerciseForFrame !== 'remos-australianos-elevados'
+        || isElevatedAustralianRowTechniqueValid(pose?.keypoints, nextDominantSide);
       const dipTechniqueReady = selectedExerciseForFrame !== 'fondos'
         || isDipTechniqueValid(pose?.keypoints, nextDominantSide);
       const pulldownTechniqueReady = selectedExerciseForFrame !== 'jalon'
@@ -5892,6 +6163,7 @@ function Home() {
       const pallofTechniqueReady = selectedExerciseForFrame !== 'press-pallof-polea-banda'
         || isPallofTechniqueValid(pose?.keypoints);
       const repetitionTechniqueReady = rowTechniqueReady
+        && elevatedAustralianRowTechniqueReady
         && dipTechniqueReady
         && pushupTechniqueReady
         && pallofTechniqueReady;
@@ -5923,6 +6195,7 @@ function Home() {
         );
       } else if (
         (selectedExerciseForFrame === 'remo-barra'
+          || selectedExerciseForFrame === 'remos-australianos-elevados'
           || selectedExerciseForFrame === 'fondos'
           || selectedExerciseForFrame === 'jalon'
           || selectedExerciseForFrame === 'press-pallof-polea-banda')
@@ -5931,7 +6204,8 @@ function Home() {
           !hasFreshPose
           || !frameCameraReady
           || repetitionAngle === null
-          || (selectedExerciseForFrame === 'remo-barra' && !rowTechniqueReady)
+           || (selectedExerciseForFrame === 'remo-barra' && !rowTechniqueReady)
+           || (selectedExerciseForFrame === 'remos-australianos-elevados' && !elevatedAustralianRowTechniqueReady)
           || (selectedExerciseForFrame === 'fondos' && !dipTechniqueReady)
            || (selectedExerciseForFrame === 'press-pallof-polea-banda' && !pallofTechniqueReady)
         )
@@ -6030,6 +6304,8 @@ function Home() {
                 ? getLatPulldownTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'remo-barra'
                 ? getBarbellRowTechniqueFeedback(pose?.keypoints, nextDominantSide)
+               : selectedExerciseRef.current === 'remos-australianos-elevados'
+                 ? getElevatedAustralianRowTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancadas'
                 ? getLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'zancada-banco'
@@ -6588,6 +6864,7 @@ function Home() {
                     || exercise.id === 'jalon'
                     || exercise.id === 'pull-over-polea-alta'
                     || exercise.id === 'remo-barra'
+                     || exercise.id === 'remos-australianos-elevados'
                     || exercise.id === 'remo-sentado-polea-agarre-cerrado'
                     || exercise.id === 'remo-mancuerna-una-mano'
                     || exercise.id === 'flexiones'
@@ -6849,6 +7126,8 @@ function Home() {
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
                       : selectedExercise === 'remo-barra'
                         ? `Solo cuenta si mantienes el torso entre ${ROW_TORSO_MIN_ANGLE}° y ${ROW_TORSO_MAX_ANGLE}°, elevas los codos entre ${ROW_ELBOW_TORSO_MIN_ANGLE}° y ${ROW_ELBOW_TORSO_MAX_ANGLE}° y completas el recorrido del codo.`
+                      : selectedExercise === 'remos-australianos-elevados'
+                        ? `Solo cuenta si mantienes la línea hombro–cadera–rodilla entre ${AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE}° y ${AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE}°, los codos respecto al torso entre ${AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}° y ${AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}° y completas la flexión del codo.`
                       : selectedExercise === 'hip-thrust-barra'
                         ? `Solo cuenta si partes con la cadera entre ${HIP_THRUST_BOTTOM_MIN_ANGLE}° y ${HIP_THRUST_BOTTOM_MAX_ANGLE}° y la elevas hasta ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}° sin hiperextender la espalda.`
                       : selectedExercise === 'curl-femoral'
@@ -6895,6 +7174,18 @@ function Home() {
                     <li><b>Tirón:</b> eleva los codos entre {ROW_ELBOW_TORSO_MIN_ANGLE}° y {ROW_ELBOW_TORSO_MAX_ANGLE}° respecto al torso y dirige la barra hacia el abdomen o las costillas bajas.</li>
                     <li><b>Recorrido:</b> empieza con los brazos extendidos entre 145° y 180°, tira hasta que el codo llegue a 70°–115° y regresa lentamente al inicio.</li>
                     <li><b>Repetición:</b> el contador se reinicia si pierdes la inclinación, cambias la posición de las rodillas o la elevación de los codos sale del rango.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'remos-australianos-elevados' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado o en 3/4 junto al apoyo y deja visibles ambos hombros, codos, muñecas, caderas y rodillas. No necesitas mostrar la cabeza ni los tobillos.</li>
+                    <li><b>Posición:</b> mantén el cuerpo firme, con la línea hombro–cadera–rodilla entre {AUSTRALIAN_ROW_BODY_LINE_MIN_ANGLE}° y {AUSTRALIAN_ROW_BODY_LINE_MAX_ANGLE}°.</li>
+                    <li><b>Codos:</b> llévalos cerca del torso, entre {AUSTRALIAN_ROW_ELBOW_TORSO_MIN_ANGLE}° y {AUSTRALIAN_ROW_ELBOW_TORSO_MAX_ANGLE}°, sin abrirlos hacia los lados.</li>
+                    <li><b>Recorrido:</b> empieza con los codos entre 145° y 180°, tira del pecho hacia el apoyo hasta llegar a {AUSTRALIAN_ROW_END_MIN_ANGLE}°–{AUSTRALIAN_ROW_END_MAX_ANGLE}° y regresa lentamente.</li>
+                    <li><b>Repetición:</b> el contador se reinicia si pierdes la línea corporal, separas demasiado los codos o se pierde una de las articulaciones necesarias.</li>
                   </ul>
                 </details>
               )}
@@ -7159,6 +7450,7 @@ function Home() {
                         || selectedExercise === 'dominadas-comando'
                       || selectedExercise === 'muscle-up'
                        || selectedExercise === 'pull-over-polea-alta'
+                        || selectedExercise === 'remos-australianos-elevados'
                        || selectedExercise === 'remo-sentado-polea-agarre-cerrado'
                        || selectedExercise === 'remo-mancuerna-una-mano'
                       || selectedExercise === 'zancadas'
