@@ -44,6 +44,7 @@ import machineExtensionImage from '@assets/ChatGPT_Image_17_sept_2026,_14_46_27_
 import lungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_28_52_a.m._1788931785734.png';
 import benchLungeImage from '@assets/ChatGPT_Image_9_sept_2026,_12_39_15_a.m._1788983914611.png';
 import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_1789784284541.png';
+import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
 import lateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_09_25_46_a.m._1789741994699.png';
 import lowCableLateralRaiseImage from '@assets/ChatGPT_Image_18_sept_2026,_11_52_57_1789750471669.png';
@@ -202,7 +203,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
   'crunch-invertido': reverseCrunchImage,
-  'rueda-abdominal': `${basePath}/ab-wheel.svg`,
+  'rueda-abdominal': abWheelImage,
 };
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
