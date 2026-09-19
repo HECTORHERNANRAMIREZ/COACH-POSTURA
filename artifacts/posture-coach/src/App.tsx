@@ -9195,6 +9195,7 @@ function ScrollPullupBackground() {
     let frameIndex = 0;
     let renderFrame = 0;
     let renderQueued = false;
+    const scrollContainer = document.querySelector<HTMLElement>('.posture-app');
 
     const draw = () => {
       renderQueued = false;
@@ -9229,10 +9230,22 @@ function ScrollPullupBackground() {
     };
 
     const updateFrameFromScroll = () => {
-      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const usesLocalScroll = Boolean(
+        scrollContainer && scrollContainer.scrollHeight > scrollContainer.clientHeight,
+      );
+      const scrollTop = usesLocalScroll
+        ? scrollContainer?.scrollTop ?? 0
+        : window.scrollY;
+      const scrollHeight = usesLocalScroll
+        ? scrollContainer?.scrollHeight ?? window.innerHeight
+        : document.documentElement.scrollHeight;
+      const viewportHeight = usesLocalScroll
+        ? scrollContainer?.clientHeight ?? window.innerHeight
+        : window.innerHeight;
+      const maxScroll = Math.max(0, scrollHeight - viewportHeight);
       const scrollProgress = maxScroll === 0
         ? 0
-        : Math.min(1, Math.max(0, window.scrollY / maxScroll));
+        : Math.min(1, Math.max(0, scrollTop / maxScroll));
       const repeatedProgress = (scrollProgress * PULLUP_SCROLL_CYCLES) % 2;
       const movementProgress = repeatedProgress <= 1
         ? repeatedProgress
@@ -9253,6 +9266,7 @@ function ScrollPullupBackground() {
       image.addEventListener('load', queueDraw);
     });
     window.addEventListener('scroll', updateFrameFromScroll, { passive: true });
+    document.addEventListener('scroll', updateFrameFromScroll, { capture: true, passive: true });
     window.addEventListener('resize', handleResize);
     updateFrameFromScroll();
 
@@ -9262,6 +9276,7 @@ function ScrollPullupBackground() {
         image.removeEventListener('load', queueDraw);
       });
       window.removeEventListener('scroll', updateFrameFromScroll);
+      document.removeEventListener('scroll', updateFrameFromScroll, true);
       window.removeEventListener('resize', handleResize);
     };
   }, []);
