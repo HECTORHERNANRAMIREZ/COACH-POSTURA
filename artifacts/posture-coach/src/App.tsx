@@ -60,6 +60,7 @@ import dumbbellFlatPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_04_03
 import inclineDumbbellPressImage from '@assets/ChatGPT_Image_18_sept_2026,_13_06_02_1789754793034.png';
 import tricepsPushdownImage from '@assets/ChatGPT_Image_9_sept_2026,_23_52_11_1789015949955.png';
 import overheadTricepsExtensionImage from '@assets/ChatGPT_Image_18_sept_2026,_22_16_00_1789787891725.png';
+import dumbbellOverheadTricepsImage from '@assets/ChatGPT_Image_18_sept_2026,_22_44_59_1789789522794.png';
 import horizontalBarExtensionImage from '@assets/ChatGPT_Image_15_sept_2026,_02_35_29_a.m._1789457735768.png';
 import barbellRowImage from '@assets/ChatGPT_Image_10_sept_2026,_00_03_57_1789016813023.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
@@ -192,7 +193,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-plano-inclinado': inclineDumbbellPressImage,
   'triceps-polea-alta': tricepsPushdownImage,
   'triceps-tras-nuca-polea-alta': overheadTricepsExtensionImage,
-  'copa-mancuernas': overheadTricepsExtensionImage,
+  'copa-mancuernas': dumbbellOverheadTricepsImage,
   'extension-horizontal-barra': horizontalBarExtensionImage,
   'remo-barra': barbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
