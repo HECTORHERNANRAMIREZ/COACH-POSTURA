@@ -146,7 +146,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'muscle-up' | 'jalon' | 'remo-barra' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'extension-horizontal-barra' | 'curl-biceps' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido';
 type TrackedJoint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -200,6 +200,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
   plancha: plankImage,
+  'crunch-invertido': `${basePath}/reverse-crunch.svg`,
 };
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
@@ -944,6 +945,26 @@ const exercises: ExerciseDefinition[] = [
     ],
     trackedAngleLabels: ['Codo: 80–100°', 'Brazo respecto al suelo: 80–100°', 'Línea hombro–cadera–tobillo: 162–180°'],
   },
+  {
+    id: 'crunch-invertido',
+    name: 'Crunch invertido',
+    muscleGroup: 'abdomen',
+    description: 'Eleva la pelvis llevando las rodillas hacia el pecho con control, sin impulsarte ni despegar los hombros.',
+    angleLabel: 'Cadera · rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral; deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'hip', label: 'cadera' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Cadera: lectura izquierda y derecha',
+      'Rodillas: lectura izquierda y derecha',
+      'Tobillos: lectura izquierda y derecha',
+      'Recorrido: elevación controlada de la pelvis',
+    ],
+  },
 ];
 
 const exerciseGroups = [
@@ -1557,6 +1578,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Sostener: codo ${PLANK_ELBOW_MIN_ANGLE}–${PLANK_ELBOW_MAX_ANGLE}°`,
         `Brazo respecto al suelo: ${PLANK_ARM_FLOOR_MIN_ANGLE}–${PLANK_ARM_FLOOR_MAX_ANGLE}°`,
         `Línea corporal: ${PLANK_MIN_BODY_LINE_ANGLE}–180°`,
+      ];
+    case 'crunch-invertido':
+      return [
+        'Lecturas en vivo: cadera, rodillas y tobillos',
+        'Se muestran ambos lados para comparar el movimiento',
+        'Calibración del recorrido: pendiente',
       ];
     default: {
       const config = getRepetitionConfig(exercise);
@@ -2264,6 +2291,8 @@ function getCameraGuidance(
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
          : exercise === 'hip-thrust-barra'
            ? 'Ponte de lado o en 3/4, con el banco y la barra visibles; deja dentro del encuadre ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
+         : exercise === 'crunch-invertido'
+           ? 'Ponte de lado y deja visibles ambos tobillos, rodillas y cadera durante todo el recorrido.'
         : 'Ponte de lado y deja visibles las articulaciones necesarias. La cámara puede estar baja o inclinada.',
     };
   }
@@ -3688,7 +3717,12 @@ function calculateExerciseAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
-  if (exercise === 'prensa-piernas' || exercise === 'extensiones-maquina' || exercise === 'curl-femoral') {
+  if (
+    exercise === 'prensa-piernas'
+    || exercise === 'extensiones-maquina'
+    || exercise === 'curl-femoral'
+    || exercise === 'crunch-invertido'
+  ) {
     return calculateAngle(
       keypoints[indexes.hip],
       keypoints[indexes.knee],
@@ -3789,6 +3823,14 @@ function calculateRepetitionAngle(
   if (exercise === 'plancha') return null;
 
   if (exercise === 'curl-femoral') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+      keypoints[indexes.ankle],
+    );
+  }
+
+  if (exercise === 'crunch-invertido') {
     return calculateAngle(
       keypoints[indexes.hip],
       keypoints[indexes.knee],
@@ -4051,6 +4093,11 @@ function getAngleDiagnosticPoints(
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
+    ],
+    'crunch-invertido': [
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
     ],
   };
   const indexes = side ? sideKeypoints[side] : null;
