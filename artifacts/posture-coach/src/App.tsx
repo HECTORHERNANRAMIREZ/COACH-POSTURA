@@ -1026,7 +1026,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'abdomen',
     description: 'Mantén las piernas elevadas y rota el torso de lado a lado con control, sin perder la posición.',
     angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
-    cameraNote: 'Nota: vista frontal o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el movimiento.',
+    cameraNote: 'Nota: vista lateral; deja visibles ambos brazos y ambas piernas durante todo el movimiento.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -2387,7 +2387,7 @@ function getCameraGuidance(
         : exercise === 'press-pallof-polea-banda'
           ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.'
         : exercise === 'giros-rusos'
-          ? 'Ponte de frente o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos durante todo el recorrido.'
+          ? 'Ponte de lado y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos durante todo el recorrido.'
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
@@ -2503,7 +2503,6 @@ function getCameraGuidance(
       && exercise !== 'aperturas-inversas-maquina'
       && exercise !== 'cruces-polea-baja-alta'
        && exercise !== 'press-pallof-polea-banda'
-       && exercise !== 'giros-rusos'
       && exercise !== 'dominadas'
       && exercise !== 'dominadas-supinas'
       && exercise !== 'press-banca-inclinado'
@@ -2544,7 +2543,7 @@ function getCameraGuidance(
       : exercise === 'press-pallof-polea-banda'
         ? 'Usa una vista frontal o en 3/4, con ambos brazos completos y la polea o banda dentro del encuadre.'
       : exercise === 'giros-rusos'
-        ? 'Usa una vista frontal o en 3/4, con ambos brazos y ambas piernas completas dentro del encuadre.'
+        ? 'Usa una vista lateral y deja ambos brazos y ambas piernas completas dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-mancuernas'
