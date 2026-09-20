@@ -50,6 +50,17 @@ import reverseCrunchImage from '@assets/ChatGPT_Image_18_sept_2026,_21_17_57_178
 import abWheelImage from '@assets/ChatGPT_Image_18_sept_2026,_21_29_51_1789785046006.png';
 import floorLegRaiseImage from '@assets/ChatGPT_Image_19_sept_2026,_05_53_59_p.m._1789858489259.png';
 import barraRelojImage from '@assets/ChatGPT_Image_19_sept_2026,_06_12_46_p.m._1789859575950.png';
+import pullupScrollFrame01 from '@assets/frame_01_1789864033453.png';
+import pullupScrollFrame02 from '@assets/frame_02_1789864033454.png';
+import pullupScrollFrame03 from '@assets/frame_03_1789864033454.png';
+import pullupScrollFrame04 from '@assets/frame_04_1789864033455.png';
+import pullupScrollFrame05 from '@assets/frame_05_1789864033455.png';
+import pullupScrollFrame06 from '@assets/frame_06_1789864033456.png';
+import pullupScrollFrame07 from '@assets/frame_07_1789864033456.png';
+import pullupScrollFrame08 from '@assets/frame_08_1789864033457.png';
+import pullupScrollFrame09 from '@assets/frame_09_1789864033457.png';
+import pullupScrollFrame10 from '@assets/frame_10_1789864033458.png';
+import pullupScrollFrame11 from '@assets/frame_11_1789864033458.png';
 import pallofPressImage from '@assets/ChatGPT_Image_18_sept_2026,_21_47_36_1789786072344.png';
 import russianTwistImage from '@assets/ChatGPT_Image_18_sept_2026,_21_56_46_1789786639535.png';
 import militaryPressImage from '@assets/ChatGPT_Image_9_sept_2026,_03_26_39_p.m._1788985622495.png';
@@ -102,6 +113,22 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
+const TOTAL_FRAMES = 11;
+const REPETICIONES = 4;
+const SCROLL_LERP = 0.15;
+const pullupScrollFrames = [
+  pullupScrollFrame01,
+  pullupScrollFrame02,
+  pullupScrollFrame03,
+  pullupScrollFrame04,
+  pullupScrollFrame05,
+  pullupScrollFrame06,
+  pullupScrollFrame07,
+  pullupScrollFrame08,
+  pullupScrollFrame09,
+  pullupScrollFrame10,
+  pullupScrollFrame11,
+];
 
 // MODO TEMPORAL DE DESARROLLO:
 // Se conserva todo el código de Clerk y Lemon Squeezy, pero NetPosture abre
@@ -9159,10 +9186,160 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
+function ScrollPullupBackground() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const images = pullupScrollFrames.slice(0, TOTAL_FRAMES).map((source) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = source;
+      return image;
+    });
+
+    let animationFrame = 0;
+    let currentFrame = 0;
+    let targetFrame = 0;
+    let devicePixelRatio = 1;
+    let canvasWidth = window.innerWidth;
+    let canvasHeight = window.innerHeight;
+    let frameScale = 1;
+    let frameOffsetX = 0;
+    let frameOffsetY = 0;
+    let imagesReady = false;
+    let disposed = false;
+
+    const fillCanvasBlack = () => {
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, canvasWidth, canvasHeight);
+    };
+
+    const resizeCanvas = () => {
+      canvasWidth = window.innerWidth;
+      canvasHeight = window.innerHeight;
+      devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(canvasWidth * devicePixelRatio));
+      canvas.height = Math.max(1, Math.floor(canvasHeight * devicePixelRatio));
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+
+      const referenceImage = images[0];
+      if (referenceImage?.naturalWidth && referenceImage.naturalHeight) {
+        frameScale = canvasHeight / referenceImage.naturalHeight;
+        frameOffsetX = (canvasWidth - referenceImage.naturalWidth * frameScale) / 2;
+        frameOffsetY = (canvasHeight - referenceImage.naturalHeight * frameScale) / 2;
+      }
+
+      fillCanvasBlack();
+    };
+
+    const updateTargetFrame = () => {
+      const maxScroll = Math.max(
+        1,
+        document.documentElement.scrollHeight - window.innerHeight,
+      );
+      const scrollProgress = Math.min(1, Math.max(0, window.scrollY / maxScroll));
+      const repeatedProgress = (scrollProgress * REPETICIONES) % 2;
+      const movementProgress =
+        repeatedProgress <= 1 ? repeatedProgress : 2 - repeatedProgress;
+      targetFrame = movementProgress * (TOTAL_FRAMES - 1);
+    };
+
+    const drawInterpolatedFrame = () => {
+      fillCanvasBlack();
+      if (!imagesReady) return;
+
+      const lowerFrame = Math.floor(currentFrame);
+      const upperFrame = Math.min(TOTAL_FRAMES - 1, lowerFrame + 1);
+      const upperAlpha = currentFrame - lowerFrame;
+      const lowerImage = images[lowerFrame];
+      const upperImage = images[upperFrame];
+
+      if (lowerImage?.naturalWidth && lowerImage.naturalHeight) {
+        context.globalAlpha = upperFrame === lowerFrame ? 1 : 1 - upperAlpha;
+        context.drawImage(
+          lowerImage,
+          frameOffsetX,
+          frameOffsetY,
+          lowerImage.naturalWidth * frameScale,
+          lowerImage.naturalHeight * frameScale,
+        );
+      }
+
+      if (
+        upperFrame !== lowerFrame &&
+        upperImage?.naturalWidth &&
+        upperImage.naturalHeight
+      ) {
+        context.globalAlpha = upperAlpha;
+        context.drawImage(
+          upperImage,
+          frameOffsetX,
+          frameOffsetY,
+          upperImage.naturalWidth * frameScale,
+          upperImage.naturalHeight * frameScale,
+        );
+      }
+
+      context.globalAlpha = 1;
+    };
+
+    const animate = () => {
+      currentFrame += (targetFrame - currentFrame) * SCROLL_LERP;
+      if (Math.abs(targetFrame - currentFrame) < 0.001) {
+        currentFrame = targetFrame;
+      }
+      drawInterpolatedFrame();
+      animationFrame = window.requestAnimationFrame(animate);
+    };
+
+    const waitForImage = (image: HTMLImageElement) =>
+      new Promise<void>((resolve) => {
+        if (image.complete && image.naturalWidth > 0) {
+          resolve();
+          return;
+        }
+        image.addEventListener('load', () => resolve(), { once: true });
+        image.addEventListener('error', () => resolve(), { once: true });
+      });
+
+    resizeCanvas();
+    updateTargetFrame();
+    window.addEventListener('scroll', updateTargetFrame, { passive: true });
+    window.addEventListener('resize', resizeCanvas);
+
+    void Promise.all(images.map(waitForImage)).then(() => {
+      if (disposed) return;
+      imagesReady = images.every((image) => image.naturalWidth > 0);
+      if (!imagesReady) return;
+      resizeCanvas();
+      drawInterpolatedFrame();
+      animationFrame = window.requestAnimationFrame(animate);
+    });
+
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener('scroll', updateTargetFrame);
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="scroll-pullup-background" aria-hidden="true" />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <ScrollPullupBackground />
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <Router />
         </WouterRouter>
