@@ -1643,6 +1643,11 @@ const HIP_THRUST_BOTTOM_MAX_ANGLE = 115;
 const HIP_THRUST_ACTIVATION_ANGLE = 125;
 const HIP_THRUST_TOP_MIN_ANGLE = 150;
 const HIP_THRUST_TOP_MAX_ANGLE = 180;
+const STIFF_LEG_DEADLIFT_START_MIN_ANGLE = 150;
+const STIFF_LEG_DEADLIFT_START_MAX_ANGLE = 180;
+const STIFF_LEG_DEADLIFT_ACTIVATION_ANGLE = 145;
+const STIFF_LEG_DEADLIFT_END_MIN_ANGLE = 64;
+const STIFF_LEG_DEADLIFT_END_MAX_ANGLE = 113;
 const HAMSTRING_CURL_START_MIN_ANGLE = 120;
 const HAMSTRING_CURL_START_MAX_ANGLE = 180;
 const HAMSTRING_CURL_ACTIVATION_ANGLE = 110;
@@ -1952,6 +1957,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: HIP_THRUST_TOP_MAX_ANGLE,
     endLabel: `cadera entre ${HIP_THRUST_TOP_MIN_ANGLE}–${HIP_THRUST_TOP_MAX_ANGLE}°`,
   },
+  'peso-muerto-piernas-rigidas': {
+    direction: 'decrease',
+    startMinAngle: STIFF_LEG_DEADLIFT_START_MIN_ANGLE,
+    startMaxAngle: STIFF_LEG_DEADLIFT_START_MAX_ANGLE,
+    activationAngle: STIFF_LEG_DEADLIFT_ACTIVATION_ANGLE,
+    endMinAngle: STIFF_LEG_DEADLIFT_END_MIN_ANGLE,
+    endMaxAngle: STIFF_LEG_DEADLIFT_END_MAX_ANGLE,
+    endLabel: `cadera entre ${STIFF_LEG_DEADLIFT_END_MIN_ANGLE}–${STIFF_LEG_DEADLIFT_END_MAX_ANGLE}°`,
+  },
   'curl-femoral': {
     direction: 'decrease',
     startMinAngle: HAMSTRING_CURL_START_MIN_ANGLE,
@@ -2175,7 +2189,7 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       return [
         'Lecturas en vivo: hombros, codos, muñecas, caderas, rodillas y tobillos',
         'Se muestran ambos lados para revisar la simetría',
-        'Ejecución y recorrido específicos: calibración pendiente',
+        `Inicio / regreso: cadera ${STIFF_LEG_DEADLIFT_START_MIN_ANGLE}–${STIFF_LEG_DEADLIFT_START_MAX_ANGLE}° · final ${STIFF_LEG_DEADLIFT_END_MIN_ANGLE}–${STIFF_LEG_DEADLIFT_END_MAX_ANGLE}°`,
       ];
     case 'dominadas':
     case 'dominadas-supinas':
@@ -5212,6 +5226,13 @@ function calculateRepetitionAngle(
     );
   }
   if (exercise === 'elevaciones-piernas-suelo') {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.hip],
+      keypoints[indexes.knee],
+    );
+  }
+  if (exercise === 'peso-muerto-rumano' || exercise === 'peso-muerto-piernas-rigidas') {
     return calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
