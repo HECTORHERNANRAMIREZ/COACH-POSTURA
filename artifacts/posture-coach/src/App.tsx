@@ -84,6 +84,7 @@ import seatedCableRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_44_28_17
 import oneArmDumbbellRowImage from '@assets/ChatGPT_Image_18_sept_2026,_23_50_29_1789793435423.png';
 import elevatedAustralianRowImage from '@assets/ChatGPT_Image_19_sept_2026,_13_58_44_1789844332280.png';
 import romanianDeadliftImage from '@assets/ChatGPT_Image_17_sept_2026,_03_03_39_p.m._1789675440943.png';
+import stiffLegDeadliftImage from '@assets/ChatGPT_Image_20_sept_2026,_13_15_05_1789928277400.png';
 import bicepsCurlImage from '@assets/ChatGPT_Image_10_sept_2026,_00_22_49_1789017858109.png';
 import inclineDumbbellCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_15_05_16_1789848409357.png';
 import preacherCurlImage from '@assets/ChatGPT_Image_19_sept_2026,_15_11_16_1789848685122.png';
@@ -246,7 +247,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'remo-sentado-polea-agarre-cerrado': seatedCableRowImage,
   'remo-mancuerna-una-mano': oneArmDumbbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
-  'peso-muerto-piernas-rigidas': romanianDeadliftImage,
+  'peso-muerto-piernas-rigidas': stiffLegDeadliftImage,
   'curl-biceps': bicepsCurlImage,
   'curl-inclinado-mancuernas': inclineDumbbellCurlImage,
   'curl-predicador': preacherCurlImage,
