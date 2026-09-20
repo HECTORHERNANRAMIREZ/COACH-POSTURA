@@ -7714,7 +7714,11 @@ function Home() {
               </section>
               <p className="app-description">
                 NetPosture es tu compañero de entrenamiento: observa tus movimientos con la cámara
-                y te ayuda a cuidar tu postura con indicaciones claras mientras entrenas.
+                y te ayuda a cuidar tu postura con indicaciones claras mientras entrenas. No
+                necesitas ser experto: elige un ejercicio, colócate frente a la cámara y sigue las
+                recomendaciones para moverte con más control y confianza. La idea es que entiendas
+                mejor cada movimiento y conviertas cada repetición en un paso hacia una técnica más
+                sólida.
               </p>
             </div>
           )}
