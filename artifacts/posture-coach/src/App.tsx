@@ -1679,6 +1679,9 @@ const FLOOR_LEG_RAISE_END_MIN_ANGLE = 70;
 const FLOOR_LEG_RAISE_END_MAX_ANGLE = 110;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
+const SIDE_VIEW_MIN_CONFIDENCE_GAP = 0.16;
+const SIDE_VIEW_MIN_VISIBLE_POINTS = 4;
+const SIDE_VIEW_STABLE_FRAMES = 6;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
 const POSE_STALE_POINT_FRAMES = 6;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
@@ -2997,6 +3000,34 @@ function getDominantSide(
   return { side: selected.side, average: selected.average };
 }
 
+function getSideViewCandidate(keypoints: PosePoint[] | undefined): PoseSide | null {
+  if (!keypoints) return null;
+
+  const scores = (['left', 'right'] as PoseSide[]).map((side) => {
+    const pointScores = Object.values(sideKeypoints[side]).map(
+      (index) => keypoints[index]?.score ?? 0,
+    );
+    return {
+      side,
+      average: pointScores.reduce((sum, score) => sum + score, 0) / pointScores.length,
+      visiblePoints: pointScores.filter((score) => score >= CAMERA_POINT_MIN_SCORE).length,
+    };
+  });
+  const strongest = [...scores].sort((first, second) => second.average - first.average)[0];
+  if (!strongest) return null;
+  const other = scores.find((candidate) => candidate.side !== strongest.side);
+
+  if (
+    !other
+    || strongest.visiblePoints < SIDE_VIEW_MIN_VISIBLE_POINTS
+    || strongest.average - other.average < SIDE_VIEW_MIN_CONFIDENCE_GAP
+  ) {
+    return null;
+  }
+
+  return strongest.side;
+}
+
 function getBarbellRowDominantSide(
   keypoints: PosePoint[] | undefined,
   previousSide: PoseSide | null,
@@ -3183,6 +3214,7 @@ function getCameraGuidance(
   side: PoseSide | null,
   videoWidth: number,
   videoHeight: number,
+  lateralSide: PoseSide | null = null,
 ): CameraGuidance {
   if (!keypoints || !side) {
     return {
@@ -3330,6 +3362,14 @@ function getCameraGuidance(
     };
   }
 
+  if (exercise === 'peso-muerto-piernas-rigidas' && !lateralSide) {
+    return {
+      tone: 'warning',
+      message: 'Necesito una vista lateral',
+      detail: 'Gira el móvil hasta que se vea claramente un solo costado. Te indicaré si detecto el lado izquierdo o el derecho.',
+    };
+  }
+
   const leftShoulder = keypoints[sideKeypoints.left.shoulder];
   const rightShoulder = keypoints[sideKeypoints.right.shoulder];
   const leftHip = keypoints[sideKeypoints.left.hip];
@@ -3426,6 +3466,8 @@ function getCameraGuidance(
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-inclinado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco inclinado dentro del encuadre.'
+      : exercise === 'peso-muerto-piernas-rigidas'
+        ? `Vista lateral detectada: lado ${lateralSide === 'left' ? 'izquierdo' : 'derecho'}. Mantén ese costado visible durante todo el recorrido.`
       : 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.',
   };
 }
@@ -6567,6 +6609,8 @@ function Home() {
   const fpsFramesRef = useRef(0);
   const stabilityFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
+  const sideViewCandidateRef = useRef<PoseSide | null>(null);
+  const sideViewStableFramesRef = useRef(0);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
   const posePointMemoryRef = useRef<PosePointMemoryMap>({});
@@ -6719,6 +6763,24 @@ function Home() {
           ? getElevatedAustralianRowDominantSide(pose?.keypoints, previousSideRef.current)
         : getDominantSide(pose?.keypoints, previousSideRef.current);
       const nextDominantSide = nextDominantSideResult?.side ?? null;
+      const nextSideViewCandidate = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
+        ? getSideViewCandidate(pose?.keypoints)
+        : null;
+      if (!nextSideViewCandidate) {
+        sideViewCandidateRef.current = null;
+        sideViewStableFramesRef.current = 0;
+      } else if (sideViewCandidateRef.current === nextSideViewCandidate) {
+        sideViewStableFramesRef.current = Math.min(
+          SIDE_VIEW_STABLE_FRAMES,
+          sideViewStableFramesRef.current + 1,
+        );
+      } else {
+        sideViewCandidateRef.current = nextSideViewCandidate;
+        sideViewStableFramesRef.current = 1;
+      }
+      const stableLateralSide = sideViewStableFramesRef.current >= SIDE_VIEW_STABLE_FRAMES
+        ? sideViewCandidateRef.current
+        : null;
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const nextCameraGuidance = getCameraGuidance(
@@ -6727,6 +6789,7 @@ function Home() {
         nextDominantSide,
         video.videoWidth,
         video.videoHeight,
+        stableLateralSide,
       );
       const frameCameraReady = nextCameraGuidance.tone === 'ready';
       const rawAngle = selectedExerciseForFrame === 'sentadillas'
@@ -7275,6 +7338,8 @@ function Home() {
     setExerciseRepPhase('esperando inicio');
     setExerciseMinimumAngle(null);
     previousSideRef.current = null;
+     sideViewCandidateRef.current = null;
+     sideViewStableFramesRef.current = 0;
     sideSwitchesRef.current = 0;
     setPhase('requesting');
 
@@ -7418,6 +7483,8 @@ function Home() {
     setExerciseRepPhase('esperando inicio');
     setExerciseMinimumAngle(null);
     previousSideRef.current = null;
+     sideViewCandidateRef.current = null;
+     sideViewStableFramesRef.current = 0;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
   }, [stopResources]);
