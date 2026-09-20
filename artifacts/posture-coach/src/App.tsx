@@ -6781,6 +6781,10 @@ function Home() {
       const stableLateralSide = sideViewStableFramesRef.current >= SIDE_VIEW_STABLE_FRAMES
         ? sideViewCandidateRef.current
         : null;
+      const measurementSide = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
+        && stableLateralSide
+        ? stableLateralSide
+        : nextDominantSide;
       const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const nextCameraGuidance = getCameraGuidance(
@@ -6797,7 +6801,7 @@ function Home() {
         : calculateExerciseAngle(
           selectedExerciseForFrame,
           pose?.keypoints,
-          nextDominantSide,
+          measurementSide,
         );
       const frameCanMeasure = Boolean(
         frameCameraReady
@@ -6815,7 +6819,7 @@ function Home() {
         ? calculateRepetitionAngle(
           selectedExerciseForFrame,
           pose?.keypoints,
-          nextDominantSide,
+          measurementSide,
         )
         : null;
       const dipTorsoAngleForFrame = selectedExerciseForFrame === 'fondos' && nextDominantSide
@@ -7108,13 +7112,13 @@ function Home() {
       setFaceDetected(nextFaceDetected);
       setCameraReady(frameCameraReady);
       setCameraGuidance(nextCameraGuidance);
-      setDominantSide(nextDominantSide);
+      setDominantSide(measurementSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
       setAngle(displayAngle);
       const nextLiveAngleReadings = calculateExtremityAngleReadings(
         selectedExerciseForFrame,
         pose?.keypoints,
-        nextDominantSide,
+        measurementSide,
       );
       setLiveAngleReadings(nextLiveAngleReadings);
       setDipJointReadings(
@@ -7132,7 +7136,7 @@ function Home() {
       setAnglePoints(getAngleDiagnosticPoints(
         selectedExerciseRef.current ?? 'fondos',
         pose?.keypoints,
-        nextDominantSide,
+        measurementSide,
       ));
       setTechniqueFeedback(
         selectedExerciseRef.current === 'flexiones'
@@ -7199,14 +7203,14 @@ function Home() {
             : [...history, displayAngle].slice(-5)
         ));
       }
-      if (nextDominantSide && previousSideRef.current && nextDominantSide !== previousSideRef.current) {
+      if (measurementSide && previousSideRef.current && measurementSide !== previousSideRef.current) {
         sideSwitchesRef.current += 1;
         setSideSwitches(sideSwitchesRef.current);
         setSideChangeNotice(
-          `${previousSideRef.current === 'left' ? 'Izquierdo' : 'Derecho'} → ${nextDominantSide === 'left' ? 'izquierdo' : 'derecho'}`,
+          `${previousSideRef.current === 'left' ? 'Izquierdo' : 'Derecho'} → ${measurementSide === 'left' ? 'izquierdo' : 'derecho'}`,
         );
       }
-      previousSideRef.current = nextDominantSide;
+      previousSideRef.current = measurementSide;
       setConfidencePoints([
         selectMostConfident(pose?.keypoints, 'Hombro', 11, 12),
         selectMostConfident(pose?.keypoints, 'Cadera', 23, 24),
