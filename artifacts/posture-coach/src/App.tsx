@@ -7572,21 +7572,18 @@ function Home() {
 
         <div className="coach-stage">
           {phase === 'exercise-select' && (
-            <section className="glass-panel exercise-panel" aria-labelledby="exercise-title">
-              <div className="panel-kicker">
-                <span className="kicker-line" aria-hidden="true" />
-                <span>Tu espacio de alineación</span>
-                <span className="kicker-line" aria-hidden="true" />
-              </div>
-              <h1 id="exercise-title" className="welcome-title">Elige tu ejercicio</h1>
-              <p className="welcome-subtitle">
-                Selecciona un movimiento para empezar a observar tu técnica en tiempo real.
-              </p>
-              <p className="app-description">
-                NetPosture es tu compañero de entrenamiento: observa tus movimientos con la cámara
-                y te ayuda a cuidar tu postura con indicaciones claras mientras entrenas.
-              </p>
-              <div className="exercise-list">
+            <div className="exercise-select-content">
+              <section className="glass-panel exercise-panel" aria-labelledby="exercise-title">
+                <div className="panel-kicker">
+                  <span className="kicker-line" aria-hidden="true" />
+                  <span>Tu espacio de alineación</span>
+                  <span className="kicker-line" aria-hidden="true" />
+                </div>
+                <h1 id="exercise-title" className="welcome-title">Elige tu ejercicio</h1>
+                <p className="welcome-subtitle">
+                  Selecciona un movimiento para empezar a observar tu técnica en tiempo real.
+                </p>
+                <div className="exercise-list">
                 {exerciseGroups.map((group) => (
                   <div className="exercise-group" key={group.label}>
                     {(() => {
@@ -7709,12 +7706,17 @@ function Home() {
                     })()}
                   </div>
                 ))}
-              </div>
-              <p className="privacy-note">
-                <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
-                <span>La imagen se procesa solo en tu dispositivo; no se almacena.</span>
+                </div>
+                <p className="privacy-note">
+                  <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
+                  <span>La imagen se procesa solo en tu dispositivo; no se almacena.</span>
+                </p>
+              </section>
+              <p className="app-description">
+                NetPosture es tu compañero de entrenamiento: observa tus movimientos con la cámara
+                y te ayuda a cuidar tu postura con indicaciones claras mientras entrenas.
               </p>
-            </section>
+            </div>
           )}
 
           {isActive && (

@@ -372,6 +372,13 @@
   padding: 2.8rem 0 2rem;
 }
 
+.exercise-select-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
 .glass-panel {
   position: relative;
   width: 100%;
@@ -417,7 +424,6 @@
 .exercise-panel .panel-kicker,
 .exercise-panel .welcome-title,
 .exercise-panel .welcome-subtitle,
-.exercise-panel .app-description,
 .exercise-panel .privacy-note {
   opacity: 1;
   will-change: opacity, transform;
@@ -433,10 +439,6 @@
 
 .exercise-panel .welcome-subtitle {
   animation: enter-from-right 420ms 190ms backwards cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.exercise-panel .app-description {
-  animation: enter-from-left 420ms 225ms backwards cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .exercise-panel .exercise-card {
@@ -744,10 +746,12 @@
 
 .app-description {
   max-width: 27rem;
-  margin: 1.1rem auto 0;
+  margin: 1.45rem auto 0;
   color: rgba(211, 224, 239, 0.56);
   font-size: 0.84rem;
   line-height: 1.55;
+  text-align: center;
+  animation: rise-in 520ms 180ms backwards cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .primary-action {
