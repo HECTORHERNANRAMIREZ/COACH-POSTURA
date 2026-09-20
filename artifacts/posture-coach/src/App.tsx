@@ -7582,6 +7582,10 @@ function Home() {
               <p className="welcome-subtitle">
                 Selecciona un movimiento para empezar a observar tu técnica en tiempo real.
               </p>
+              <p className="app-description">
+                NetPosture es tu compañero de entrenamiento: observa tus movimientos con la cámara
+                y te ayuda a cuidar tu postura con indicaciones claras mientras entrenas.
+              </p>
               <div className="exercise-list">
                 {exerciseGroups.map((group) => (
                   <div className="exercise-group" key={group.label}>
