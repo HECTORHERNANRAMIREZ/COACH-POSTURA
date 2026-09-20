@@ -599,9 +599,9 @@ const exercises: ExerciseDefinition[] = [
   },
   {
     id: 'peso-muerto-rumano',
-    name: 'Peso muerto rumano',
+    name: 'Peso muerto rumano con mancuernas o barra',
     muscleGroup: 'pierna',
-    description: 'Haz una bisagra de cadera con control y mantén alineadas todas las extremidades.',
+    description: 'Haz una bisagra de cadera con mancuernas o barra, mantén el control y alinea todas las extremidades.',
     angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
     cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el recorrido.',
     trackedJoints: [
