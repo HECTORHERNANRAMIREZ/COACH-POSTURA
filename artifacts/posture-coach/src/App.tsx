@@ -625,7 +625,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'pierna',
     description: 'Haz una bisagra de cadera con las piernas más rígidas y mantén alineadas todas las extremidades.',
     angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
-    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el recorrido.',
+    cameraNote: 'Nota: vista lateral; deja visible el costado que presentes durante todo el recorrido. El lado opuesto no se usa para validar la repetición.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -634,10 +634,10 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'knee', label: 'rodillas' },
       { joint: 'ankle', label: 'tobillos' },
     ],
-    trackBothSides: true,
+    trackBothSides: false,
     trackedAngleLabels: [
-      'Hombros, codos y muñecas: lectura izquierda y derecha',
-      'Caderas, rodillas y tobillos: lectura izquierda y derecha',
+      'Hombros, codos y muñecas: lado predominante',
+      'Caderas, rodillas y tobillos: lado predominante',
       'Calibración de la ejecución y del recorrido: pendiente',
     ],
   },
@@ -6790,7 +6790,7 @@ function Home() {
       const nextCameraGuidance = getCameraGuidance(
         selectedExerciseForFrame,
         pose?.keypoints,
-        nextDominantSide,
+        measurementSide,
         video.videoWidth,
         video.videoHeight,
         stableLateralSide,
