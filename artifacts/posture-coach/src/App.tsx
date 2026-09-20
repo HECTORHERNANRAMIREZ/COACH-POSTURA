@@ -195,7 +195,7 @@ const clerkAppearance = {
 };
 const GREEN = '#39ff6a';
 
-type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'barra-reloj' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
+type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'peso-muerto-piernas-rigidas' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'barra-reloj' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -246,6 +246,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'remo-sentado-polea-agarre-cerrado': seatedCableRowImage,
   'remo-mancuerna-una-mano': oneArmDumbbellRowImage,
   'peso-muerto-rumano': romanianDeadliftImage,
+  'peso-muerto-piernas-rigidas': romanianDeadliftImage,
   'curl-biceps': bicepsCurlImage,
   'curl-inclinado-mancuernas': inclineDumbbellCurlImage,
   'curl-predicador': preacherCurlImage,
@@ -615,6 +616,28 @@ const exercises: ExerciseDefinition[] = [
       'Hombros, codos y muñecas: lectura izquierda y derecha',
       'Caderas, rodillas y tobillos: lectura izquierda y derecha',
       'Calibración del recorrido: pendiente',
+    ],
+  },
+  {
+    id: 'peso-muerto-piernas-rigidas',
+    name: 'Peso muerto con piernas rígidas',
+    muscleGroup: 'pierna',
+    description: 'Haz una bisagra de cadera con las piernas más rígidas y mantén alineadas todas las extremidades.',
+    angleLabel: 'Hombros · codos · muñecas · caderas · rodillas · tobillos',
+    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos brazos y ambas piernas durante todo el recorrido.',
+    trackedJoints: [
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
+      { joint: 'knee', label: 'rodillas' },
+      { joint: 'ankle', label: 'tobillos' },
+    ],
+    trackBothSides: true,
+    trackedAngleLabels: [
+      'Hombros, codos y muñecas: lectura izquierda y derecha',
+      'Caderas, rodillas y tobillos: lectura izquierda y derecha',
+      'Calibración de la ejecución y del recorrido: pendiente',
     ],
   },
   {
@@ -2147,6 +2170,12 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Se muestran ambos lados para revisar la simetría',
         'Calibración del recorrido: pendiente',
       ];
+    case 'peso-muerto-piernas-rigidas':
+      return [
+        'Lecturas en vivo: hombros, codos, muñecas, caderas, rodillas y tobillos',
+        'Se muestran ambos lados para revisar la simetría',
+        'Ejecución y recorrido específicos: calibración pendiente',
+      ];
     case 'dominadas':
     case 'dominadas-supinas':
       return [
@@ -3214,7 +3243,7 @@ function getCameraGuidance(
              ? 'Ponte de lado y deja visibles hombro, cadera, rodilla, tobillo y pie durante toda la elevación.'
            : exercise === 'maquina-aductores'
              ? 'Ponte de frente a la máquina y deja visibles ambos tobillos durante todo el recorrido.'
-          : exercise === 'peso-muerto-rumano'
+          : exercise === 'peso-muerto-rumano' || exercise === 'peso-muerto-piernas-rigidas'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
          : exercise === 'hip-thrust-barra'
            ? 'Ponte de lado o en 3/4, con el banco y la barra visibles; deja dentro del encuadre ambos hombros, codos, muñecas, caderas, rodillas y tobillos.'
@@ -5022,7 +5051,7 @@ function calculateExerciseAngle(
       keypoints[MUSCLE_UP_FOOT_INDEX[side]],
     );
   }
-  if (exercise === 'peso-muerto-rumano') {
+  if (exercise === 'peso-muerto-rumano' || exercise === 'peso-muerto-piernas-rigidas') {
     return calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
@@ -5515,6 +5544,14 @@ function getAngleDiagnosticPoints(
       { label: 'Tobillo', joint: 'ankle' },
     ],
     'peso-muerto-rumano': [
+      { label: 'Hombro', joint: 'shoulder' },
+      { label: 'Codo', joint: 'elbow' },
+      { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
+      { label: 'Rodilla', joint: 'knee' },
+      { label: 'Tobillo', joint: 'ankle' },
+    ],
+    'peso-muerto-piernas-rigidas': [
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
@@ -7644,7 +7681,8 @@ function Home() {
                      || exercise.id === 'triceps-tras-nuca-polea-alta'
                      || exercise.id === 'copa-mancuernas'
                     || exercise.id === 'extension-horizontal-barra'
-                    || exercise.id === 'peso-muerto-rumano'
+                     || exercise.id === 'peso-muerto-rumano'
+                     || exercise.id === 'peso-muerto-piernas-rigidas'
                      || exercise.id === 'hip-thrust-barra'
                      || exercise.id === 'curl-femoral'
                      || exercise.id === 'elevacion-talones-pie'
