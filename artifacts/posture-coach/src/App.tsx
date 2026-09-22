@@ -1593,6 +1593,16 @@ const MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE =
   MILITARY_PRESS_VALID_MIN_ANGLE - MILITARY_PRESS_TOLERANCE;
 const MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE =
   MILITARY_PRESS_VALID_MAX_ANGLE + MILITARY_PRESS_TOLERANCE;
+// Calibración del press de hombros en máquina a partir del video de referencia:
+// hombro abajo: 70–112°; activación sobre 115°; hombro arriba: 125–160°.
+const SHOULDER_MACHINE_PRESS_START_MIN_ANGLE = 70;
+const SHOULDER_MACHINE_PRESS_START_MAX_ANGLE = 112;
+const SHOULDER_MACHINE_PRESS_ACTIVATION_ANGLE = 115;
+const SHOULDER_MACHINE_PRESS_END_MIN_ANGLE = 125;
+const SHOULDER_MACHINE_PRESS_END_MAX_ANGLE = 160;
+const SHOULDER_MACHINE_PRESS_MAX_SIDE_DIFFERENCE = 24;
+const SHOULDER_MACHINE_PRESS_WRIST_MIN_ANGLE = 120;
+const SHOULDER_MACHINE_PRESS_WRIST_MAX_ANGLE = 180;
 // Calibración base del press plano con mancuernas:
 // arriba con ambos codos extendidos, descenso controlado y fondo entre 72–105°.
 const DUMBBELL_PRESS_START_MIN_ANGLE = 150;
@@ -1837,6 +1847,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE,
     endMaxAngle: MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE,
     endLabel: `codo entre ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}°`,
+  },
+  'press-hombros-maquina': {
+    direction: 'increase',
+    startMinAngle: SHOULDER_MACHINE_PRESS_START_MIN_ANGLE,
+    startMaxAngle: SHOULDER_MACHINE_PRESS_START_MAX_ANGLE,
+    activationAngle: SHOULDER_MACHINE_PRESS_ACTIVATION_ANGLE,
+    endMinAngle: SHOULDER_MACHINE_PRESS_END_MIN_ANGLE,
+    endMaxAngle: SHOULDER_MACHINE_PRESS_END_MAX_ANGLE,
+    endLabel: `hombro entre ${SHOULDER_MACHINE_PRESS_END_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_END_MAX_ANGLE}°`,
   },
   'press-plano-mancuernas': {
     direction: 'decrease',
@@ -2308,6 +2327,15 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Activación: codo >${MILITARY_PRESS_ACTIVATION_ANGLE}°`,
         `Final: codo ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}° (±${MILITARY_PRESS_TOLERANCE}°)`,
         'Codos aproximadamente 45° respecto al torso',
+      ];
+    case 'press-hombros-maquina':
+      return [
+        `Inicio / regreso: hombro ${SHOULDER_MACHINE_PRESS_START_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_START_MAX_ANGLE}°`,
+        `Activación: hombro >${SHOULDER_MACHINE_PRESS_ACTIVATION_ANGLE}°`,
+        `Final: hombro ${SHOULDER_MACHINE_PRESS_END_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_END_MAX_ANGLE}°`,
+        `Simetría: diferencia máxima de ${SHOULDER_MACHINE_PRESS_MAX_SIDE_DIFFERENCE}° entre lados`,
+        'Lecturas prioritarias: hombros, codos y muñecas de ambos lados',
+        `Muñecas alineadas: ${SHOULDER_MACHINE_PRESS_WRIST_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_WRIST_MAX_ANGLE}°`,
       ];
     case 'press-plano-mancuernas':
       return [
@@ -3598,6 +3626,88 @@ function calculateDumbbellPressAverageAngle(keypoints: PosePoint[] | undefined) 
   const { left, right } = calculateDumbbellPressElbowAngles(keypoints);
   if (left === null || right === null) return null;
   return Math.round((left + right) / 2);
+}
+
+function calculateShoulderMachinePressAngles(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) {
+    return {
+      leftShoulder: null,
+      rightShoulder: null,
+      leftElbow: null,
+      rightElbow: null,
+      leftWrist: null,
+      rightWrist: null,
+    };
+  }
+
+  return {
+    leftShoulder: calculateAngle(
+      keypoints[sideKeypoints.left.hip],
+      keypoints[sideKeypoints.left.shoulder],
+      keypoints[sideKeypoints.left.elbow],
+    ),
+    rightShoulder: calculateAngle(
+      keypoints[sideKeypoints.right.hip],
+      keypoints[sideKeypoints.right.shoulder],
+      keypoints[sideKeypoints.right.elbow],
+    ),
+    leftElbow: calculateAngle(
+      keypoints[sideKeypoints.left.shoulder],
+      keypoints[sideKeypoints.left.elbow],
+      keypoints[sideKeypoints.left.wrist],
+    ),
+    rightElbow: calculateAngle(
+      keypoints[sideKeypoints.right.shoulder],
+      keypoints[sideKeypoints.right.elbow],
+      keypoints[sideKeypoints.right.wrist],
+    ),
+    leftWrist: calculateAngle(
+      keypoints[sideKeypoints.left.elbow],
+      keypoints[sideKeypoints.left.wrist],
+      keypoints[WRIST_TIP_INDEX.left],
+    ),
+    rightWrist: calculateAngle(
+      keypoints[sideKeypoints.right.elbow],
+      keypoints[sideKeypoints.right.wrist],
+      keypoints[WRIST_TIP_INDEX.right],
+    ),
+  };
+}
+
+function calculateShoulderMachinePressAverageAngle(keypoints: PosePoint[] | undefined) {
+  const { leftShoulder, rightShoulder } = calculateShoulderMachinePressAngles(keypoints);
+  if (leftShoulder === null || rightShoulder === null) return null;
+  return Math.round((leftShoulder + rightShoulder) / 2);
+}
+
+function isShoulderMachinePressTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  averageShoulderAngle: number | null,
+) {
+  const {
+    leftShoulder,
+    rightShoulder,
+    leftElbow,
+    rightElbow,
+    leftWrist,
+    rightWrist,
+  } = calculateShoulderMachinePressAngles(keypoints);
+  if (
+    leftShoulder === null
+    || rightShoulder === null
+    || leftElbow === null
+    || rightElbow === null
+    || leftWrist === null
+    || rightWrist === null
+    || averageShoulderAngle === null
+  ) {
+    return false;
+  }
+
+  return Math.abs(leftShoulder - rightShoulder) <= SHOULDER_MACHINE_PRESS_MAX_SIDE_DIFFERENCE
+    && Math.abs(leftElbow - rightElbow) <= SHOULDER_MACHINE_PRESS_MAX_SIDE_DIFFERENCE
+    && isWithinAngle(leftWrist, SHOULDER_MACHINE_PRESS_WRIST_MIN_ANGLE, SHOULDER_MACHINE_PRESS_WRIST_MAX_ANGLE)
+    && isWithinAngle(rightWrist, SHOULDER_MACHINE_PRESS_WRIST_MIN_ANGLE, SHOULDER_MACHINE_PRESS_WRIST_MAX_ANGLE);
 }
 
 function isDumbbellPressTechniqueValid(
@@ -5235,6 +5345,13 @@ function calculateExerciseAngle(
       keypoints[indexes.elbow],
     );
   }
+  if (exercise === 'press-hombros-maquina') {
+    return calculateAngle(
+      keypoints[indexes.hip],
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+    );
+  }
   if (exercise === 'press-plano-mancuernas') {
     return calculateDumbbellPressAverageAngle(keypoints);
   }
@@ -5312,6 +5429,10 @@ function calculateRepetitionAngle(
 
   if (exercise === 'press-plano-mancuernas') {
     return calculateDumbbellPressAverageAngle(keypoints);
+  }
+
+  if (exercise === 'press-hombros-maquina') {
+    return calculateShoulderMachinePressAverageAngle(keypoints);
   }
 
   if (exercise === 'zancadas' || exercise === 'zancada-banco') {
@@ -6058,6 +6179,10 @@ function calculateExtremityAngleReadings(
       const sideLabel = definition.trackBothSides ? ` ${shortSide(side)}` : '';
       const target = exercise === 'press-plano-mancuernas' && joint === 'elbow'
         ? `Inicio ${DUMBBELL_PRESS_START_MIN_ANGLE}–${DUMBBELL_PRESS_START_MAX_ANGLE}° · final ${DUMBBELL_PRESS_END_MIN_ANGLE}–${DUMBBELL_PRESS_END_MAX_ANGLE}°`
+        : exercise === 'press-hombros-maquina' && joint === 'shoulder'
+          ? `Inicio ${SHOULDER_MACHINE_PRESS_START_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_START_MAX_ANGLE}° · final ${SHOULDER_MACHINE_PRESS_END_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_END_MAX_ANGLE}°`
+          : exercise === 'press-hombros-maquina' && joint === 'wrist'
+            ? `Alineación ${SHOULDER_MACHINE_PRESS_WRIST_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_WRIST_MAX_ANGLE}°`
         : 'Ángulo articular';
       return createLiveAngleReading(
         `${singularLabel(label)}${sideLabel}`,
@@ -7137,12 +7262,18 @@ function Home() {
           exerciseRepTrackerRef.current.phase,
           repetitionAngle,
         );
+      const shoulderMachinePressTechniqueReady = selectedExerciseForFrame !== 'press-hombros-maquina'
+        || isShoulderMachinePressTechniqueValid(
+          pose?.keypoints,
+          repetitionAngle,
+        );
       const repetitionTechniqueReady = rowTechniqueReady
         && elevatedAustralianRowTechniqueReady
         && dipTechniqueReady
         && pushupTechniqueReady
         && pallofTechniqueReady
-        && dumbbellPressTechniqueReady;
+        && dumbbellPressTechniqueReady
+        && shoulderMachinePressTechniqueReady;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -7162,6 +7293,8 @@ function Home() {
               ? pallofTechniqueReady
               : selectedExerciseForFrame === 'press-plano-mancuernas'
                 ? dumbbellPressTechniqueReady
+                : selectedExerciseForFrame === 'press-hombros-maquina'
+                  ? shoulderMachinePressTechniqueReady
                 : true,
         );
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
@@ -7176,7 +7309,8 @@ function Home() {
           || selectedExerciseForFrame === 'remos-australianos-elevados'
           || selectedExerciseForFrame === 'fondos'
           || selectedExerciseForFrame === 'jalon'
-          || selectedExerciseForFrame === 'press-pallof-polea-banda')
+           || selectedExerciseForFrame === 'press-pallof-polea-banda'
+           || selectedExerciseForFrame === 'press-hombros-maquina')
         && exerciseStartedRef.current
         && (
           !hasFreshPose
@@ -7185,7 +7319,8 @@ function Home() {
            || (selectedExerciseForFrame === 'remo-barra' && !rowTechniqueReady)
            || (selectedExerciseForFrame === 'remos-australianos-elevados' && !elevatedAustralianRowTechniqueReady)
           || (selectedExerciseForFrame === 'fondos' && !dipTechniqueReady)
-           || (selectedExerciseForFrame === 'press-pallof-polea-banda' && !pallofTechniqueReady)
+            || (selectedExerciseForFrame === 'press-pallof-polea-banda' && !pallofTechniqueReady)
+            || (selectedExerciseForFrame === 'press-hombros-maquina' && !shoulderMachinePressTechniqueReady)
         )
       ) {
         const resetTracker = createExerciseRepTracker();
