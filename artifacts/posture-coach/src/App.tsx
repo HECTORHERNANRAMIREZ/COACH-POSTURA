@@ -1584,6 +1584,15 @@ const MILITARY_PRESS_START_MAX_ANGLE = 145;
 const MILITARY_PRESS_ACTIVATION_ANGLE = 145;
 const MILITARY_PRESS_VALID_MIN_ANGLE = 150;
 const MILITARY_PRESS_VALID_MAX_ANGLE = 170;
+const MILITARY_PRESS_TOLERANCE = 3;
+const MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE =
+  MILITARY_PRESS_START_MIN_ANGLE - MILITARY_PRESS_TOLERANCE;
+const MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE =
+  MILITARY_PRESS_START_MAX_ANGLE + MILITARY_PRESS_TOLERANCE;
+const MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE =
+  MILITARY_PRESS_VALID_MIN_ANGLE - MILITARY_PRESS_TOLERANCE;
+const MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE =
+  MILITARY_PRESS_VALID_MAX_ANGLE + MILITARY_PRESS_TOLERANCE;
 // Calibración base del press plano con mancuernas:
 // arriba con ambos codos extendidos, descenso controlado y fondo entre 72–105°.
 const DUMBBELL_PRESS_START_MIN_ANGLE = 150;
@@ -1822,12 +1831,12 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   },
   'press-militar': {
     direction: 'increase',
-    startMinAngle: MILITARY_PRESS_START_MIN_ANGLE,
-    startMaxAngle: MILITARY_PRESS_START_MAX_ANGLE,
+    startMinAngle: MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE,
+    startMaxAngle: MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE,
     activationAngle: MILITARY_PRESS_ACTIVATION_ANGLE,
-    endMinAngle: MILITARY_PRESS_VALID_MIN_ANGLE,
-    endMaxAngle: MILITARY_PRESS_VALID_MAX_ANGLE,
-    endLabel: `codo entre ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+    endMinAngle: MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE,
+    endMaxAngle: MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE,
+    endLabel: `codo entre ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}°`,
   },
   'press-plano-mancuernas': {
     direction: 'decrease',
@@ -2295,9 +2304,9 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       ];
     case 'press-militar':
       return [
-        `Inicio / regreso: codo ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}°`,
+        `Inicio / regreso: codo ${MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE}° (±${MILITARY_PRESS_TOLERANCE}°)`,
         `Activación: codo >${MILITARY_PRESS_ACTIVATION_ANGLE}°`,
-        `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+        `Final: codo ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}° (±${MILITARY_PRESS_TOLERANCE}°)`,
         'Codos aproximadamente 45° respecto al torso',
       ];
     case 'press-plano-mancuernas':
@@ -6148,7 +6157,7 @@ function calculateLiveAngleReadings(
         return [
           empty(
             'Codo',
-            `Inicio ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+            `Inicio ${MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}°`,
           ),
           empty('Codo / torso', '30–60°'),
         ];
@@ -6460,9 +6469,9 @@ function calculateLiveAngleReadings(
         value(
           elbow,
           'Codo',
-          `Inicio ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
-          MILITARY_PRESS_VALID_MIN_ANGLE,
-          MILITARY_PRESS_VALID_MAX_ANGLE,
+          `Inicio ${MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}–${MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}°`,
+          MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE,
+          MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE,
         ),
         value(
           () => calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]),
@@ -8221,7 +8230,7 @@ function Home() {
                   <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Posición inicial:</b> coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
-                    <li><b>Recorrido calibrado:</b> parte con el codo entre {MILITARY_PRESS_START_MIN_ANGLE}° y {MILITARY_PRESS_START_MAX_ANGLE}° y termina arriba entre {MILITARY_PRESS_VALID_MIN_ANGLE}° y {MILITARY_PRESS_VALID_MAX_ANGLE}°.</li>
+                    <li><b>Recorrido calibrado:</b> parte con el codo entre {MILITARY_PRESS_ACCEPTED_START_MIN_ANGLE}° y {MILITARY_PRESS_ACCEPTED_START_MAX_ANGLE}° y termina arriba entre {MILITARY_PRESS_ACCEPTED_VALID_MIN_ANGLE}° y {MILITARY_PRESS_ACCEPTED_VALID_MAX_ANGLE}° (tolerancia ±{MILITARY_PRESS_TOLERANCE}°).</li>
                     <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
