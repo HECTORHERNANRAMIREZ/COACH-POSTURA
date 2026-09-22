@@ -1579,6 +1579,14 @@ const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
 const MILITARY_PRESS_VALID_MIN_ANGLE = 85;
 const MILITARY_PRESS_VALID_MAX_ANGLE = 110;
+// Calibración base del press plano con mancuernas:
+// arriba con ambos codos extendidos, descenso controlado y fondo entre 72–105°.
+const DUMBBELL_PRESS_START_MIN_ANGLE = 150;
+const DUMBBELL_PRESS_START_MAX_ANGLE = 180;
+const DUMBBELL_PRESS_ACTIVATION_ANGLE = 135;
+const DUMBBELL_PRESS_END_MIN_ANGLE = 72;
+const DUMBBELL_PRESS_END_MAX_ANGLE = 105;
+const DUMBBELL_PRESS_MAX_SIDE_DIFFERENCE = 20;
 const LATERAL_RAISE_START_MIN_ANGLE = 0;
 const LATERAL_RAISE_START_MAX_ANGLE = 40;
 const LATERAL_RAISE_ACTIVATION_ANGLE = 55;
@@ -1815,6 +1823,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: MILITARY_PRESS_VALID_MIN_ANGLE,
     endMaxAngle: MILITARY_PRESS_VALID_MAX_ANGLE,
     endLabel: `codo entre ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+  },
+  'press-plano-mancuernas': {
+    direction: 'decrease',
+    startMinAngle: DUMBBELL_PRESS_START_MIN_ANGLE,
+    startMaxAngle: DUMBBELL_PRESS_START_MAX_ANGLE,
+    activationAngle: DUMBBELL_PRESS_ACTIVATION_ANGLE,
+    endMinAngle: DUMBBELL_PRESS_END_MIN_ANGLE,
+    endMaxAngle: DUMBBELL_PRESS_END_MAX_ANGLE,
+    endLabel: `ambos codos entre ${DUMBBELL_PRESS_END_MIN_ANGLE}–${DUMBBELL_PRESS_END_MAX_ANGLE}°`,
   },
   'elevaciones-laterales': {
     direction: 'increase',
@@ -2277,6 +2294,13 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
         'Codos aproximadamente 45° respecto al torso',
       ];
+    case 'press-plano-mancuernas':
+      return [
+        `Inicio / regreso: ambos codos ${DUMBBELL_PRESS_START_MIN_ANGLE}–${DUMBBELL_PRESS_START_MAX_ANGLE}°`,
+        `Activación: promedio de codos <${DUMBBELL_PRESS_ACTIVATION_ANGLE}°`,
+        `Final: ambos codos ${DUMBBELL_PRESS_END_MIN_ANGLE}–${DUMBBELL_PRESS_END_MAX_ANGLE}°`,
+        `Simetría: diferencia máxima de ${DUMBBELL_PRESS_MAX_SIDE_DIFFERENCE}° entre lados`,
+      ];
     case 'press-pallof-polea-banda':
       return [
         `Inicio / regreso: codos ${PALLOF_START_MIN_ANGLE}–${PALLOF_START_MAX_ANGLE}°`,
@@ -2319,12 +2343,6 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Codos extendidos y muñecas alineadas',
       ];
     case 'press-banca-inclinado':
-      return [
-        'Lecturas en vivo: hombros, codos y muñecas',
-        'Se muestran ambos lados para comparar el movimiento',
-        'Calibración del recorrido: pendiente',
-      ];
-    case 'press-plano-mancuernas':
       return [
         'Lecturas en vivo: hombros, codos y muñecas',
         'Se muestran ambos lados para comparar el movimiento',
@@ -3542,6 +3560,61 @@ function calculateAngle(
     ),
   );
   return Math.round(Math.acos(cosine) * (180 / Math.PI));
+}
+
+function calculateDumbbellPressElbowAngles(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return { left: null, right: null };
+
+  return {
+    left: calculateAngle(
+      keypoints[sideKeypoints.left.shoulder],
+      keypoints[sideKeypoints.left.elbow],
+      keypoints[sideKeypoints.left.wrist],
+    ),
+    right: calculateAngle(
+      keypoints[sideKeypoints.right.shoulder],
+      keypoints[sideKeypoints.right.elbow],
+      keypoints[sideKeypoints.right.wrist],
+    ),
+  };
+}
+
+function calculateDumbbellPressAverageAngle(keypoints: PosePoint[] | undefined) {
+  const { left, right } = calculateDumbbellPressElbowAngles(keypoints);
+  if (left === null || right === null) return null;
+  return Math.round((left + right) / 2);
+}
+
+function isDumbbellPressTechniqueValid(
+  keypoints: PosePoint[] | undefined,
+  phase: ExerciseRepPhase,
+  averageAngle: number | null,
+) {
+  const { left, right } = calculateDumbbellPressElbowAngles(keypoints);
+  if (left === null || right === null || averageAngle === null) return false;
+  if (Math.abs(left - right) > DUMBBELL_PRESS_MAX_SIDE_DIFFERENCE) return false;
+
+  const averageIsAtStart = isWithinAngle(
+    averageAngle,
+    DUMBBELL_PRESS_START_MIN_ANGLE,
+    DUMBBELL_PRESS_START_MAX_ANGLE,
+  );
+  const averageIsAtEnd = isWithinAngle(
+    averageAngle,
+    DUMBBELL_PRESS_END_MIN_ANGLE,
+    DUMBBELL_PRESS_END_MAX_ANGLE,
+  );
+
+  if (averageIsAtStart) {
+    return isWithinAngle(left, DUMBBELL_PRESS_START_MIN_ANGLE, DUMBBELL_PRESS_START_MAX_ANGLE)
+      && isWithinAngle(right, DUMBBELL_PRESS_START_MIN_ANGLE, DUMBBELL_PRESS_START_MAX_ANGLE);
+  }
+  if (phase === 'en movimiento' && averageIsAtEnd) {
+    return isWithinAngle(left, DUMBBELL_PRESS_END_MIN_ANGLE, DUMBBELL_PRESS_END_MAX_ANGLE)
+      && isWithinAngle(right, DUMBBELL_PRESS_END_MIN_ANGLE, DUMBBELL_PRESS_END_MAX_ANGLE);
+  }
+
+  return true;
 }
 
 const defaultTechniqueFeedback: TechniqueFeedback = {
@@ -5147,6 +5220,9 @@ function calculateExerciseAngle(
       keypoints[indexes.elbow],
     );
   }
+  if (exercise === 'press-plano-mancuernas') {
+    return calculateDumbbellPressAverageAngle(keypoints);
+  }
   if (exercise === 'pull-over-polea-alta') {
     return calculateAngle(
       keypoints[indexes.hip],
@@ -5218,6 +5294,10 @@ function calculateRepetitionAngle(
 ) {
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
+
+  if (exercise === 'press-plano-mancuernas') {
+    return calculateDumbbellPressAverageAngle(keypoints);
+  }
 
   if (exercise === 'zancadas' || exercise === 'zancada-banco') {
     return calculateAngle(
@@ -5961,10 +6041,13 @@ function calculateExtremityAngleReadings(
     return joints.map(({ joint, label }) => {
       const [first, center, last] = pointFor(joint);
       const sideLabel = definition.trackBothSides ? ` ${shortSide(side)}` : '';
+      const target = exercise === 'press-plano-mancuernas' && joint === 'elbow'
+        ? `Inicio ${DUMBBELL_PRESS_START_MIN_ANGLE}–${DUMBBELL_PRESS_START_MAX_ANGLE}° · final ${DUMBBELL_PRESS_END_MIN_ANGLE}–${DUMBBELL_PRESS_END_MAX_ANGLE}°`
+        : 'Ángulo articular';
       return createLiveAngleReading(
         `${singularLabel(label)}${sideLabel}`,
         calculateAngle(first, center, last),
-        'Ángulo articular',
+        target,
       );
     });
   });
@@ -7030,11 +7113,18 @@ function Home() {
         );
       const pallofTechniqueReady = selectedExerciseForFrame !== 'press-pallof-polea-banda'
         || isPallofTechniqueValid(pose?.keypoints);
+      const dumbbellPressTechniqueReady = selectedExerciseForFrame !== 'press-plano-mancuernas'
+        || isDumbbellPressTechniqueValid(
+          pose?.keypoints,
+          exerciseRepTrackerRef.current.phase,
+          repetitionAngle,
+        );
       const repetitionTechniqueReady = rowTechniqueReady
         && elevatedAustralianRowTechniqueReady
         && dipTechniqueReady
         && pushupTechniqueReady
-        && pallofTechniqueReady;
+        && pallofTechniqueReady
+        && dumbbellPressTechniqueReady;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -7052,7 +7142,9 @@ function Home() {
             ? pulldownTechniqueReady
             : selectedExerciseForFrame === 'press-pallof-polea-banda'
               ? pallofTechniqueReady
-              : true,
+              : selectedExerciseForFrame === 'press-plano-mancuernas'
+                ? dumbbellPressTechniqueReady
+                : true,
         );
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
@@ -8123,6 +8215,18 @@ function Home() {
                     <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
+                  </ul>
+                </details>
+              )}
+              {selectedExercise === 'press-plano-mancuernas' && (
+                <details className="pulldown-instructions">
+                  <summary>Condiciones para una repetición correcta</summary>
+                  <ul>
+                    <li><b>Encuadre:</b> colócate de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas durante todo el recorrido.</li>
+                    <li><b>Inicio:</b> comienza arriba con ambos codos entre {DUMBBELL_PRESS_START_MIN_ANGLE}° y {DUMBBELL_PRESS_START_MAX_ANGLE}°.</li>
+                    <li><b>Descenso:</b> baja las mancuernas hacia el pecho con control; la activación comienza cuando el promedio de ambos codos baja de {DUMBBELL_PRESS_ACTIVATION_ANGLE}°.</li>
+                    <li><b>Fondo:</b> llega con ambos codos entre {DUMBBELL_PRESS_END_MIN_ANGLE}° y {DUMBBELL_PRESS_END_MAX_ANGLE}°, sin que un lado se adelante más de {DUMBBELL_PRESS_MAX_SIDE_DIFFERENCE}°.</li>
+                    <li><b>Regreso:</b> sube las dos mancuernas de forma simétrica hasta extender los codos y cerrar la repetición.</li>
                   </ul>
                 </details>
               )}
