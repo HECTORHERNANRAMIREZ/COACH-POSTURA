@@ -1577,8 +1577,13 @@ const PULLUP_TOP_WRIST_MAX_ANGLE = 160;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
-const MILITARY_PRESS_VALID_MIN_ANGLE = 85;
-const MILITARY_PRESS_VALID_MAX_ANGLE = 110;
+// Calibración derivada del video de referencia del usuario:
+// inicio con el codo flexionado y final con el brazo extendido arriba.
+const MILITARY_PRESS_START_MIN_ANGLE = 130;
+const MILITARY_PRESS_START_MAX_ANGLE = 145;
+const MILITARY_PRESS_ACTIVATION_ANGLE = 145;
+const MILITARY_PRESS_VALID_MIN_ANGLE = 150;
+const MILITARY_PRESS_VALID_MAX_ANGLE = 170;
 // Calibración base del press plano con mancuernas:
 // arriba con ambos codos extendidos, descenso controlado y fondo entre 72–105°.
 const DUMBBELL_PRESS_START_MIN_ANGLE = 150;
@@ -1816,10 +1821,10 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endLabel: 'codo entre 70–110°',
   },
   'press-militar': {
-    direction: 'decrease',
-    startMinAngle: 145,
-    startMaxAngle: 180,
-    activationAngle: 130,
+    direction: 'increase',
+    startMinAngle: MILITARY_PRESS_START_MIN_ANGLE,
+    startMaxAngle: MILITARY_PRESS_START_MAX_ANGLE,
+    activationAngle: MILITARY_PRESS_ACTIVATION_ANGLE,
     endMinAngle: MILITARY_PRESS_VALID_MIN_ANGLE,
     endMaxAngle: MILITARY_PRESS_VALID_MAX_ANGLE,
     endLabel: `codo entre ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
@@ -2290,7 +2295,8 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       ];
     case 'press-militar':
       return [
-        'Inicio / regreso: codo 145–180°',
+        `Inicio / regreso: codo ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}°`,
+        `Activación: codo >${MILITARY_PRESS_ACTIVATION_ANGLE}°`,
         `Final: codo ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
         'Codos aproximadamente 45° respecto al torso',
       ];
@@ -6140,7 +6146,10 @@ function calculateLiveAngleReadings(
         ];
       case 'press-militar':
         return [
-          empty('Codo', 'Inicio 145–180° · activa <130° · final 85–110°'),
+          empty(
+            'Codo',
+            `Inicio ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
+          ),
           empty('Codo / torso', '30–60°'),
         ];
       case 'triceps-polea-alta':
@@ -6451,7 +6460,7 @@ function calculateLiveAngleReadings(
         value(
           elbow,
           'Codo',
-          'Inicio 145–180° · activa <130° · final 85–110°',
+          `Inicio ${MILITARY_PRESS_START_MIN_ANGLE}–${MILITARY_PRESS_START_MAX_ANGLE}° · activa >${MILITARY_PRESS_ACTIVATION_ANGLE}° · final ${MILITARY_PRESS_VALID_MIN_ANGLE}–${MILITARY_PRESS_VALID_MAX_ANGLE}°`,
           MILITARY_PRESS_VALID_MIN_ANGLE,
           MILITARY_PRESS_VALID_MAX_ANGLE,
         ),
@@ -8212,6 +8221,7 @@ function Home() {
                   <summary>Cómo hacerlo</summary>
                   <ul>
                     <li><b>Posición inicial:</b> coloca las mancuernas a la altura de los hombros antes de iniciar el empuje.</li>
+                    <li><b>Recorrido calibrado:</b> parte con el codo entre {MILITARY_PRESS_START_MIN_ANGLE}° y {MILITARY_PRESS_START_MAX_ANGLE}° y termina arriba entre {MILITARY_PRESS_VALID_MIN_ANGLE}° y {MILITARY_PRESS_VALID_MAX_ANGLE}°.</li>
                     <li><b>Codos:</b> mantenlos aproximadamente a 45° respecto al torso, en el plano de la escápula. No los abras a 90° formando una “T” con los hombros.</li>
                     <li><b>Trayectoria:</b> dirige las mancuernas hacia arriba y ligeramente hacia dentro, formando una “V” invertida vista desde arriba.</li>
                     <li><b>Control:</b> empuja sin encoger los hombros y baja las mancuernas lentamente hasta la altura de los hombros.</li>
