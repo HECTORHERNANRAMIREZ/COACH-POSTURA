@@ -517,6 +517,42 @@
   text-align: left;
 }
 
+.competition-coming-soon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-height: 3.35rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(139, 255, 165, 0.24);
+  border-radius: 1rem;
+  background:
+    linear-gradient(145deg, rgba(57, 255, 106, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(14, 27, 45, 0.42);
+  color: rgba(232, 240, 248, 0.82);
+  cursor: not-allowed;
+  font: inherit;
+  text-align: left;
+  opacity: 0.82;
+}
+
+.competition-coming-soon-label {
+  color: #f0f5fb;
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.competition-coming-soon-status {
+  color: #8bffa5;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .exercise-group {
   display: grid;
   gap: 0.65rem;

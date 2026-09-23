@@ -8098,6 +8098,15 @@ function Home() {
                   </div>
                 ))}
                 </div>
+                 <button
+                   type="button"
+                   className="competition-coming-soon"
+                   disabled
+                   aria-label="Compite, próximamente"
+                 >
+                   <span className="competition-coming-soon-label">Compite</span>
+                   <span className="competition-coming-soon-status">(próximamente)</span>
+                 </button>
                 <p className="privacy-note">
                   <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
                   <span>La imagen se procesa solo en tu dispositivo; no se almacena.</span>
