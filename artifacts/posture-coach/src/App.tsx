@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   ClerkProvider,
@@ -274,6 +274,48 @@ const exerciseImages: Record<ExerciseId, string> = {
   'press-pallof-polea-banda': pallofPressImage,
   'giros-rusos': russianTwistImage,
 };
+
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function getExerciseImageFallback(exercise: ExerciseDefinition) {
+  const name = escapeSvgText(exercise.name);
+  const angleLabel = escapeSvgText(exercise.angleLabel);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 720 480">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#10263a"/>
+          <stop offset="100%" stop-color="#071411"/>
+        </linearGradient>
+      </defs>
+      <rect width="720" height="480" rx="32" fill="url(#bg)"/>
+      <circle cx="360" cy="142" r="38" fill="none" stroke="#8bffa5" stroke-width="10"/>
+      <path d="M360 185v105m0-80-92 76m92-76 92 76m-92 0-62 118m62-118 62 118" fill="none" stroke="#39ff6a" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+      <text x="360" y="54" fill="#8bffa5" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="4" text-anchor="middle">NETPOSTURE</text>
+      <text x="360" y="390" fill="#f0f5fb" font-family="Arial, sans-serif" font-size="30" font-weight="700" text-anchor="middle">${name}</text>
+      <text x="360" y="426" fill="#b9c9d8" font-family="Arial, sans-serif" font-size="18" text-anchor="middle">${angleLabel}</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function handleExerciseImageError(
+  event: SyntheticEvent<HTMLImageElement>,
+  exercise: ExerciseDefinition,
+) {
+  const image = event.currentTarget;
+  if (image.dataset.fallbackApplied === 'true') return;
+  image.dataset.fallbackApplied = 'true';
+  image.src = getExerciseImageFallback(exercise);
+}
+
 type PoseSide = 'left' | 'right';
 type CameraFacingMode = 'user' | 'environment';
 type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
@@ -8068,7 +8110,12 @@ function Home() {
                                       aria-label={`Ampliar imagen de ${exercise.name}`}
                                       onClick={() => setPreviewExercise(exercise)}
                                     >
-                                      <img className="exercise-card-image" src={exerciseImages[exercise.id]} alt="" />
+                                       <img
+                                         className="exercise-card-image"
+                                         src={exerciseImages[exercise.id] || getExerciseImageFallback(exercise)}
+                                         alt={`Ilustración de ${exercise.name}`}
+                                         onError={(event) => handleExerciseImageError(event, exercise)}
+                                       />
                                       <span className="exercise-card-zoom-hint" aria-hidden="true">
                                         <Maximize2 size={12} strokeWidth={2} />
                                       </span>
@@ -9149,8 +9196,9 @@ function Home() {
               </div>
               <img
                 className="exercise-image-expanded"
-                src={exerciseImages[previewExercise.id]}
+                 src={exerciseImages[previewExercise.id] || getExerciseImageFallback(previewExercise)}
                 alt={`Ilustración de ${previewExercise.name}`}
+                 onError={(event) => handleExerciseImageError(event, previewExercise)}
               />
               <p>Toca fuera de la imagen o presiona Esc para cerrar.</p>
             </div>
