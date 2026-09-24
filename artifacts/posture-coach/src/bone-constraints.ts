@@ -18,6 +18,11 @@ export const BONE_TOLERANCE = 0.25;
 export const BONE_REJECT_MAX_FRAMES = 15;
 // Mantén este flag en false para no emitir trazas de depuración.
 export const DEBUG_BONE_CONSTRAINTS = false;
+let debugBoneConstraintsEnabled = DEBUG_BONE_CONSTRAINTS;
+
+export function setDebugBoneConstraintsEnabled(enabled: boolean) {
+  debugBoneConstraintsEnabled = DEBUG_BONE_CONSTRAINTS || enabled;
+}
 // Reinicia referencias después de esta cantidad de frames sin una pose.
 const POSE_MISSING_RESET_FRAMES = 10;
 // Índices de extremidades cuyo score necesita el umbral específico de limb.
@@ -201,7 +206,7 @@ export class BoneConstraintFilter {
         state.rejectedFrames += 1;
         state.totalRejectedFrames += 1;
         rejectedDistalIndexes.add(segment.distal);
-        if (DEBUG_BONE_CONSTRAINTS) {
+        if (debugBoneConstraintsEnabled) {
           console.debug(
             `[bone-constraints] ${segment.id} rejected`,
             { currentLength, referenceLength, rejectedFrames: state.rejectedFrames },

@@ -1285,6 +1285,45 @@
   pointer-events: none;
 }
 
+.limb-debug-panel {
+  position: absolute;
+  z-index: 6;
+  top: 0.65rem;
+  left: 0.65rem;
+  display: grid;
+  gap: 0.12rem;
+  width: min(15rem, calc(100% - 1.3rem));
+  padding: 0.48rem 0.55rem;
+  border: 1px solid rgba(77, 208, 225, 0.48);
+  border-radius: 0.62rem;
+  background: rgba(4, 12, 22, 0.76);
+  box-shadow: 0 0.5rem 1.3rem rgba(0, 0, 0, 0.22);
+  color: rgba(225, 239, 247, 0.88);
+  font-family: var(--app-font-mono);
+  font-size: 0.49rem;
+  line-height: 1.28;
+  pointer-events: none;
+  user-select: none;
+}
+
+.limb-debug-panel__title {
+  margin-bottom: 0.16rem;
+  color: #4dd0e1;
+  font-family: var(--app-font-sans);
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.limb-debug-panel__bones {
+  display: grid;
+  gap: 0.08rem;
+  margin-top: 0.16rem;
+  padding-top: 0.16rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(225, 239, 247, 0.72);
+}
+
 .angle-hud {
   position: absolute;
   z-index: 3;

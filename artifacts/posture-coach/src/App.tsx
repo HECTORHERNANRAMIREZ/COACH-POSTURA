@@ -107,12 +107,26 @@ import {
   type PoseDetector,
   type PosePoint,
 } from '@/pose3d';
-import { createBoneConstraintFilter } from '@/bone-constraints';
+import {
+  createBoneConstraintFilter,
+  setDebugBoneConstraintsEnabled,
+} from '@/bone-constraints';
 import { createPoseFilter, MAX_HELD_FRAMES } from '@/pose-filters';
 import {
   createSideConsistencyFilter,
   getSideSwapConfirmFrames,
+  setDebugSideConsistencyEnabled,
 } from '@/side-consistency';
+import {
+  DEBUG_BONE_HELD_COLOR,
+  DEBUG_LIMB_INDICES,
+  DEBUG_SWAPPED_OUTLINE_COLOR,
+  LimbDebugSession,
+  createEmptyDebugPanelSnapshot,
+  drawLimbDebugOverlay,
+  isLimbDebugTrackingEnabled,
+  type DebugPanelSnapshot,
+} from '@/debug-overlay';
 import {
   Route,
   Switch,
@@ -1835,6 +1849,7 @@ const FOOT_REFINEMENT_EXERCISES: ReadonlySet<ExerciseId> = new Set([
   'peso-muerto-rumano',
   'peso-muerto-piernas-rigidas',
 ]);
+const DEBUG_LIMB_TRACKING_ACTIVE = isLimbDebugTrackingEnabled();
 
 type FootMeasurement = {
   ankleAngle: number | null;
@@ -3069,6 +3084,7 @@ function drawSkeleton(
   pose?: Pose,
   mirror = true,
   showFoot = false,
+  debugVisuals = false,
 ) {
   const width = video.videoWidth;
   const height = video.videoHeight;
@@ -3098,7 +3114,13 @@ function drawSkeleton(
     context.beginPath();
     context.moveTo(firstX, first.y);
     context.lineTo(secondX, second.y);
-    context.strokeStyle = connectionHeld ? HELD_POINT_COLOR : GREEN;
+    const connectionHasBoneHeld = first.heldReason === 'bone-length'
+      || second.heldReason === 'bone-length';
+    context.strokeStyle = connectionHeld
+      ? debugVisuals && connectionHasBoneHeld
+        ? DEBUG_BONE_HELD_COLOR
+        : HELD_POINT_COLOR
+      : GREEN;
     context.globalAlpha = connectionHeld ? HELD_POINT_ALPHA : 1;
     context.stroke();
     });
@@ -3124,9 +3146,26 @@ function drawSkeleton(
     const pointX = mirror ? width - point.x : point.x;
     context.beginPath();
     context.arc(pointX, point.y, Math.max(4, width / 115), 0, Math.PI * 2);
-    context.fillStyle = isHeldPoint(point) ? HELD_POINT_COLOR : GREEN;
+    context.fillStyle = isHeldPoint(point)
+      ? debugVisuals && point.heldReason === 'bone-length'
+        ? DEBUG_BONE_HELD_COLOR
+        : HELD_POINT_COLOR
+      : GREEN;
     context.globalAlpha = isHeldPoint(point) ? HELD_POINT_ALPHA : 1;
     context.fill();
+    if (
+      debugVisuals
+      && point.swapped
+      && DEBUG_LIMB_INDICES.some((limbIndex) => limbIndex === index)
+    ) {
+      context.beginPath();
+      context.arc(pointX, point.y, Math.max(6, width / 92), 0, Math.PI * 2);
+      context.strokeStyle = DEBUG_SWAPPED_OUTLINE_COLOR;
+      context.globalAlpha = 1;
+      context.lineWidth = Math.max(2, width / 360);
+      context.stroke();
+      context.lineWidth = Math.max(3, width / 240);
+    }
   });
   context.globalAlpha = 1;
   context.strokeStyle = GREEN;
@@ -7063,6 +7102,9 @@ function Home() {
   const [anglePoints, setAnglePoints] = useState<AngleDiagnosticPoint[]>([]);
   const [angleHistory, setAngleHistory] = useState<number[]>([]);
   const [liveAngleReadings, setLiveAngleReadings] = useState<LiveAngleReading[]>([]);
+  const [debugPanel, setDebugPanel] = useState<DebugPanelSnapshot>(
+    createEmptyDebugPanelSnapshot,
+  );
   const [dipJointReadings, setDipJointReadings] = useState<DipJointReading[]>([]);
   const [pullupJointReadings, setPullupJointReadings] = useState<DipJointReading[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
@@ -7099,6 +7141,10 @@ function Home() {
   const sideConsistencyRef = useRef(createSideConsistencyFilter());
   const boneConstraintRef = useRef(createBoneConstraintFilter());
   const poseFilterRef = useRef(createPoseFilter());
+  const debugSessionRef = useRef<LimbDebugSession | null>(
+    DEBUG_LIMB_TRACKING_ACTIVE ? new LimbDebugSession() : null,
+  );
+  const rawPoseForDebugRef = useRef<Pose | undefined>(undefined);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -7149,6 +7195,15 @@ function Home() {
   }, [incrementErrorCount]);
 
   useEffect(() => {
+    setDebugBoneConstraintsEnabled(DEBUG_LIMB_TRACKING_ACTIVE);
+    setDebugSideConsistencyEnabled(DEBUG_LIMB_TRACKING_ACTIVE);
+    return () => {
+      setDebugBoneConstraintsEnabled(false);
+      setDebugSideConsistencyEnabled(false);
+    };
+  }, []);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       setFps(fpsFramesRef.current);
       fpsFramesRef.current = 0;
@@ -7187,6 +7242,11 @@ function Home() {
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
+    rawPoseForDebugRef.current = undefined;
+    debugSessionRef.current?.reset();
+    if (DEBUG_LIMB_TRACKING_ACTIVE) {
+      setDebugPanel(createEmptyDebugPanelSnapshot());
+    }
     detectionFrameTimesRef.current = [];
     lowFpsSinceRef.current = null;
     modelDegradedRef.current = false;
@@ -7258,6 +7318,9 @@ function Home() {
         exerciseStartedRef.current,
       );
       const detectedPose = primaryPose?.pose;
+      if (DEBUG_LIMB_TRACKING_ACTIVE) {
+        rawPoseForDebugRef.current = detectedPose;
+      }
       if (primaryPose) {
         if (
           previousPoseTrack
@@ -7300,6 +7363,21 @@ function Home() {
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : undefined;
+      if (DEBUG_LIMB_TRACKING_ACTIVE) {
+        const nextDebugPanel = debugSessionRef.current?.recordFrame({
+          rawPose: rawPoseForDebugRef.current,
+          filteredPose: pose,
+          frameTimes: detectionFrameTimesRef.current,
+          activeModel: detector.activeModel,
+          activeDelegate: detector.activeDelegate,
+          boneDebugInfo: boneConstraintRef.current.getDebugInfo(),
+          confirmedSwapCount: confirmedSideSwaps.length,
+          width: video.videoWidth,
+          height: video.videoHeight,
+          now,
+        });
+        if (nextDebugPanel) setDebugPanel(nextDebugPanel);
+      }
       if (!detectedPose) {
         sideConsistencyRef.current.markPoseMissing();
         boneConstraintRef.current.markPoseMissing();
@@ -7888,7 +7966,17 @@ function Home() {
           pose,
           cameraFacingModeRef.current === 'user',
           FOOT_OVERLAY_EXERCISES.has(selectedExerciseForFrame),
+          DEBUG_LIMB_TRACKING_ACTIVE,
         );
+        if (DEBUG_LIMB_TRACKING_ACTIVE) {
+          drawLimbDebugOverlay(
+            canvasRef.current,
+            video,
+            rawPoseForDebugRef.current,
+            pose,
+            cameraFacingModeRef.current === 'user',
+          );
+        }
       }
 
       if (
@@ -9253,6 +9341,31 @@ function Home() {
                   }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
+                {DEBUG_LIMB_TRACKING_ACTIVE && (
+                  <div className="limb-debug-panel" aria-hidden="true">
+                    <div className="limb-debug-panel__title">DEBUG · EXTREMIDADES</div>
+                    <div>Modelo: {debugPanel.model} · {debugPanel.delegate}</div>
+                    <div>FPS medio: {debugPanel.fps.toFixed(1)}</div>
+                    <div>
+                      Retenidos: low-score {debugPanel.held.lowScore} · bone-length {debugPanel.held.boneLength}
+                    </div>
+                    <div>Swaps confirmados: {debugPanel.confirmedSwaps}</div>
+                    <div>
+                      Vídeo: {debugPanel.width || '—'} × {debugPanel.height || '—'}
+                    </div>
+                    <div>
+                      Corrección media filtro: {debugPanel.correctionMean === null
+                        ? '—'
+                        : `${debugPanel.correctionMean.toFixed(1)} px`}
+                    </div>
+                    <div className="limb-debug-panel__bones">
+                      <span>Rechazos por hueso:</span>
+                      {Object.entries(debugPanel.boneRejections).map(([segment, count]) => (
+                        <span key={segment}>{segment}: {count}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="video-vignette" aria-hidden="true" />
                 <span className="stage-corner stage-corner--tl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />

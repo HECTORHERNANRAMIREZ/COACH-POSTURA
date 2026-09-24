@@ -20,6 +20,11 @@ export const SWAP_CONFIRM_FRAMES = 5;
 export const SWAP_CONFIRM_FRAMES_BACK_VIEW = 4;
 // Mantén este flag en false para no emitir trazas de depuración.
 export const DEBUG_SIDE_CONSISTENCY = false;
+let debugSideConsistencyEnabled = DEBUG_SIDE_CONSISTENCY;
+
+export function setDebugSideConsistencyEnabled(enabled: boolean) {
+  debugSideConsistencyEnabled = DEBUG_SIDE_CONSISTENCY || enabled;
+}
 // Ejercicios que suelen usar vista trasera o una lectura bilateral explícita.
 export const SIDE_CONSISTENCY_BACK_VIEW_EXERCISES = new Set([
   'dominadas',
@@ -208,7 +213,7 @@ export class SideConsistencyFilter {
       if (isCandidate) {
         state.candidateFrames += 1;
         candidatePairs.add(pair.id);
-        if (DEBUG_SIDE_CONSISTENCY) {
+        if (debugSideConsistencyEnabled) {
           console.debug(
             `[side-consistency] ${pair.id} swap candidate`,
             {
@@ -247,7 +252,7 @@ export class SideConsistencyFilter {
           right: pair.right,
         });
       });
-      if (DEBUG_SIDE_CONSISTENCY) {
+      if (debugSideConsistencyEnabled) {
         console.debug('[side-consistency] body-wide swap confirmed', {
           pairs: SIDE_PAIRS.map((pair) => pair.id),
         });
@@ -264,7 +269,7 @@ export class SideConsistencyFilter {
           left: pair.left,
           right: pair.right,
         });
-        if (DEBUG_SIDE_CONSISTENCY) {
+        if (debugSideConsistencyEnabled) {
           console.debug(`[side-consistency] ${pair.id} swap confirmed`);
         }
       });
