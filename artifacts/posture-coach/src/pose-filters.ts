@@ -286,6 +286,14 @@ export class PoseOneEuroFilter {
     }
   }
 
+  swapLandmarkStates(leftIndex: number, rightIndex: number) {
+    const leftState = this.states[leftIndex];
+    const rightState = this.states[rightIndex];
+    if (!leftState || !rightState) return;
+    this.states[leftIndex] = rightState;
+    this.states[rightIndex] = leftState;
+  }
+
   reset() {
     this.states.forEach((state) => {
       state.screen.x.reset();

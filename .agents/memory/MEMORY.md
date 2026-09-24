@@ -8,3 +8,4 @@
 - [Panel de articulaciones](exercise-angle-overlay.md) — el overlay debe derivar sus lecturas de las articulaciones definidas por cada ejercicio, no solo cambiar el título.
 - [Filtrado de pose](pose-filtering.md) — One Euro por landmark/eje antes de medir; la mediana queda reservada para ángulos y no para duplicar el filtrado de puntos.
 - [Restricciones de huesos](bone-constraints.md) — validar longitudes WORLD 3D antes de One Euro y entregar los outliers al mismo mecanismo `held` de baja confianza.
+- [Consistencia izquierda/derecha](side-consistency.md) — congelar referencias durante candidatos y reasignar estados de filtros solo cuando el swap se confirma.

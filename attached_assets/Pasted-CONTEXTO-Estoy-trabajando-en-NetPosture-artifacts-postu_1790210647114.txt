@@ -1,0 +1,44 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas la Fase 1 (One Euro en src/pose-filters.ts), la Fase 2 (retención por score con held/heldFrames/MAX_HELD_FRAMES) y la Fase 3 (src/bone-constraints.ts con BoneConstraintFilter y heldReason: 'low-score' | 'bone-length'). El flujo actual en processFrame es: pose cruda -> BoneConstraintFilter -> PoseOneEuroFilter -> ángulos/overlay/feedback/contadores. Esta es la FASE 4: consistencia izquierda/derecha para evitar que MediaPipe intercambie los lados entre frames. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño, el catálogo de ejercicios, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Pon la lógica nueva en un archivo nuevo (src/side-consistency.ts) y conéctala con cambios mínimos.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector. Los campos nuevos deben ser opcionales.
+- Todos los parámetros ajustables van como constantes con nombre al inicio del archivo, con un comentario que explique qué hacen.
+
+TAREA
+1. Define los pares izquierda/derecha a vigilar (índices de MediaPipe):
+   - Hombros: 11 / 12
+   - Codos: 13 / 14
+   - Muñecas: 15 / 16
+   - Caderas: 23 / 24
+   - Rodillas: 25 / 26
+   - Tobillos: 27 / 28
+   - Talones: 29 / 30
+   - Puntas de pie: 31 / 32
+2. Esta comprobación va ANTES de BoneConstraintFilter, sobre la pose cruda. El orden nuevo será: pose cruda -> SideConsistencyFilter -> BoneConstraintFilter -> PoseOneEuroFilter -> resto.
+3. Detección de swap por pares, con coordenadas WORLD 3D y usando la última posición ya aceptada de cada punto del par:
+   - Calcula el coste sin cruzar: distancia(izq_actual, izq_previo) + distancia(der_actual, der_previo).
+   - Calcula el coste cruzado: distancia(izq_actual, der_previo) + distancia(der_actual, izq_previo).
+   - Si coste_cruzado < coste_sin_cruzar * SWAP_COST_RATIO (valor inicial 0.6) Y la diferencia absoluta supera SWAP_MIN_GAIN (valor inicial 0.05 metros), marca el frame como "swap candidato" para ese par.
+   - Si la distancia entre el punto izquierdo y el derecho previos es menor que SWAP_MIN_SEPARATION (valor inicial 0.08 metros), NO evalúes swap para ese par, porque los puntos están demasiado juntos para distinguirlos.
+   - Ignora el par si alguno de sus puntos tiene score bajo según los umbrales de la Fase 2.
+4. Histéresis para no reaccionar a un solo frame:
+   - Mantén la asignación del frame anterior (sin cruzar) mientras el swap sea solo candidato.
+   - Solo acepta el swap como real si se repite durante SWAP_CONFIRM_FRAMES frames consecutivos (valor inicial 5). Si se confirma, intercambia la asignación de forma persistente para ese par y reasigna también el estado interno relacionado (referencias de hueso, estado de filtros) para no arrastrar historia del lado equivocado.
+   - Si mientras es candidato ocurre un frame normal, reinicia el contador de ese par.
+5. Mientras un swap es candidato y no está confirmado, entrega al resto del flujo la asignación previa (sin cruzar).
+6. Asigna a los hombros y caderas un peso mayor como referencia de orientación: si el par de hombros o el de caderas se confirma como cruzado, es una señal fuerte de que el cuerpo se ha girado o de que MediaPipe ha invertido todo el cuerpo; en ese caso evalúa el swap de forma conjunta para todos los pares en lugar de uno a uno, para mantener coherencia entre brazos y piernas.
+7. Añade a PosePoint el campo opcional `swapped?: boolean` (true si ese punto fue reasignado por esta lógica en este frame).
+8. Prioridad de ejercicios: la lógica se aplica a todos los ejercicios, pero con los ejercicios de trackBothSides o vista trasera (dominadas, muscle-up, remos) el umbral SWAP_CONFIRM_FRAMES debe poder configurarse aparte con SWAP_CONFIRM_FRAMES_BACK_VIEW (valor inicial 4).
+9. Reinicia el estado de esta lógica cuando se reinician los filtros (inicio de cámara, cambio de ejercicio, pérdida de pose por más de 10 frames).
+10. Añade DEBUG_SIDE_CONSISTENCY = false. Con true, muestra por console.debug cada swap candidato y cada swap confirmado con el par afectado. Con false no debe haber coste ni salida.
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH) y que el flujo cámara -> modelo -> tracking arranca.
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones y dando feedback con normalidad cuando no hay swaps.
+- No instales dependencias nuevas salvo que sea imprescindible.
+
+ENTREGA
+Al terminar dame un resumen con: archivos creados y modificados, el punto exacto del código donde se integra (con el orden final de los tres filtros), valores iniciales de cada constante, cómo se evita que la lógica dispare falsos swaps cuando ambas manos están juntas (por ejemplo en dominadas con agarre estrecho) y qué debo probar en cámara real.

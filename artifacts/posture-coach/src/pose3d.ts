@@ -28,6 +28,7 @@ export type PosePoint = {
   held?: boolean;
   heldFrames?: number;
   heldReason?: 'low-score' | 'bone-length';
+  swapped?: boolean;
 };
 
 export type Pose = {

@@ -109,6 +109,10 @@ import {
 import { createBoneConstraintFilter } from '@/bone-constraints';
 import { createPoseFilter, MAX_HELD_FRAMES } from '@/pose-filters';
 import {
+  createSideConsistencyFilter,
+  getSideSwapConfirmFrames,
+} from '@/side-consistency';
+import {
   Route,
   Switch,
   useLocation,
@@ -6893,6 +6897,7 @@ function Home() {
   const sideViewStableFramesRef = useRef(0);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
+  const sideConsistencyRef = useRef(createSideConsistencyFilter());
   const boneConstraintRef = useRef(createBoneConstraintFilter());
   const poseFilterRef = useRef(createPoseFilter());
   const angleDisplaySamplesRef = useRef<number[]>([]);
@@ -6975,6 +6980,7 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
+    sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
     stabilityFramesRef.current = 0;
@@ -7020,6 +7026,7 @@ function Home() {
           && !exerciseStartedRef.current
           && !isPoseTrackContinuous(primaryPose.track, previousPoseTrack)
         ) {
+          sideConsistencyRef.current.reset();
           boneConstraintRef.current.reset();
           poseFilterRef.current.reset();
         }
@@ -7030,13 +7037,33 @@ function Home() {
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
-      const constrainedPose = detectedPose
-        ? boneConstraintRef.current.filter(detectedPose)
+      const activeExerciseDefinition = getExercise(selectedExerciseForFrame);
+      const sideConsistentPose = detectedPose
+        ? sideConsistencyRef.current.filter(
+            detectedPose,
+            getSideSwapConfirmFrames(
+              selectedExerciseForFrame,
+              activeExerciseDefinition?.trackBothSides,
+            ),
+          )
+        : undefined;
+      const confirmedSideSwaps = sideConsistentPose
+        ? sideConsistencyRef.current.getLastConfirmedSwaps()
+        : [];
+      if (confirmedSideSwaps.length) {
+        confirmedSideSwaps.forEach(({ left, right }) => {
+          poseFilterRef.current.swapLandmarkStates(left, right);
+        });
+        boneConstraintRef.current.reassignForSideSwaps(confirmedSideSwaps);
+      }
+      const constrainedPose = sideConsistentPose
+        ? boneConstraintRef.current.filter(sideConsistentPose)
         : undefined;
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : undefined;
       if (!detectedPose) {
+        sideConsistencyRef.current.markPoseMissing();
         boneConstraintRef.current.markPoseMissing();
         poseFilterRef.current.markPoseMissing();
       }
@@ -7649,6 +7676,7 @@ function Home() {
     setSideSwitches(0);
     setSideChangeNotice('Sin cambios');
     primaryPoseTrackRef.current = null;
+    sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
     setAnglePoints([]);

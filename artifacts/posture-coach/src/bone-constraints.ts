@@ -254,6 +254,25 @@ export class BoneConstraintFilter {
     }
   }
 
+  reassignForSideSwaps(swaps: readonly { pairId: string }[]) {
+    const swappedPairIds = new Set(swaps.map((swap) => swap.pairId));
+    const segmentPairs: Array<[BoneSegmentId, BoneSegmentId, string[]]> = [
+      ['left-upper-arm', 'right-upper-arm', ['shoulders', 'elbows']],
+      ['left-forearm', 'right-forearm', ['elbows', 'wrists']],
+      ['left-thigh', 'right-thigh', ['hips', 'knees']],
+      ['left-calf', 'right-calf', ['knees', 'ankles']],
+    ];
+
+    segmentPairs.forEach(([leftId, rightId, relatedPairs]) => {
+      if (!relatedPairs.some((pairId) => swappedPairIds.has(pairId))) return;
+      const leftState = this.states.get(leftId);
+      const rightState = this.states.get(rightId);
+      if (!leftState || !rightState) return;
+      this.states.set(leftId, rightState);
+      this.states.set(rightId, leftState);
+    });
+  }
+
   getDebugInfo(): Record<BoneSegmentId, BoneConstraintDebugInfo> {
     return Object.fromEntries(
       BONE_SEGMENTS.map((segment) => {
