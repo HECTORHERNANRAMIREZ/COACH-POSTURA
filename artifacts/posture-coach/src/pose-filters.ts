@@ -7,8 +7,12 @@ import {
 
 // Convierte los timestamps de MediaPipe/performance.now() de milisegundos a segundos.
 const MILLISECONDS_PER_SECOND = 1000;
-// Mantiene puntos individuales visibles durante unos frames si MediaPipe omite uno temporalmente.
-const MAX_STALE_LANDMARK_FRAMES = 6;
+// Score mínimo para aceptar una medición nueva de muñecas, tobillos, talones y pies.
+export const MIN_SCORE_LIMB = 0.5;
+// Score mínimo para aceptar una medición nueva del resto del cuerpo.
+export const MIN_SCORE_BODY = 0.4;
+// Número máximo de frames durante los que se reutiliza la última posición válida.
+export const MAX_HELD_FRAMES = 8;
 // Reinicia todos los filtros después de esta cantidad de frames sin una pose completa.
 const POSE_MISSING_RESET_FRAMES = 10;
 // Son las muñecas, tobillos, talones y puntas de los pies, que suelen introducir más ruido.
@@ -46,7 +50,7 @@ type LandmarkFilterState = {
   world: AxisFilterSet;
   lastPoint?: PosePoint;
   lastWorld?: WorldCoordinate;
-  missingFrames: number;
+  heldFrames: number;
 };
 
 function smoothingAlpha(cutoff: number, dtSeconds: number) {
@@ -179,7 +183,7 @@ export class PoseOneEuroFilter {
       return {
         screen: createAxisFilterSet(parameters),
         world: createAxisFilterSet(parameters),
-        missingFrames: 0,
+        heldFrames: 0,
       };
     },
   );
@@ -200,7 +204,12 @@ export class PoseOneEuroFilter {
         ?? asWorldCoordinate(worldLandmark)
         ?? point?.world;
 
-      if (point) {
+      const minimumScore = LIMB_LANDMARKS.has(index)
+        ? MIN_SCORE_LIMB
+        : MIN_SCORE_BODY;
+      const isReliable = Boolean(point && (point.score ?? 0) >= minimumScore);
+
+      if (isReliable && point) {
         const filteredWorld = worldPoint
           ? filterWorldPoint(state.world, worldPoint, timestamp, state.lastWorld)
           : state.lastWorld;
@@ -214,25 +223,32 @@ export class PoseOneEuroFilter {
           ? { ...filteredPoint, world: filteredWorld }
           : filteredPoint;
 
-        state.lastPoint = nextPoint;
+        state.lastPoint = {
+          ...nextPoint,
+          held: false,
+          heldFrames: 0,
+        };
         state.lastWorld = filteredWorld;
-        state.missingFrames = 0;
-        keypoints[index] = nextPoint;
+        state.heldFrames = 0;
+        keypoints[index] = state.lastPoint;
         worldLandmarks[index] = worldPoint
           ? {
               ...pose.worldLandmarks[index],
               ...filteredWorld,
+              held: false,
+              heldFrames: 0,
               world: filteredWorld,
             }
-          : nextPoint;
+          : state.lastPoint;
         continue;
       }
 
-      if (state.lastPoint && state.missingFrames < MAX_STALE_LANDMARK_FRAMES) {
-        state.missingFrames += 1;
+      if (state.lastPoint && state.heldFrames < MAX_HELD_FRAMES) {
+        state.heldFrames += 1;
         const stalePoint = {
           ...state.lastPoint,
-          score: Math.max(0.2, (state.lastPoint.score ?? 0.3) * 0.86),
+          held: true,
+          heldFrames: state.heldFrames,
         };
         state.lastPoint = stalePoint;
         keypoints[index] = stalePoint;
@@ -240,6 +256,8 @@ export class PoseOneEuroFilter {
           worldLandmarks[index] = {
             ...state.lastWorld,
             score: stalePoint.score,
+            held: true,
+            heldFrames: state.heldFrames,
             world: state.lastWorld,
           };
         }
@@ -270,7 +288,7 @@ export class PoseOneEuroFilter {
       state.world.z.reset();
       state.lastPoint = undefined;
       state.lastWorld = undefined;
-      state.missingFrames = 0;
+      state.heldFrames = 0;
     });
     this.missingPoseFrames = 0;
   }

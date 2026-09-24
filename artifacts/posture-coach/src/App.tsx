@@ -106,7 +106,7 @@ import {
   type PoseDetector,
   type PosePoint,
 } from '@/pose3d';
-import { createPoseFilter } from '@/pose-filters';
+import { createPoseFilter, MAX_HELD_FRAMES } from '@/pose-filters';
 import {
   Route,
   Switch,
@@ -1771,6 +1771,10 @@ const ROW_ARM_POINT_MIN_SCORE = 0.24;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
 const POSE_LOCK_MIN_AREA_RATIO = 0.1;
 const MAX_FRONT_VIEW_RATIO = 0.95;
+// Color de los landmarks retenidos para diferenciarlos de las mediciones frescas.
+const HELD_POINT_COLOR = '#ffd166';
+// Opacidad de los landmarks retenidos y de las líneas que dependen de ellos.
+const HELD_POINT_ALPHA = 0.5;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
 const CAMERA_FRAME_MARGIN = 0.02;
@@ -2936,9 +2940,12 @@ function drawSkeleton(
     if (!first || !second || (first.score ?? 0) < 0.3 || (second.score ?? 0) < 0.3) return;
     const firstX = mirror ? width - first.x : first.x;
     const secondX = mirror ? width - second.x : second.x;
+    const connectionHeld = isHeldPoint(first) || isHeldPoint(second);
     context.beginPath();
     context.moveTo(firstX, first.y);
     context.lineTo(secondX, second.y);
+    context.strokeStyle = connectionHeld ? HELD_POINT_COLOR : GREEN;
+    context.globalAlpha = connectionHeld ? HELD_POINT_ALPHA : 1;
     context.stroke();
   });
 
@@ -2948,9 +2955,12 @@ function drawSkeleton(
     const pointX = mirror ? width - point.x : point.x;
     context.beginPath();
     context.arc(pointX, point.y, Math.max(4, width / 115), 0, Math.PI * 2);
-    context.fillStyle = GREEN;
+    context.fillStyle = isHeldPoint(point) ? HELD_POINT_COLOR : GREEN;
+    context.globalAlpha = isHeldPoint(point) ? HELD_POINT_ALPHA : 1;
     context.fill();
   });
+  context.globalAlpha = 1;
+  context.strokeStyle = GREEN;
   context.shadowBlur = 0;
 }
 
@@ -3273,6 +3283,39 @@ function getTrackedPointsForExercise(
   }));
 }
 
+function isHeldPoint(point: PosePoint | undefined) {
+  return Boolean(
+    point?.held
+    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) > 0
+    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) <= MAX_HELD_FRAMES,
+  );
+}
+
+function isVisibleCameraPoint(point: PosePoint | undefined, minimumScore: number) {
+  if (!point) return false;
+  if (isHeldPoint(point)) return true;
+  return (point.score ?? 0) >= minimumScore;
+}
+
+function hasHeldPointForExercise(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  dominantSide: PoseSide | null,
+) {
+  if (!keypoints) return false;
+
+  if (exercise === 'sentadillas') {
+    return (['left', 'right'] as PoseSide[]).some((side) => {
+      const indexes = sideKeypoints[side];
+      return [indexes.hip, indexes.knee, indexes.ankle]
+        .some((index) => isHeldPoint(keypoints[index]));
+    });
+  }
+
+  return getTrackedPointsForExercise(exercise, keypoints, dominantSide)
+    .some(({ point }) => isHeldPoint(point));
+}
+
 function getCameraGuidance(
   exercise: ExerciseId,
   keypoints: PosePoint[] | undefined,
@@ -3379,7 +3422,7 @@ function getCameraGuidance(
         && (label.startsWith('codo') || label.startsWith('muñeca'))
         ? ROW_ARM_POINT_MIN_SCORE
         : CAMERA_POINT_MIN_SCORE;
-      return (point?.score ?? 0) < minimumScore;
+      return !isVisibleCameraPoint(point, minimumScore);
     })
     .map(({ label }) => label);
 
@@ -3440,7 +3483,7 @@ function getCameraGuidance(
   const leftHip = keypoints[sideKeypoints.left.hip];
   const rightHip = keypoints[sideKeypoints.right.hip];
   const shouldersAreVisible = [leftShoulder, rightShoulder, leftHip, rightHip]
-    .every((point) => (point?.score ?? 0) >= CAMERA_POINT_MIN_SCORE);
+    .every((point) => isVisibleCameraPoint(point, CAMERA_POINT_MIN_SCORE));
 
   if (shouldersAreVisible) {
     const shoulderWidth = Math.hypot(
@@ -3756,6 +3799,12 @@ const defaultSquatFeedback: TechniqueFeedback = {
   tone: 'checking',
   message: 'Ángulo normalizado',
   detail: 'El ángulo se calcula con coordenadas 3D; la inclinación, escala y altura de la cámara no cambian la medición.',
+};
+
+const lowConfidenceFeedback: TechniqueFeedback = {
+  tone: 'checking',
+  message: 'Comprobando puntos visibles',
+  detail: 'Una articulación se está manteniendo temporalmente con su última posición fiable. No contaré ni evaluaré una fase hasta verla de nuevo.',
 };
 
 const muscleUpReferenceFeedback: TechniqueFeedback = {
@@ -7012,7 +7061,14 @@ function Home() {
         && stableLateralSide
         ? stableLateralSide
         : nextDominantSide;
-      const visiblePoints = pose?.keypoints?.filter((point) => (point.score ?? 0) >= 0.3).length ?? 0;
+      const frameLowConfidence = hasHeldPointForExercise(
+        selectedExerciseForFrame,
+        pose?.keypoints,
+        measurementSide,
+      );
+      const visiblePoints = pose?.keypoints?.filter((point) => (
+        isVisibleCameraPoint(point, 0.3)
+      )).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const nextCameraGuidance = getCameraGuidance(
         selectedExerciseForFrame,
@@ -7034,7 +7090,8 @@ function Home() {
         frameCameraReady
         && hasFreshPose
         && rawAngle !== null
-        && visiblePoints >= 5,
+        && visiblePoints >= 5
+        && !frameLowConfidence,
       );
       stabilityFramesRef.current = frameCanMeasure
         ? Math.min(8, stabilityFramesRef.current + 1)
@@ -7132,7 +7189,7 @@ function Home() {
       setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
       setMuscleUpAngles(displayMuscleUpAngles);
-      let nextAngle = rawAngle;
+      let nextAngle = frameLowConfidence ? null : rawAngle;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -7140,6 +7197,7 @@ function Home() {
         && frameDetectionStable
         && selectedExerciseRef.current === 'sentadillas'
         && rawAngle !== null
+        && !frameLowConfidence
       ) {
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
         squatTrackerRef.current = squatUpdate.tracker;
@@ -7183,6 +7241,7 @@ function Home() {
         && frameCameraReady
         && frameDetectionStable
         && rawAngle !== null
+        && !frameLowConfidence
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
         const pullupUpdate = advancePullupTracker(
@@ -7283,6 +7342,7 @@ function Home() {
         && repetitionConfig
         && repetitionAngle !== null
         && repetitionTechniqueReady
+        && !frameLowConfidence
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
@@ -7313,6 +7373,7 @@ function Home() {
            || selectedExerciseForFrame === 'press-pallof-polea-banda'
            || selectedExerciseForFrame === 'press-hombros-maquina')
         && exerciseStartedRef.current
+        && !frameLowConfidence
         && (
           !hasFreshPose
           || !frameCameraReady
@@ -7385,7 +7446,9 @@ function Home() {
         measurementSide,
       ));
       setTechniqueFeedback(
-        selectedExerciseRef.current === 'flexiones'
+        frameLowConfidence
+          ? lowConfidenceFeedback
+          : selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'flexiones-declinadas'
             ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide, 'declined')
@@ -7442,6 +7505,17 @@ function Home() {
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
             : defaultTechniqueFeedback,
       );
+      if (frameLowConfidence) {
+        if (selectedExerciseRef.current === 'sentadillas') {
+          setSquatFeedback(lowConfidenceFeedback);
+        }
+        if (
+          selectedExerciseRef.current === 'dominadas'
+          || selectedExerciseRef.current === 'dominadas-supinas'
+        ) {
+          setPullupFeedback(lowConfidenceFeedback);
+        }
+      }
       if (displayAngle !== null) {
         setAngleHistory((history) => (
           history[history.length - 1] === displayAngle

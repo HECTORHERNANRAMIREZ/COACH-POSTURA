@@ -1,0 +1,33 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). En la Fase 1 ya se creó src/pose-filters.ts con el filtro One Euro por landmark (perfiles LIMB_FILTER y BODY_FILTER). Ese archivo ya conserva temporalmente landmarks ausentes durante un máximo de 6 frames. Esta es la FASE 2: retención inteligente de puntos con baja confianza y trato de puntos poco fiables en el resto de la lógica. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño, el catálogo de ejercicios, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Haz solo los cambios mínimos para conectar la lógica nueva.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector. Los campos nuevos deben ser opcionales.
+- Todos los parámetros ajustables van como constantes con nombre al inicio del archivo, con un comentario que explique qué hacen.
+- No dupliques la retención de 6 frames que ya existe: intégrala y reemplázala por la lógica nueva basada en score.
+
+TAREA
+1. Para cada landmark, si su score cae por debajo de un umbral, mantén la última posición filtrada válida durante un máximo de N frames y márcalo como "retenido".
+   - MIN_SCORE_LIMB = 0.5 (muñecas 15/16, tobillos 27/28, talones 29/30, puntas 31/32)
+   - MIN_SCORE_BODY = 0.4 (resto)
+   - MAX_HELD_FRAMES = 8
+2. Pasado MAX_HELD_FRAMES, marca el punto como no disponible en lugar de seguir usando un dato ruidoso.
+3. Añade a PosePoint estos campos opcionales: `held?: boolean` (true si el punto está retenido) y `heldFrames?: number` (cuántos frames lleva retenido).
+4. Un punto retenido NO debe alimentar los filtros One Euro con datos de baja confianza (no actualices el estado del filtro con esa medición); solo se reutiliza la última posición válida.
+5. Trato de puntos retenidos en la lógica existente:
+   - Validación de encuadre: un punto retenido cuenta como visible solo hasta MAX_HELD_FRAMES; después cuenta como faltante.
+   - Cálculo de ángulos: si alguna articulación del ángulo está retenida, marca la lectura como "menos fiable" (por ejemplo con un flag `lowConfidence`).
+   - Contador de repeticiones: NO debe contar una repetición ni cambiar de fase basándose únicamente en lecturas de puntos retenidos. Si la lectura es poco fiable, mantén la fase actual.
+   - Feedback técnico: no debe dar tono `success` basándose solo en puntos retenidos; en ese caso usa el tono `checking`.
+6. En el overlay dibuja los puntos retenidos con menor opacidad o de otro color para distinguirlos, sin cambiar el diseño general.
+7. Reinicia el estado de retención cuando se reinician los filtros (inicio de cámara, cambio de ejercicio, pérdida de pose por más de 10 frames).
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH) y que el flujo cámara -> modelo -> tracking arranca.
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones y dando feedback con normalidad cuando todos los puntos son fiables.
+- No instales dependencias nuevas salvo que sea imprescindible.
+
+ENTREGA
+Al terminar dame un resumen con: archivos modificados, cómo quedó integrada la retención anterior de 6 frames, valores iniciales de cada constante, en qué puntos exactos del código se usa el flag de baja confianza y qué debo probar en cámara real (por ejemplo, tapar una muñeca con el cuerpo y ver cómo reaccionan contador y feedback).

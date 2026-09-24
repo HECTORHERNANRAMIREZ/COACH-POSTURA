@@ -25,6 +25,8 @@ export type PosePoint = {
   z?: number;
   score?: number;
   world?: WorldCoordinate;
+  held?: boolean;
+  heldFrames?: number;
 };
 
 export type Pose = {
