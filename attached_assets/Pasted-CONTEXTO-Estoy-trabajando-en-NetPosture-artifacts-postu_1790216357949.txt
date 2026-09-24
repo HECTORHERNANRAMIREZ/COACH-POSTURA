@@ -1,0 +1,45 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas las Fases 1 a 6 y la 8 (filtros, retención, huesos, lados, modelo heavy con fallback, pies y modo debug ?debug=limbs). Esta es la FASE 9A: detectar desde qué vista está grabando la cámara (frente, lado o espalda) y avisar cuando no es la adecuada para el ejercicio. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño general, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Pon la lógica nueva en un archivo nuevo (src/view-estimation.ts) y conéctala con cambios mínimos.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector.
+- Todos los parámetros ajustables van como constantes con nombre, con comentario.
+- Los mensajes al usuario van en español, cortos y accionables.
+
+TAREA
+1. Tipo de vista por ejercicio:
+   - Crea el tipo ExerciseView = 'front' | 'side' | 'back' | 'any'.
+   - Añade a ExerciseDefinition los campos opcionales `recommendedView?: ExerciseView` y `viewToleranceDeg?: number`.
+   - Asigna la vista recomendada de cada uno de los 58 ejercicios basándote en su `cameraNote` actual y en la lógica de su detección. Si un ejercicio no tiene una vista claramente mejor, usa 'any'. NO inventes: donde dudes, usa 'any' y márcalo en el resumen para que yo lo revise.
+   - Tolerancia por defecto: VIEW_TOLERANCE_DEFAULT_DEG = 30.
+2. Estimación de la vista (en view-estimation.ts), con coordenadas WORLD 3D de la pose ya filtrada, calculada sobre los datos ANTES de aplicar cualquier espejo visual de la cámara frontal:
+   - Ángulo de giro del cuerpo respecto a la cámara (yaw): a partir de la línea de hombros (11 a 12) proyectada sobre el plano horizontal (ejes x y z de world). 0 grados significa cuerpo de frente o de espalda; 90 grados significa de lado.
+   - Si los hombros no son fiables (score bajo o retenidos), usa la línea de caderas (23 a 24) como respaldo. Si ninguna es fiable, devuelve "desconocido".
+   - Distinguir frente de espalda cuando el yaw es cercano a 0: usa la visibilidad de la nariz (landmark 0) y los ojos (2 y 5) frente a las orejas (7 y 8), y el orden izquierda/derecha de los hombros en la imagen. Documenta la lógica elegida en un comentario.
+   - Suaviza con la mediana de las últimas VIEW_WINDOW_FRAMES (valor inicial 30) y aplica histéresis de VIEW_HYSTERESIS_DEG (valor inicial 8) para no parpadear entre estados.
+3. Clasificación para el ejercicio activo:
+   - Calcula la desviación entre la vista estimada y `recommendedView`.
+   - Estados: 'good' (dentro de la tolerancia), 'acceptable' (hasta VIEW_ACCEPTABLE_EXTRA_DEG = 20 grados más allá de la tolerancia) y 'bad' (más allá).
+   - Para 'any' el estado es siempre 'good'.
+4. Estimación adicional de inclinación de cámara (pitch), solo informativa por ahora:
+   - Calcula el ángulo del eje caderas-hombros (punto medio de 23/24 a punto medio de 11/12) respecto a la vertical, en world 3D.
+   - Solo tiene sentido en ejercicios con el torso vertical. Añade un campo opcional `uprightTorso?: boolean` a ExerciseDefinition y marca los que aplique.
+   - No lo uses todavía para bloquear nada; solo mostrarlo en el panel de depuración.
+5. Comportamiento en la app:
+   - Estado 'bad' mantenido durante VIEW_BAD_SECONDS (valor inicial 1.5 segundos): el feedback pasa a tono `checking` con un mensaje claro, por ejemplo "Gira el móvil: este ejercicio se ve mejor de lado". El texto se adapta a la vista recomendada (frente, lado o espalda).
+   - Mientras esté en 'bad': NO cuentes repeticiones, NO cambies fases y NO muestres tono `success`. Reutiliza el mecanismo del flag de baja confianza de la Fase 2 (añade un motivo distinto para poder distinguirlos).
+   - Estado 'acceptable': el conteo funciona con normalidad y se muestra una sugerencia discreta, sin bloquear.
+   - Vuelta a 'good' o 'acceptable': el aviso desaparece con histéresis (VIEW_RECOVER_SECONDS, valor inicial 0.7 segundos).
+   - No debe afectar a los ejercicios con vista 'any'.
+6. Reinicia el estado de esta lógica al cambiar de ejercicio, al iniciar la cámara y cuando se pierde la pose más de 10 frames.
+7. Panel de depuración (solo cuando el modo debug esté activo): añade líneas con yaw actual, vista estimada, vista recomendada, estado (good/acceptable/bad) y pitch estimado. Con el modo desactivado no debe haber coste ni elementos extra.
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH).
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones cuando la vista es la adecuada, y que con vista 'any' no cambia nada.
+- No instales dependencias nuevas.
+
+ENTREGA
+Al terminar dame un resumen con: archivos creados y modificados; una TABLA con los 58 ejercicios, su vista recomendada y cuáles quedaron en 'any' por duda; los valores iniciales de todas las constantes; cómo distingues frente de espalda; y qué debo probar en cámara real (por ejemplo, sentadillas grabadas de lado y de frente, y dominadas de espalda y de lado).

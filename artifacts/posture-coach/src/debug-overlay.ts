@@ -5,6 +5,11 @@ import type {
   PoseDelegate,
 } from './pose3d';
 import type { BoneConstraintDebugInfo, BoneSegmentId } from './bone-constraints';
+import type {
+  EstimatedView,
+  ExerciseView,
+  ViewStatus,
+} from './view-estimation';
 
 // Interruptor permanente de desarrollo; la URL puede activarlo solo en memoria.
 export const DEBUG_LIMB_TRACKING = false;
@@ -41,6 +46,11 @@ export type DebugPanelSnapshot = {
   width: number;
   height: number;
   correctionMean: number | null;
+  yaw: number | null;
+  estimatedView: EstimatedView;
+  recommendedView: ExerciseView;
+  viewStatus: ViewStatus;
+  pitch: number | null;
 };
 
 export type DebugFrameInput = {
@@ -54,6 +64,11 @@ export type DebugFrameInput = {
   width: number;
   height: number;
   now: number;
+  yaw: number | null;
+  estimatedView: EstimatedView;
+  recommendedView: ExerciseView;
+  viewStatus: ViewStatus;
+  pitch: number | null;
 };
 
 export function isLimbDebugTrackingEnabled() {
@@ -82,6 +97,11 @@ export function createEmptyDebugPanelSnapshot(): DebugPanelSnapshot {
     width: 0,
     height: 0,
     correctionMean: null,
+    yaw: null,
+    estimatedView: 'unknown',
+    recommendedView: 'any',
+    viewStatus: 'unknown',
+    pitch: null,
   };
 }
 
@@ -172,6 +192,11 @@ export class LimbDebugSession {
       width: input.width,
       height: input.height,
       correctionMean: average(this.correctionSamples),
+      yaw: input.yaw,
+      estimatedView: input.estimatedView,
+      recommendedView: input.recommendedView,
+      viewStatus: input.viewStatus,
+      pitch: input.pitch,
     };
   }
 

@@ -128,6 +128,18 @@ import {
   type DebugPanelSnapshot,
 } from '@/debug-overlay';
 import {
+  VIEW_TOLERANCE_DEFAULT_DEG,
+  VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  VIEW_UI_UPDATE_MS,
+  ViewAlignmentGuard,
+  ViewEstimator,
+  assessExerciseView,
+  createInitialViewAlignment,
+  createUnknownViewEstimate,
+  type ExerciseView,
+  type ViewAlignmentState,
+} from '@/view-estimation';
+import {
   Route,
   Switch,
   useLocation,
@@ -237,6 +249,9 @@ type ExerciseDefinition = {
   description: string;
   angleLabel: string;
   cameraNote?: string;
+  recommendedView?: ExerciseView;
+  viewToleranceDeg?: number;
+  uprightTorso?: boolean;
   trackedJoints: TrackedJointDefinition[];
   trackBothSides?: boolean;
   trackedAngleLabels: string[];
@@ -1578,6 +1593,89 @@ const exercises: ExerciseDefinition[] = [
     ],
   },
 ];
+
+const exerciseViewDefinitions: Record<ExerciseId, {
+  recommendedView: ExerciseView;
+  viewToleranceDeg?: number;
+  uprightTorso?: boolean;
+}> = {
+  fondos: { recommendedView: 'side' },
+  dominadas: { recommendedView: 'back' },
+  'dominadas-supinas': { recommendedView: 'back' },
+  'dominadas-comando': {
+    recommendedView: 'back',
+    viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  },
+  'muscle-up': {
+    recommendedView: 'side',
+    viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  },
+  jalon: { recommendedView: 'side', uprightTorso: true },
+  'pull-over-polea-alta': { recommendedView: 'side' },
+  'remo-barra': { recommendedView: 'side' },
+  'remos-australianos-elevados': { recommendedView: 'side' },
+  'remo-sentado-polea-agarre-cerrado': { recommendedView: 'side' },
+  'remo-mancuerna-una-mano': { recommendedView: 'side' },
+  'peso-muerto-rumano': { recommendedView: 'side' },
+  'peso-muerto-piernas-rigidas': { recommendedView: 'side' },
+  flexiones: { recommendedView: 'side' },
+  'flexiones-declinadas': { recommendedView: 'side' },
+  'flexiones-pica': { recommendedView: 'side' },
+  'press-militar': { recommendedView: 'front', uprightTorso: true },
+  'press-hombros-maquina': { recommendedView: 'front', uprightTorso: true },
+  'elevaciones-laterales': { recommendedView: 'front', uprightTorso: true },
+  'elevaciones-laterales-polea-baja': { recommendedView: 'front', uprightTorso: true },
+  'pajaros-mancuernas': { recommendedView: 'front' },
+  'face-pulls-polea-alta': { recommendedView: 'front', uprightTorso: true },
+  'aperturas-inversas-maquina': { recommendedView: 'front' },
+  'cruces-polea-baja-alta': { recommendedView: 'front', uprightTorso: true },
+  'press-banca': { recommendedView: 'side' },
+  'press-banca-agarre-cerrado': { recommendedView: 'side' },
+  'press-banca-inclinado': { recommendedView: 'side' },
+  'press-plano-mancuernas': { recommendedView: 'side' },
+  'press-plano-inclinado': { recommendedView: 'side' },
+  'triceps-polea-alta': { recommendedView: 'side', uprightTorso: true },
+  'triceps-tras-nuca-polea-alta': { recommendedView: 'side' },
+  'copa-mancuernas': { recommendedView: 'side' },
+  'extension-horizontal-barra': { recommendedView: 'side' },
+  'curl-biceps': { recommendedView: 'side', uprightTorso: true },
+  'curl-inclinado-mancuernas': { recommendedView: 'side' },
+  'curl-predicador': { recommendedView: 'front' },
+  'curl-arana': { recommendedView: 'front' },
+  'curl-martillo': { recommendedView: 'front', uprightTorso: true },
+  'curl-inverso-barra': { recommendedView: 'front', uprightTorso: true },
+  'curl-muneca-sentado': { recommendedView: 'side' },
+  'rodillo-muneca': { recommendedView: 'side', uprightTorso: true },
+  sentadillas: { recommendedView: 'side' },
+  'prensa-piernas': { recommendedView: 'side' },
+  'extensiones-maquina': { recommendedView: 'side' },
+  'curl-femoral': { recommendedView: 'side' },
+  'elevacion-talones-pie': { recommendedView: 'side', uprightTorso: true },
+  'maquina-aductores': { recommendedView: 'front', uprightTorso: true },
+  'hip-thrust-barra': { recommendedView: 'side' },
+  zancadas: { recommendedView: 'side' },
+  'zancada-banco': { recommendedView: 'side' },
+  plancha: { recommendedView: 'side' },
+  'crunch-invertido': { recommendedView: 'side' },
+  'rueda-abdominal': { recommendedView: 'side' },
+  'elevaciones-piernas-barra': {
+    recommendedView: 'side',
+    viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  },
+  'barra-reloj': {
+    recommendedView: 'side',
+    viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  },
+  'elevaciones-piernas-suelo': { recommendedView: 'side' },
+  'press-pallof-polea-banda': { recommendedView: 'front', uprightTorso: true },
+  // La nota de cámara dice lateral, pero las instrucciones de detección
+  // permiten frontal/3/4; se deja sin restricción hasta validar la vista real.
+  'giros-rusos': { recommendedView: 'any' },
+};
+
+exercises.forEach((exercise) => {
+  Object.assign(exercise, exerciseViewDefinitions[exercise.id]);
+});
 
 const exerciseGroups = [
   {
@@ -7105,6 +7203,9 @@ function Home() {
   const [debugPanel, setDebugPanel] = useState<DebugPanelSnapshot>(
     createEmptyDebugPanelSnapshot,
   );
+  const [viewAlignment, setViewAlignment] = useState<ViewAlignmentState>(
+    createInitialViewAlignment,
+  );
   const [dipJointReadings, setDipJointReadings] = useState<DipJointReading[]>([]);
   const [pullupJointReadings, setPullupJointReadings] = useState<DipJointReading[]>([]);
   const [techniqueFeedback, setTechniqueFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
@@ -7145,6 +7246,10 @@ function Home() {
     DEBUG_LIMB_TRACKING_ACTIVE ? new LimbDebugSession() : null,
   );
   const rawPoseForDebugRef = useRef<Pose | undefined>(undefined);
+  const viewEstimatorRef = useRef(new ViewEstimator());
+  const viewAlignmentGuardRef = useRef(new ViewAlignmentGuard());
+  const viewAlignmentRef = useRef<ViewAlignmentState>(createInitialViewAlignment());
+  const lastViewUiUpdateRef = useRef(0);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -7242,6 +7347,11 @@ function Home() {
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
+    viewEstimatorRef.current.reset();
+    viewAlignmentGuardRef.current.reset();
+    viewAlignmentRef.current = createInitialViewAlignment();
+    lastViewUiUpdateRef.current = 0;
+    setViewAlignment(viewAlignmentRef.current);
     rawPoseForDebugRef.current = undefined;
     debugSessionRef.current?.reset();
     if (DEBUG_LIMB_TRACKING_ACTIVE) {
@@ -7363,6 +7473,46 @@ function Home() {
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : undefined;
+      const recommendedView = activeExerciseDefinition?.recommendedView ?? 'any';
+      const viewToleranceDeg = activeExerciseDefinition?.viewToleranceDeg
+        ?? VIEW_TOLERANCE_DEFAULT_DEG;
+      const viewEstimate = pose
+        ? viewEstimatorRef.current.update(pose)
+        : createUnknownViewEstimate();
+      if (!pose) {
+        viewEstimatorRef.current.markPoseMissing();
+        viewAlignmentGuardRef.current.markPoseMissing();
+      }
+      const nextViewAlignment = pose
+        ? viewAlignmentGuardRef.current.update(
+            assessExerciseView(recommendedView, viewEstimate, viewToleranceDeg),
+            now,
+          )
+        : {
+            ...viewAlignmentRef.current,
+            yawDeg: null,
+            pitchDeg: null,
+            estimatedView: 'unknown' as const,
+            status: 'unknown' as const,
+            known: false,
+            deviationDeg: null,
+            recommendedView,
+            toleranceDeg: viewToleranceDeg,
+            blocking: false,
+            alertVisible: false,
+            suggestionVisible: false,
+          };
+      const previousViewAlignment = viewAlignmentRef.current;
+      viewAlignmentRef.current = nextViewAlignment;
+      if (
+        nextViewAlignment.status !== previousViewAlignment.status
+        || nextViewAlignment.blocking !== previousViewAlignment.blocking
+        || now - lastViewUiUpdateRef.current >= VIEW_UI_UPDATE_MS
+      ) {
+        lastViewUiUpdateRef.current = now;
+        setViewAlignment(nextViewAlignment);
+      }
+      const viewBlocksFrame = nextViewAlignment.blocking;
       if (DEBUG_LIMB_TRACKING_ACTIVE) {
         const nextDebugPanel = debugSessionRef.current?.recordFrame({
           rawPose: rawPoseForDebugRef.current,
@@ -7375,6 +7525,13 @@ function Home() {
           width: video.videoWidth,
           height: video.videoHeight,
           now,
+          yaw: viewEstimate.yawDeg,
+          estimatedView: viewEstimate.view,
+          recommendedView,
+          viewStatus: nextViewAlignment.status,
+          pitch: activeExerciseDefinition?.uprightTorso
+            ? viewEstimate.pitchDeg
+            : null,
         });
         if (nextDebugPanel) setDebugPanel(nextDebugPanel);
       }
@@ -7417,6 +7574,7 @@ function Home() {
         pose?.keypoints,
         measurementSide,
       );
+      const frameMeasurementBlocked = frameLowConfidence || viewBlocksFrame;
       const visiblePoints = pose?.keypoints?.filter((point) => (
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
@@ -7472,7 +7630,7 @@ function Home() {
         && hasFreshPose
         && rawAngle !== null
         && visiblePoints >= 5
-        && !frameLowConfidence,
+        && !frameMeasurementBlocked,
       );
       stabilityFramesRef.current = frameCanMeasure
         ? Math.min(8, stabilityFramesRef.current + 1)
@@ -7570,7 +7728,7 @@ function Home() {
       setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
       setMuscleUpAngles(displayMuscleUpAngles);
-      let nextAngle = frameLowConfidence ? null : rawAngle;
+      let nextAngle = frameMeasurementBlocked ? null : rawAngle;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -7578,7 +7736,7 @@ function Home() {
         && frameDetectionStable
         && selectedExerciseRef.current === 'sentadillas'
         && rawAngle !== null
-        && !frameLowConfidence
+        && !frameMeasurementBlocked
       ) {
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
         squatTrackerRef.current = squatUpdate.tracker;
@@ -7622,7 +7780,7 @@ function Home() {
         && frameCameraReady
         && frameDetectionStable
         && rawAngle !== null
-        && !frameLowConfidence
+        && !frameMeasurementBlocked
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
         const pullupUpdate = advancePullupTracker(
@@ -7723,7 +7881,7 @@ function Home() {
         && repetitionConfig
         && repetitionAngle !== null
         && repetitionTechniqueReady
-        && !frameLowConfidence
+        && !frameMeasurementBlocked
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
@@ -7754,7 +7912,7 @@ function Home() {
            || selectedExerciseForFrame === 'press-pallof-polea-banda'
            || selectedExerciseForFrame === 'press-hombros-maquina')
         && exerciseStartedRef.current
-        && !frameLowConfidence
+        && !frameMeasurementBlocked
         && (
           !hasFreshPose
           || !frameCameraReady
@@ -7775,7 +7933,7 @@ function Home() {
       }
       if (
         rawAngle !== null
-        && !frameLowConfidence
+        && !frameMeasurementBlocked
         && hasFreshPose
         && frameDetectionStable
       ) {
@@ -7804,7 +7962,7 @@ function Home() {
             )}% durante el descenso. Llega hasta ≤${HEEL_RAISE_DOWN_RATIO} para apoyar el pie.`,
           }
         : null;
-      const footTechniqueFeedback = frameLowConfidence
+      const footTechniqueFeedback = frameMeasurementBlocked
         ? null
         : heelLiftFeedback ?? heelRaiseFeedback;
       let displayAngle = frameDetectionStable ? nextAngle : null;
@@ -7863,7 +8021,13 @@ function Home() {
       setTechniqueFeedback(
         frameLowConfidence
           ? lowConfidenceFeedback
-          : footTechniqueFeedback
+          : viewBlocksFrame
+            ? {
+                tone: 'warning',
+                message: nextViewAlignment.message,
+                detail: nextViewAlignment.detail,
+              }
+            : footTechniqueFeedback
             ?? (selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'flexiones-declinadas'
@@ -7928,7 +8092,22 @@ function Home() {
       ) {
         setSquatFeedback(heelLiftFeedback);
       }
-      if (frameLowConfidence) {
+      if (viewBlocksFrame) {
+        const viewFeedback: TechniqueFeedback = {
+          tone: 'warning',
+          message: nextViewAlignment.message,
+          detail: nextViewAlignment.detail,
+        };
+        if (selectedExerciseRef.current === 'sentadillas') {
+          setSquatFeedback(viewFeedback);
+        }
+        if (
+          selectedExerciseRef.current === 'dominadas'
+          || selectedExerciseRef.current === 'dominadas-supinas'
+        ) {
+          setPullupFeedback(viewFeedback);
+        }
+      } else if (frameLowConfidence) {
         if (selectedExerciseRef.current === 'sentadillas') {
           setSquatFeedback(lowConfidenceFeedback);
         }
@@ -8315,14 +8494,18 @@ function Home() {
     : !exerciseStarted
       ? personDetected
         ? cameraReady
-          ? 'Colócate en posición y pulsa Iniciar ejercicio'
+          ? viewAlignment.status === 'bad' || viewAlignment.status === 'unknown'
+            ? viewAlignment.message
+            : 'Colócate en posición y pulsa Iniciar ejercicio'
           : poseDetected
             ? 'Cuerpo detectado ✓ · puedes iniciar'
             : 'Rostro detectado ✓ · puedes iniciar'
         : 'Buscando tu cuerpo...'
       : poseDetected
         ? cameraReady
-          ? detectionStable
+          ? viewAlignment.blocking
+            ? viewAlignment.message
+            : detectionStable
             ? 'Encuadre válido · análisis 3D estable ✓'
             : 'Mejorando detección'
           : cameraGuidance.message
@@ -8408,9 +8591,20 @@ function Home() {
       : selectedExercise === 'muscle-up'
         ? muscleUpReferenceFeedback
       : techniqueFeedback;
-  const angleIsGood = exerciseStarted && cameraReady && angleFeedback.tone === 'success';
+  const viewFeedback: TechniqueFeedback = {
+    tone: 'warning',
+    message: viewAlignment.message,
+    detail: viewAlignment.detail,
+  };
+  const displayedAngleFeedback = viewAlignment.blocking
+    ? viewFeedback
+    : angleFeedback;
+  const angleIsGood = exerciseStarted
+    && cameraReady
+    && !viewAlignment.blocking
+    && angleFeedback.tone === 'success';
   const diagnosisTone = cameraReady
-    ? angleFeedback.tone
+    ? displayedAngleFeedback.tone
     : cameraGuidance.tone === 'warning'
       ? 'warning'
       : 'checking';
@@ -8418,15 +8612,17 @@ function Home() {
     ? 'ESPERANDO'
     : !cameraReady
       ? 'AJUSTAR CÁMARA'
+      : viewAlignment.blocking
+        ? 'AJUSTAR VISTA'
       : !exerciseStarted
         ? 'LISTO PARA INICIAR'
         : selectedExercise === 'muscle-up' || selectedExercise === 'dominadas-comando'
           ? 'CALIBRACIÓN PENDIENTE'
         : angle === null
       ? 'ESPERANDO'
-      : angleFeedback.tone === 'success'
+      : displayedAngleFeedback.tone === 'success'
         ? 'BIEN'
-        : angleFeedback.tone === 'checking'
+        : displayedAngleFeedback.tone === 'checking'
           ? 'EN PROCESO'
         : 'AJUSTAR';
   const formatCoordinate = (value: number | null) => value === null ? '—' : value.toFixed(1);
@@ -9358,6 +9554,17 @@ function Home() {
                         ? '—'
                         : `${debugPanel.correctionMean.toFixed(1)} px`}
                     </div>
+                    <div>
+                      Yaw: {debugPanel.yaw === null ? '—' : `${debugPanel.yaw.toFixed(1)}°`}
+                      {' · '}vista: {debugPanel.estimatedView}
+                    </div>
+                    <div>
+                      Recomendada: {debugPanel.recommendedView}
+                      {' · '}estado: {debugPanel.viewStatus}
+                    </div>
+                    <div>
+                      Pitch torso: {debugPanel.pitch === null ? '—' : `${debugPanel.pitch.toFixed(1)}°`}
+                    </div>
                     <div className="limb-debug-panel__bones">
                       <span>Rechazos por hueso:</span>
                       {Object.entries(debugPanel.boneRejections).map(([segment, count]) => (
@@ -9513,7 +9720,7 @@ function Home() {
                 ) : diagnosisStatus === 'CALIBRACIÓN PENDIENTE' ? (
                   <p>Los valores se muestran como referencia. Aún no se marca el balanceo como correcto o incorrecto.</p>
                 ) : diagnosisStatus === 'AJUSTAR' && angle !== null ? (
-                  <p>{angleFeedback.message}</p>
+                  <p>{displayedAngleFeedback.message}</p>
                 ) : null}
               </div>
               <div className="diagnostic-dock">
