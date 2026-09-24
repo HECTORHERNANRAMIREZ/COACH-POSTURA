@@ -27,6 +27,7 @@ export type PosePoint = {
   world?: WorldCoordinate;
   held?: boolean;
   heldFrames?: number;
+  heldReason?: 'low-score' | 'bone-length';
 };
 
 export type Pose = {

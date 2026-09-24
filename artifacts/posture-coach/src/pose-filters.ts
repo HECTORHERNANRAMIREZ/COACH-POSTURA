@@ -207,7 +207,11 @@ export class PoseOneEuroFilter {
       const minimumScore = LIMB_LANDMARKS.has(index)
         ? MIN_SCORE_LIMB
         : MIN_SCORE_BODY;
-      const isReliable = Boolean(point && (point.score ?? 0) >= minimumScore);
+      const isReliable = Boolean(
+        point
+        && !point.held
+        && (point.score ?? 0) >= minimumScore,
+      );
 
       if (isReliable && point) {
         const filteredWorld = worldPoint
@@ -227,6 +231,7 @@ export class PoseOneEuroFilter {
           ...nextPoint,
           held: false,
           heldFrames: 0,
+          heldReason: undefined,
         };
         state.lastWorld = filteredWorld;
         state.heldFrames = 0;
@@ -237,6 +242,7 @@ export class PoseOneEuroFilter {
               ...filteredWorld,
               held: false,
               heldFrames: 0,
+              heldReason: undefined,
               world: filteredWorld,
             }
           : state.lastPoint;
@@ -249,6 +255,7 @@ export class PoseOneEuroFilter {
           ...state.lastPoint,
           held: true,
           heldFrames: state.heldFrames,
+          heldReason: point?.heldReason ?? 'low-score',
         };
         state.lastPoint = stalePoint;
         keypoints[index] = stalePoint;
@@ -258,6 +265,7 @@ export class PoseOneEuroFilter {
             score: stalePoint.score,
             held: true,
             heldFrames: state.heldFrames,
+            heldReason: point?.heldReason ?? 'low-score',
             world: state.lastWorld,
           };
         }

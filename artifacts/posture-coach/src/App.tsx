@@ -106,6 +106,7 @@ import {
   type PoseDetector,
   type PosePoint,
 } from '@/pose3d';
+import { createBoneConstraintFilter } from '@/bone-constraints';
 import { createPoseFilter, MAX_HELD_FRAMES } from '@/pose-filters';
 import {
   Route,
@@ -6892,6 +6893,7 @@ function Home() {
   const sideViewStableFramesRef = useRef(0);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
+  const boneConstraintRef = useRef(createBoneConstraintFilter());
   const poseFilterRef = useRef(createPoseFilter());
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
@@ -6973,6 +6975,7 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
+    boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
     stabilityFramesRef.current = 0;
     setDetectionStable(false);
@@ -7017,6 +7020,7 @@ function Home() {
           && !exerciseStartedRef.current
           && !isPoseTrackContinuous(primaryPose.track, previousPoseTrack)
         ) {
+          boneConstraintRef.current.reset();
           poseFilterRef.current.reset();
         }
         primaryPoseTrackRef.current = primaryPose.track;
@@ -7026,10 +7030,14 @@ function Home() {
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
-      const pose: Pose | undefined = detectedPose
-        ? poseFilterRef.current.filter(detectedPose, frameTimestamp)
+      const constrainedPose = detectedPose
+        ? boneConstraintRef.current.filter(detectedPose)
+        : undefined;
+      const pose: Pose | undefined = constrainedPose
+        ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : undefined;
       if (!detectedPose) {
+        boneConstraintRef.current.markPoseMissing();
         poseFilterRef.current.markPoseMissing();
       }
       const hasFreshPose = Boolean(detectedPose);
@@ -7641,6 +7649,7 @@ function Home() {
     setSideSwitches(0);
     setSideChangeNotice('Sin cambios');
     primaryPoseTrackRef.current = null;
+    boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
     setAnglePoints([]);
     setAngleHistory([]);

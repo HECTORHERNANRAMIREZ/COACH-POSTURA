@@ -1,0 +1,37 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas la Fase 1 (filtro One Euro en src/pose-filters.ts) y la Fase 2 (retención por score con `held` y `heldFrames`, MAX_HELD_FRAMES = 8, y flag de baja confianza en App.tsx). Esta es la FASE 3: restricción de longitud de huesos para descartar saltos imposibles de puntos distales. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño, el catálogo de ejercicios, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Pon la lógica nueva en un archivo nuevo (src/bone-constraints.ts) y conéctala con cambios mínimos.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector. Los campos nuevos deben ser opcionales.
+- Todos los parámetros ajustables van como constantes con nombre al inicio del archivo, con un comentario que explique qué hacen.
+- Reutiliza el mecanismo de retención de la Fase 2 (held / heldFrames / MAX_HELD_FRAMES). No crees una segunda lógica de retención.
+
+TAREA
+1. Define los segmentos a controlar (proximal -> distal), usando índices de MediaPipe:
+   - Brazo: 11->13 y 12->14
+   - Antebrazo: 13->15 y 14->16
+   - Muslo: 23->25 y 24->26
+   - Pantorrilla: 25->27 y 26->28
+2. Trabaja con las coordenadas WORLD 3D (metros), no con las de pantalla, para que el cálculo no dependa de la distancia a la cámara.
+3. Calibración de la longitud de referencia de cada segmento:
+   - Usa la MEDIANA de las últimas BONE_WINDOW_FRAMES (valor inicial 60) mediciones válidas.
+   - Una medición es válida solo si el punto proximal y el distal tienen score sobre su umbral de la Fase 2 y ninguno está retenido.
+   - No apliques la restricción hasta tener al menos BONE_MIN_SAMPLES (valor inicial 20) mediciones válidas del segmento.
+4. Comprobación en cada frame, ANTES de que la medición entre en los filtros One Euro:
+   - Calcula la longitud actual del segmento con las mediciones crudas.
+   - Si el punto proximal no es fiable (score bajo), omite la comprobación de ese segmento.
+   - Si la longitud se desvía más de BONE_TOLERANCE (valor inicial 0.25, es decir 25%) de la referencia, considera el punto distal un valor atípico: no alimentes los filtros con esa medición y trátalo como punto retenido usando el mecanismo de la Fase 2 (held = true, heldFrames sube, y tras MAX_HELD_FRAMES deja de estar disponible).
+5. Evita bloqueos permanentes: si un segmento lleva más de BONE_REJECT_MAX_FRAMES (valor inicial 15) frames seguidos rechazado, borra su referencia y recalíbrala desde cero.
+6. Reinicia todas las referencias y contadores cuando se reinician los filtros (inicio de cámara, cambio de ejercicio, pérdida de pose por más de 10 frames).
+7. Los puntos rechazados por esta restricción deben tratarse igual que los retenidos en el resto de la lógica (contadores, feedback, overlay), pero añade un campo opcional `heldReason?: 'low-score' | 'bone-length'` en PosePoint para poder distinguirlos.
+8. Expón un contador de depuración por segmento con cuántos frames se rechazaron (por ahora solo accesible desde el código o un console.debug que se pueda activar con una constante DEBUG_BONE_CONSTRAINTS = false; con false no debe haber ningún coste ni salida).
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH) y que el flujo cámara -> modelo -> tracking arranca.
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones con normalidad cuando las mediciones son fiables.
+- No instales dependencias nuevas salvo que sea imprescindible.
+
+ENTREGA
+Al terminar dame un resumen con: archivos creados y modificados, el punto exacto del código donde se hace la comprobación (antes de los filtros), valores iniciales de cada constante, y qué debo probar en cámara real (por ejemplo, mover la mano muy rápido o taparla parcialmente y ver si aparece como retenida por longitud de hueso).

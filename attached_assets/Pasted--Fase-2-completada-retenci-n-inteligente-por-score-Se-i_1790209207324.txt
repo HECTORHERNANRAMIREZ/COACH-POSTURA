@@ -1,0 +1,139 @@
+## Fase 2 completada: retención inteligente por score
+
+Se implementó únicamente la Fase 2 solicitada, sin cambiar diseño, catálogo, Clerk, Lemon Squeezy ni `AUTH_AND_BILLING_ENABLED`.
+
+### Archivos modificados
+
+```text
+artifacts/posture-coach/src/pose-filters.ts
+artifacts/posture-coach/src/pose3d.ts
+artifacts/posture-coach/src/App.tsx
+```
+
+También se actualizó la memoria interna del proyecto con la decisión sobre retención y baja confianza.
+
+## Retención integrada
+
+La retención anterior de 6 frames fue reemplazada dentro de `PoseOneEuroFilter`. Ya no existe una segunda lógica paralela de retención.
+
+Ahora:
+
+- Una medición con score bajo no alimenta ningún filtro One Euro.
+- Se reutiliza la última posición filtrada válida.
+- El punto se marca con:
+  ```ts
+  held: true
+  heldFrames: number
+  ```
+- Después de `MAX_HELD_FRAMES`, el punto deja de estar presente en la pose.
+- Cuando el score vuelve a ser fiable, el filtro continúa usando la medición nueva.
+- El estado se reinicia junto con los filtros:
+  - Inicio de cámara.
+  - Cambio de ejercicio.
+  - Pérdida de pose durante más de 10 frames.
+
+## Constantes iniciales
+
+En `pose-filters.ts`:
+
+```ts
+MIN_SCORE_LIMB = 0.5
+MIN_SCORE_BODY = 0.4
+MAX_HELD_FRAMES = 8
+```
+
+Los umbrales de extremidades se aplican a:
+
+```text
+15, 16   muñecas
+27, 28   tobillos
+29, 30   talones
+31, 32   puntas de los pies
+```
+
+El resto de landmarks usa `MIN_SCORE_BODY`.
+
+## Uso de baja confianza
+
+En el bucle de tracking de `App.tsx` se calcula:
+
+```ts
+frameLowConfidence
+```
+
+Este flag se activa cuando un punto retenido pertenece a las articulaciones relevantes del ejercicio.
+
+Se utiliza exactamente en estos lugares:
+
+1. **Estabilidad de medición**
+   - Un frame con puntos retenidos no aumenta la estabilidad del tracking.
+
+2. **Cálculo del ángulo mostrado**
+   - El ángulo se oculta temporalmente mientras la lectura sea poco fiable.
+
+3. **Contador de sentadillas**
+   - No actualiza el tracker ni cambia de fase.
+
+4. **Contador de dominadas**
+   - No cuenta repeticiones ni cambia de fase.
+
+5. **Contador genérico de ejercicios**
+   - No actualiza el tracker.
+   - Tampoco lo reinicia: mantiene la fase anterior.
+
+6. **Feedback técnico**
+   - Se fuerza el tono `checking`.
+   - No se muestra `success` basándose únicamente en puntos retenidos.
+
+7. **Validación del encuadre**
+   - Un punto retenido cuenta como visible durante sus 8 frames permitidos.
+   - Después de eso, el punto falta y el encuadre vuelve a advertirlo.
+
+## Overlay
+
+Los puntos retenidos se distinguen visualmente con:
+
+```text
+Color: #ffd166
+Opacidad: 0.5
+```
+
+Las líneas conectadas a un punto retenido también usan ese estilo. El diseño general del overlay no cambió.
+
+## Verificación
+
+Pasa correctamente:
+
+```text
+pnpm run typecheck
+PORT=5173 BASE_PATH=/ pnpm --filter @workspace/posture-coach build
+git diff --check
+```
+
+También confirmé que ya no existen los símbolos de la retención anterior de 6 frames.
+
+El workflow de NetPosture arranca correctamente en el puerto `24009` y la captura del preview muestra la pantalla inicial sin errores de navegador.
+
+La prueba aislada de ejecución del filtro no pudo lanzarse porque el workspace no tiene `tsx` instalado; no se añadió una dependencia nueva solo para esa prueba.
+
+El workflow del API continúa mostrando un error independiente de Clerk por falta de `CLERK_SECRET_KEY`. No fue modificado porque esta fase no afecta autenticación ni billing.
+
+## Pruebas recomendadas con cámara real
+
+1. Ejecutar dominadas, sentadillas y un ejercicio de brazo con todos los puntos visibles:
+   - Confirmar que el conteo y feedback siguen normales.
+
+2. Tapar una muñeca durante menos de 8 frames:
+   - El punto debe mantenerse en amarillo.
+   - El contador no debe avanzar durante esos frames.
+   - El feedback debe pasar a `checking`.
+
+3. Mantener una muñeca tapada durante más de 8 frames:
+   - El punto debe desaparecer.
+   - El encuadre debe indicar que falta la articulación.
+   - No debe generarse una repetición falsa.
+
+4. Volver a mostrar la muñeca:
+   - El punto debe recuperar su estado normal.
+   - El overlay debe volver a verde.
+   - El conteo debe continuar desde la fase anterior sin saltos.
