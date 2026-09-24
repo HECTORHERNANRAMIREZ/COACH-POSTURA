@@ -106,6 +106,7 @@ import {
   type PoseDetector,
   type PosePoint,
 } from '@/pose3d';
+import { createPoseFilter } from '@/pose-filters';
 import {
   Route,
   Switch,
@@ -332,11 +333,6 @@ type PoseTrack = {
   area: number;
   lostFrames: number;
 };
-type PosePointMemory = {
-  point: PosePoint;
-  missingFrames: number;
-};
-type PosePointMemoryMap = Partial<Record<number, PosePointMemory>>;
 type DiagnosticPoint = {
   label: string;
   score: number | null;
@@ -1772,7 +1768,6 @@ const SIDE_VIEW_MIN_CONFIDENCE_GAP = 0.16;
 const SIDE_VIEW_MIN_VISIBLE_POINTS = 4;
 const SIDE_VIEW_STABLE_FRAMES = 6;
 const ROW_ARM_POINT_MIN_SCORE = 0.24;
-const POSE_STALE_POINT_FRAMES = 6;
 const POSE_LOCK_MAX_CENTER_DISTANCE = 0.36;
 const POSE_LOCK_MIN_AREA_RATIO = 0.1;
 const MAX_FRONT_VIEW_RATIO = 0.95;
@@ -3239,54 +3234,6 @@ function getElevatedAustralianRowDominantSide(
   return selected.bodyCount || selected.average > 0
     ? { side: selected.side, average: selected.average }
     : null;
-}
-
-function stabilizePosePoints(
-  keypoints: PosePoint[] | undefined,
-  memory: PosePointMemoryMap,
-) {
-  const stabilized = [...(keypoints ?? [])];
-  Array.from({ length: POSE_LANDMARK_COUNT }, (_, index) => index).forEach((index) => {
-    const current = keypoints?.[index];
-    const previous = memory[index];
-    if (current && (current.score ?? 0) >= 0.2) {
-      const world = current.world && previous?.point.world
-        ? {
-            x: current.world.x * 0.72 + previous.point.world.x * 0.28,
-            y: current.world.y * 0.72 + previous.point.world.y * 0.28,
-            z: current.world.z * 0.72 + previous.point.world.z * 0.28,
-          }
-        : current.world;
-      const point = previous
-        ? {
-            ...current,
-            x: current.x * 0.72 + previous.point.x * 0.28,
-            y: current.y * 0.72 + previous.point.y * 0.28,
-            world,
-          }
-        : current;
-      stabilized[index] = point;
-      memory[index] = { point, missingFrames: 0 };
-      return;
-    }
-
-    if (previous && previous.missingFrames < POSE_STALE_POINT_FRAMES) {
-      const point = {
-        ...previous.point,
-        score: Math.max(0.2, (previous.point.score ?? 0.3) * 0.86),
-      };
-      stabilized[index] = point;
-      memory[index] = {
-        point,
-        missingFrames: previous.missingFrames + 1,
-      };
-      return;
-    }
-
-    delete memory[index];
-  });
-
-  return stabilized;
 }
 
 function hasFaceDetected(keypoints: PosePoint[] | undefined) {
@@ -6896,7 +6843,7 @@ function Home() {
   const sideViewStableFramesRef = useRef(0);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
-  const posePointMemoryRef = useRef<PosePointMemoryMap>({});
+  const poseFilterRef = useRef(createPoseFilter());
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -6977,7 +6924,7 @@ function Home() {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
-    posePointMemoryRef.current = {};
+    poseFilterRef.current.reset();
     stabilityFramesRef.current = 0;
     setDetectionStable(false);
   }, []);
@@ -7002,7 +6949,8 @@ function Home() {
     }
 
     try {
-      const detectedResult = detector.detectForVideo(video, performance.now());
+      const frameTimestamp = performance.now();
+      const detectedResult = detector.detectForVideo(video, frameTimestamp);
       const poses = detectedResult ? [detectedResult] : [];
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
       const previousPoseTrack = primaryPoseTrackRef.current;
@@ -7020,7 +6968,7 @@ function Home() {
           && !exerciseStartedRef.current
           && !isPoseTrackContinuous(primaryPose.track, previousPoseTrack)
         ) {
-          posePointMemoryRef.current = {};
+          poseFilterRef.current.reset();
         }
         primaryPoseTrackRef.current = primaryPose.track;
       } else if (primaryPoseTrackRef.current) {
@@ -7029,16 +6977,12 @@ function Home() {
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
-      const stabilizedKeypoints = stabilizePosePoints(
-        detectedPose?.keypoints,
-        posePointMemoryRef.current,
-      );
-      const pose: Pose | undefined = detectedPose && stabilizedKeypoints.length
-        ? {
-            ...detectedPose,
-            keypoints: stabilizedKeypoints,
-          }
+      const pose: Pose | undefined = detectedPose
+        ? poseFilterRef.current.filter(detectedPose, frameTimestamp)
         : undefined;
+      if (!detectedPose) {
+        poseFilterRef.current.markPoseMissing();
+      }
       const hasFreshPose = Boolean(detectedPose);
       const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
         ? getBarbellRowDominantSide(pose?.keypoints, previousSideRef.current)
@@ -7623,6 +7567,7 @@ function Home() {
     setSideSwitches(0);
     setSideChangeNotice('Sin cambios');
     primaryPoseTrackRef.current = null;
+    poseFilterRef.current.reset();
     setAnglePoints([]);
     setAngleHistory([]);
     setTechniqueFeedback(defaultTechniqueFeedback);
