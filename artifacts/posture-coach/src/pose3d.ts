@@ -10,8 +10,20 @@ export const POSE_LANDMARK_COUNT = 33;
 export const POSE_MODEL_NAME = 'MediaPipe Pose Landmarker · BlazePose 3D';
 const WASM_ROOT =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
-const MODEL_URL =
+export const MODEL_URL_FULL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+export const MODEL_URL_HEAVY =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task';
+
+// Umbral mínimo para aceptar una detección de pose.
+const MIN_POSE_DETECTION_CONFIDENCE = 0.45;
+// Umbral mínimo de presencia de la pose detectada.
+const MIN_POSE_PRESENCE_CONFIDENCE = 0.45;
+// Umbral mínimo para conservar el tracking entre frames.
+const MIN_TRACKING_CONFIDENCE = 0.4;
+
+export type PoseModel = 'heavy' | 'full';
+export type PoseDelegate = 'GPU' | 'CPU';
 
 export type WorldCoordinate = {
   x: number;
@@ -40,6 +52,8 @@ export type Pose = {
 export type PoseDetector = {
   detectForVideo: (video: HTMLVideoElement, timestamp: number) => Pose | null;
   close: () => void;
+  activeModel?: PoseModel;
+  activeDelegate?: PoseDelegate;
 };
 
 export const skeletonConnections: Array<[number, number]> = [
@@ -98,44 +112,147 @@ function resultToPose(
   return { keypoints, worldLandmarks, timestamp };
 }
 
-export async function createPoseDetector(): Promise<PoseDetector> {
-  const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
-  let landmarker: PoseLandmarker;
+export type CreatePoseDetectorOptions = {
+  model?: PoseModel;
+  delegate?: PoseDelegate;
+};
 
-  try {
-    landmarker = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: MODEL_URL,
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 1,
-      minPoseDetectionConfidence: 0.45,
-      minPosePresenceConfidence: 0.45,
-      minTrackingConfidence: 0.4,
-    });
-  } catch {
-    landmarker = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: MODEL_URL,
-        delegate: 'CPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 1,
-      minPoseDetectionConfidence: 0.45,
-      minPosePresenceConfidence: 0.45,
-      minTrackingConfidence: 0.4,
-    });
+type DetectorCandidate = {
+  model: PoseModel;
+  delegate: PoseDelegate;
+};
+
+const POSE_LANDMARKER_OPTIONS = {
+  runningMode: 'VIDEO' as const,
+  numPoses: 1,
+  minPoseDetectionConfidence: MIN_POSE_DETECTION_CONFIDENCE,
+  minPosePresenceConfidence: MIN_POSE_PRESENCE_CONFIDENCE,
+  minTrackingConfidence: MIN_TRACKING_CONFIDENCE,
+};
+
+function getModelUrl(model: PoseModel) {
+  return model === 'heavy' ? MODEL_URL_HEAVY : MODEL_URL_FULL;
+}
+
+function describeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isGpuDelegateFailure(error: unknown) {
+  const message = describeError(error).toLowerCase();
+  return message.includes('gpu')
+    || message.includes('webgl')
+    || message.includes('webgpu')
+    || message.includes('delegate')
+    || message.includes('gl context')
+    || message.includes('graphics');
+}
+
+function getFallbackCandidates(
+  model: PoseModel,
+  delegate: PoseDelegate,
+): DetectorCandidate[] {
+  if (model === 'heavy' && delegate === 'GPU') {
+    return [
+      { model: 'heavy', delegate: 'GPU' },
+      { model: 'heavy', delegate: 'CPU' },
+      { model: 'full', delegate: 'GPU' },
+      { model: 'full', delegate: 'CPU' },
+    ];
   }
 
+  if (model === 'heavy' && delegate === 'CPU') {
+    return [
+      { model: 'heavy', delegate: 'CPU' },
+      { model: 'full', delegate: 'CPU' },
+    ];
+  }
+
+  if (delegate === 'GPU') {
+    return [
+      { model: 'full', delegate: 'GPU' },
+      { model: 'full', delegate: 'CPU' },
+    ];
+  }
+
+  return [{ model: 'full', delegate: 'CPU' }];
+}
+
+async function createLandmarker(
+  vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>,
+  candidate: DetectorCandidate,
+) {
+  return PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: getModelUrl(candidate.model),
+      delegate: candidate.delegate,
+    },
+    ...POSE_LANDMARKER_OPTIONS,
+  });
+}
+
+export async function createPoseDetector(
+  options: CreatePoseDetectorOptions = {},
+): Promise<PoseDetector> {
+  const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
+  const requestedModel = options.model ?? 'heavy';
+  const requestedDelegate = options.delegate ?? 'GPU';
+  const candidates = getFallbackCandidates(requestedModel, requestedDelegate);
+  let landmarker: PoseLandmarker | null = null;
+  let activeCandidate: DetectorCandidate | null = null;
+  let firstGpuFailure: unknown = null;
+
+  for (const candidate of candidates) {
+    if (
+      requestedModel === 'heavy'
+      && requestedDelegate === 'GPU'
+      && candidate.model === 'heavy'
+      && candidate.delegate === 'CPU'
+      && firstGpuFailure
+      && !isGpuDelegateFailure(firstGpuFailure)
+    ) {
+      continue;
+    }
+
+    try {
+      landmarker = await createLandmarker(vision, candidate);
+      activeCandidate = candidate;
+      break;
+    } catch (error) {
+      if (candidate.model === 'heavy' && candidate.delegate === 'GPU') {
+        firstGpuFailure = error;
+      }
+      console.warn(
+        `[pose3d] No se pudo cargar ${candidate.model} con ${candidate.delegate}:`,
+        describeError(error),
+      );
+    }
+  }
+
+  if (!landmarker || !activeCandidate) {
+    throw new Error('No se pudo cargar ningún modelo de pose.');
+  }
+
+  let lastTimestamp = Number.NEGATIVE_INFINITY;
+  let closed = false;
+
   return {
+    activeModel: activeCandidate.model,
+    activeDelegate: activeCandidate.delegate,
     detectForVideo(video, timestamp) {
       if (!video.videoWidth || !video.videoHeight) return null;
-      const result = landmarker.detectForVideo(video, timestamp);
-      return resultToPose(result, video.videoWidth, video.videoHeight, timestamp);
+      if (closed) return null;
+      const safeTimestamp = Math.max(timestamp, lastTimestamp + 0.001);
+      lastTimestamp = safeTimestamp;
+      const result = landmarker?.detectForVideo(video, safeTimestamp);
+      return result
+        ? resultToPose(result, video.videoWidth, video.videoHeight, safeTimestamp)
+        : null;
     },
     close() {
-      landmarker.close();
+      if (closed) return;
+      closed = true;
+      landmarker?.close();
     },
   };
 }

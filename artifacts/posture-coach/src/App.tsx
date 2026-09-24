@@ -123,6 +123,12 @@ const queryClient = new QueryClient();
 const TOTAL_FRAMES = 11;
 const REPETICIONES = 4;
 const SCROLL_LERP = 0.15;
+// Número de frames usados para calcular la media móvil del FPS real del detector.
+const FPS_WINDOW_FRAMES = 45;
+// FPS medio mínimo que debe mantener el modelo heavy antes de degradar.
+const MIN_FPS = 15;
+// Segundos consecutivos bajo MIN_FPS necesarios para cambiar a full.
+const FPS_LOW_SECONDS = 4;
 const pullupScrollFrames = [
   pullupScrollFrame01,
   pullupScrollFrame02,
@@ -6825,6 +6831,7 @@ function Home() {
   const animationFrameRef = useRef<number | null>(null);
   const activeRef = useRef(false);
   const busyRef = useRef(false);
+  const detectorTransitionRef = useRef<Promise<void> | null>(null);
   const cameraFacingModeRef = useRef<CameraFacingMode>('user');
   const [phase, setPhase] = useState<SessionPhase>('exercise-select');
   const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
@@ -6891,6 +6898,11 @@ function Home() {
   const [expandedMuscleGroups, setExpandedMuscleGroups] = useState<Record<string, boolean>>({});
   const errorCountRef = useRef(0);
   const fpsFramesRef = useRef(0);
+  const detectionFrameTimesRef = useRef<number[]>([]);
+  const lowFpsSinceRef = useRef<number | null>(null);
+  const modelDegradedRef = useRef(false);
+  const lastDetectorTimestampRef = useRef(Number.NEGATIVE_INFINITY);
+  const videoSizeRef = useRef({ width: 0, height: 0 });
   const stabilityFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
   const sideViewCandidateRef = useRef<PoseSide | null>(null);
@@ -6973,6 +6985,7 @@ function Home() {
     }
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    detectorTransitionRef.current = null;
     detectorRef.current?.close();
     detectorRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -6983,6 +6996,11 @@ function Home() {
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
+    detectionFrameTimesRef.current = [];
+    lowFpsSinceRef.current = null;
+    modelDegradedRef.current = false;
+    lastDetectorTimestampRef.current = Number.NEGATIVE_INFINITY;
+    videoSizeRef.current = { width: 0, height: 0 };
     stabilityFramesRef.current = 0;
     setDetectionStable(false);
   }, []);
@@ -6991,8 +7009,18 @@ function Home() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth || !video.videoHeight) return;
+    if (
+      videoSizeRef.current.width === video.videoWidth
+      && videoSizeRef.current.height === video.videoHeight
+    ) {
+      return;
+    }
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    videoSizeRef.current = {
+      width: video.videoWidth,
+      height: video.videoHeight,
+    };
     setVideoRatio(`${video.videoWidth} / ${video.videoHeight}`);
     setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
   }, []);
@@ -7001,14 +7029,29 @@ function Home() {
     const video = videoRef.current;
     const detector = detectorRef.current;
     if (!activeRef.current || !video || !detector) return;
+    const detectorTransition = detectorTransitionRef.current;
+    if (detectorTransition) {
+      await detectorTransition;
+      if (activeRef.current) {
+        animationFrameRef.current = requestAnimationFrame(() => void processFrame());
+      }
+      return;
+    }
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
       return;
     }
+    syncVideoSize();
 
     try {
-      const frameTimestamp = performance.now();
+      const now = performance.now();
+      const frameTimestamp = Math.max(now, lastDetectorTimestampRef.current + 0.001);
+      lastDetectorTimestampRef.current = frameTimestamp;
       const detectedResult = detector.detectForVideo(video, frameTimestamp);
+      detectionFrameTimesRef.current = [
+        ...detectionFrameTimesRef.current,
+        now,
+      ].slice(-FPS_WINDOW_FRAMES);
       const poses = detectedResult ? [detectedResult] : [];
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
       const previousPoseTrack = primaryPoseTrackRef.current;
@@ -7579,6 +7622,60 @@ function Home() {
           cameraFacingModeRef.current === 'user',
         );
       }
+
+      if (
+        detector.activeModel === 'heavy'
+        && !modelDegradedRef.current
+        && detectionFrameTimesRef.current.length >= 2
+      ) {
+        const frameTimes = detectionFrameTimesRef.current;
+        const elapsed = frameTimes[frameTimes.length - 1] - frameTimes[0];
+        const measuredFps = elapsed > 0
+          ? ((frameTimes.length - 1) * 1000) / elapsed
+          : Number.POSITIVE_INFINITY;
+        if (measuredFps < MIN_FPS) {
+          lowFpsSinceRef.current ??= now;
+          if (
+            now - lowFpsSinceRef.current >= FPS_LOW_SECONDS * 1000
+            && !detectorTransitionRef.current
+          ) {
+            detectorTransitionRef.current = (async () => {
+              const currentDetector = detectorRef.current;
+              if (!currentDetector || currentDetector.activeModel !== 'heavy') return;
+              const nextDetector = await createPoseDetector({
+                model: 'full',
+                delegate: currentDetector.activeDelegate ?? 'GPU',
+              });
+              if (!activeRef.current) {
+                nextDetector.close();
+                return;
+              }
+              currentDetector.close();
+              detectorRef.current = nextDetector;
+              modelDegradedRef.current = true;
+              detectionFrameTimesRef.current = [];
+              lowFpsSinceRef.current = null;
+              sideConsistencyRef.current.reset();
+              boneConstraintRef.current.reset();
+              poseFilterRef.current.reset();
+              primaryPoseTrackRef.current = null;
+              stabilityFramesRef.current = 0;
+              setDetectionStable(false);
+              console.warn(
+                `[pose3d] FPS medio inferior a ${MIN_FPS} durante ${FPS_LOW_SECONDS}s; `
+                + `cambiando de heavy a full con ${nextDetector.activeDelegate ?? 'GPU'}.`,
+              );
+            })().catch((error) => {
+              lowFpsSinceRef.current = null;
+              console.warn('[pose3d] No se pudo degradar a full:', error);
+            }).finally(() => {
+              detectorTransitionRef.current = null;
+            });
+          }
+        } else {
+          lowFpsSinceRef.current = null;
+        }
+      }
     } catch {
       if (activeRef.current) {
         incrementErrorCount();
@@ -7596,7 +7693,7 @@ function Home() {
     let timeoutId: number | null = null;
     try {
       return await Promise.race([
-        createPoseDetector(),
+        createPoseDetector({ model: 'heavy', delegate: 'GPU' }),
         new Promise<never>((_, reject) => {
           timeoutId = window.setTimeout(() => {
             reject(new Error('El modelo de análisis tardó demasiado en cargar. Comprueba tu conexión e inténtalo de nuevo.'));
@@ -7713,8 +7810,9 @@ function Home() {
         audio: false,
         video: {
           facingMode: cameraFacingModeRef.current,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
         },
       });
       streamRef.current = stream;
