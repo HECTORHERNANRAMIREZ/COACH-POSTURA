@@ -101,6 +101,7 @@ import {
   POSE_LANDMARK_COUNT,
   POSE_MODEL_NAME,
   createPoseDetector,
+  footConnections,
   skeletonConnections,
   type Pose,
   type PoseDetector,
@@ -435,6 +436,7 @@ type LiveAngleReading = {
   target: string;
   min?: number;
   max?: number;
+  unit?: '°' | '';
 };
 type DipJointReading = {
   label: string;
@@ -1307,6 +1309,7 @@ const exercises: ExerciseDefinition[] = [
       'Torso: alineación respecto a la vertical',
       'Rodilla: estabilidad durante la elevación',
       'Tobillo: elevación del talón',
+      'Altura del talón: WORLD 3D normalizada · ≥0.25 arriba · ≤0.10 apoyado',
     ],
   },
   {
@@ -1775,6 +1778,13 @@ const FLOOR_LEG_RAISE_END_MIN_ANGLE = 70;
 const FLOOR_LEG_RAISE_END_MAX_ANGLE = 110;
 const FACE_POINT_MIN_SCORE = 0.22;
 const CAMERA_POINT_MIN_SCORE = 0.38;
+// Umbral de confianza para usar talón y punta en lecturas derivadas.
+const FOOT_POINT_MIN_SCORE = CAMERA_POINT_MIN_SCORE;
+// Elevación normalizada talón-punta usada como histéresis de la elevación de talones.
+const HEEL_RAISE_UP_RATIO = 0.25;
+const HEEL_RAISE_DOWN_RATIO = 0.10;
+// Solo se advierte por talón levantado durante un descenso si supera este ratio.
+const HEEL_LIFT_WARN_RATIO = 0.20;
 const SIDE_VIEW_MIN_CONFIDENCE_GAP = 0.16;
 const SIDE_VIEW_MIN_VISIBLE_POINTS = 4;
 const SIDE_VIEW_STABLE_FRAMES = 6;
@@ -1805,6 +1815,137 @@ const FOOT_HEEL_INDEX: Record<PoseSide, number> = {
   left: 29,
   right: 30,
 };
+const FOOT_OVERLAY_EXERCISES: ReadonlySet<ExerciseId> = new Set([
+  'sentadillas',
+  'prensa-piernas',
+  'zancadas',
+  'zancada-banco',
+  'elevacion-talones-pie',
+  'hip-thrust-barra',
+]);
+const FOOT_REFINEMENT_EXERCISES: ReadonlySet<ExerciseId> = new Set([
+  'sentadillas',
+  'prensa-piernas',
+  'extensiones-maquina',
+  'curl-femoral',
+  'elevacion-talones-pie',
+  'maquina-aductores',
+  'zancadas',
+  'zancada-banco',
+  'peso-muerto-rumano',
+  'peso-muerto-piernas-rigidas',
+]);
+
+type FootMeasurement = {
+  ankleAngle: number | null;
+  heelLiftRatio: number;
+};
+
+function isReliableFootPoint(point: PosePoint | undefined) {
+  return Boolean(
+    point
+    && !isHeldPoint(point)
+    && (point.score ?? 0) >= FOOT_POINT_MIN_SCORE
+    && hasWorldCoordinates(point),
+  );
+}
+
+function calculateFootMeasurement(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide,
+): FootMeasurement | null {
+  if (!keypoints) return null;
+  const indexes = sideKeypoints[side];
+  const ankle = keypoints[indexes.ankle];
+  const knee = keypoints[indexes.knee];
+  const heel = keypoints[FOOT_HEEL_INDEX[side]];
+  const toe = keypoints[MUSCLE_UP_FOOT_INDEX[side]];
+  if (
+    !isReliableFootPoint(knee)
+    || !isReliableFootPoint(ankle)
+    || !isReliableFootPoint(heel)
+    || !isReliableFootPoint(toe)
+  ) {
+    return null;
+  }
+
+  const heelCoordinates = getAngleMeasurementCoordinates(heel);
+  const toeCoordinates = getAngleMeasurementCoordinates(toe);
+  if (!heelCoordinates || !toeCoordinates) return null;
+  const footLength = Math.hypot(
+    heelCoordinates.x - toeCoordinates.x,
+    heelCoordinates.y - toeCoordinates.y,
+    heelCoordinates.z - toeCoordinates.z,
+  );
+  if (footLength < 0.01) return null;
+
+  return {
+    ankleAngle: calculateAngle(knee, ankle, toe),
+    // En WORLD, Y crece hacia abajo: un talón más alto que la punta da un ratio positivo.
+    heelLiftRatio: (toeCoordinates.y - heelCoordinates.y) / footLength,
+  };
+}
+
+function getReliableFootMeasurements(
+  keypoints: PosePoint[] | undefined,
+  sides: PoseSide[],
+) {
+  return sides
+    .map((side) => ({
+      side,
+      measurement: calculateFootMeasurement(keypoints, side),
+    }))
+    .filter((reading): reading is { side: PoseSide; measurement: FootMeasurement } => (
+      reading.measurement !== null
+    ));
+}
+
+function getHeelLiftWarning(
+  exercise: ExerciseId,
+  keypoints: PosePoint[] | undefined,
+  dominantSide: PoseSide | null,
+  squatPhase: SquatPhase,
+  repetitionPhase: ExerciseRepPhase,
+  previousAngle: number | null,
+  currentAngle: number | null,
+): TechniqueFeedback | null {
+  if (
+    exercise !== 'sentadillas'
+    && exercise !== 'prensa-piernas'
+    && exercise !== 'zancadas'
+    && exercise !== 'zancada-banco'
+  ) {
+    return null;
+  }
+
+  const isAngleDescending = previousAngle !== null
+    && currentAngle !== null
+    && currentAngle < previousAngle - 0.75;
+  const isDescending = exercise === 'sentadillas'
+    ? squatPhase === 'bajando' || squatPhase === 'abajo'
+    : exercise === 'zancadas' || exercise === 'zancada-banco'
+      ? repetitionPhase === 'en movimiento'
+      : isAngleDescending;
+  if (!isDescending) return null;
+
+  const sides = exercise === 'sentadillas' || exercise === 'prensa-piernas'
+    ? (['left', 'right'] as PoseSide[])
+    : dominantSide
+      ? [dominantSide]
+      : [];
+  const readings = getReliableFootMeasurements(keypoints, sides);
+  const lifted = readings
+    .map(({ measurement }) => measurement.heelLiftRatio)
+    .filter((ratio) => ratio > HEEL_LIFT_WARN_RATIO);
+  if (!lifted.length) return null;
+
+  const highestRatio = Math.max(...lifted);
+  return {
+    tone: 'warning',
+    message: 'Mantén el talón apoyado',
+    detail: `El talón se elevó ${Math.round(highestRatio * 100)}% durante el descenso. Apoya todo el pie antes de seguir bajando.`,
+  };
+}
 
 function createMuscleUpAngles(): MuscleUpAngles {
   return {
@@ -2927,6 +3068,7 @@ function drawSkeleton(
   video: HTMLVideoElement,
   pose?: Pose,
   mirror = true,
+  showFoot = false,
 ) {
   const width = video.videoWidth;
   const height = video.videoHeight;
@@ -2945,7 +3087,8 @@ function drawSkeleton(
   context.shadowColor = 'rgba(57, 255, 106, 0.7)';
   context.shadowBlur = Math.max(5, width / 130);
 
-  skeletonConnections.forEach(([start, end]) => {
+  const drawConnections = (connections: Array<[number, number]>) => {
+    connections.forEach(([start, end]) => {
     const first = keypoints[start];
     const second = keypoints[end];
     if (!first || !second || (first.score ?? 0) < 0.3 || (second.score ?? 0) < 0.3) return;
@@ -2958,10 +3101,25 @@ function drawSkeleton(
     context.strokeStyle = connectionHeld ? HELD_POINT_COLOR : GREEN;
     context.globalAlpha = connectionHeld ? HELD_POINT_ALPHA : 1;
     context.stroke();
-  });
+    });
+  };
+
+  const footConnectionKeys = new Set(
+    footConnections.map(([start, end]) => `${start}:${end}`),
+  );
+  drawConnections(
+    skeletonConnections.filter(([start, end]) => !footConnectionKeys.has(`${start}:${end}`)),
+  );
+  if (showFoot) drawConnections(footConnections);
 
   context.shadowBlur = Math.max(3, width / 200);
-  keypoints.forEach((point) => {
+  keypoints.forEach((point, index) => {
+    if (
+      !showFoot
+      && footConnections.some(([start, end]) => start === index || end === index)
+    ) {
+      return;
+    }
     if ((point.score ?? 0) < 0.3) return;
     const pointX = mirror ? width - point.x : point.x;
     context.beginPath();
@@ -3279,19 +3437,33 @@ function getTrackedPointsForExercise(
 
   return sides.flatMap((side, sideIndex) => definition.trackedJoints
     .filter(({ joint }) => joint !== 'head' || sideIndex === 0)
-    .map(({ joint, label }) => {
-    const index = joint === 'head'
-      ? 0
-      : joint === 'foot'
-        ? MUSCLE_UP_FOOT_INDEX[side]
-        : sideKeypoints[side][joint];
-    return {
-      label: definition.trackBothSides && joint !== 'head'
-        ? `${label} (${side === 'left' ? 'izq.' : 'der.'})`
-        : label,
-      point: keypoints[index],
-    };
-  }));
+    .flatMap(({ joint, label }) => {
+      const sideLabel = definition.trackBothSides && joint !== 'head'
+        ? ` (${side === 'left' ? 'izq.' : 'der.'})`
+        : '';
+      if (joint === 'foot' && exercise === 'elevacion-talones-pie') {
+        return [
+          {
+            label: `Punta${sideLabel}`,
+            point: keypoints[MUSCLE_UP_FOOT_INDEX[side]],
+          },
+          {
+            label: `Talón${sideLabel}`,
+            point: keypoints[FOOT_HEEL_INDEX[side]],
+          },
+        ];
+      }
+
+      const index = joint === 'head'
+        ? 0
+        : joint === 'foot'
+          ? MUSCLE_UP_FOOT_INDEX[side]
+          : sideKeypoints[side][joint];
+      return [{
+        label: `${label}${sideLabel}`,
+        point: keypoints[index],
+      }];
+    }));
 }
 
 function isHeldPoint(point: PosePoint | undefined) {
@@ -5990,8 +6162,9 @@ function createLiveAngleReading(
   target: string,
   min?: number,
   max?: number,
+  unit: '°' | '' = '°',
 ): LiveAngleReading {
-  return { label, value, target, min, max };
+  return { label, value, target, min, max, unit };
 }
 
 function calculateDipJointReadings(
@@ -6133,6 +6306,7 @@ function calculateExtremityAngleReadings(
     }
 
     const indexes = sideKeypoints[dominantSide];
+    const footMeasurement = calculateFootMeasurement(keypoints, dominantSide);
     return [
       createLiveAngleReading(
         'Torso',
@@ -6153,12 +6327,20 @@ function calculateExtremityAngleReadings(
       ),
       createLiveAngleReading(
         'Tobillo',
-        calculateAngle(
-          keypoints[indexes.knee],
-          keypoints[indexes.ankle],
-          keypoints[MUSCLE_UP_FOOT_INDEX[dominantSide]],
-        ),
+        footMeasurement?.ankleAngle ?? calculateAngle(
+            keypoints[indexes.knee],
+            keypoints[indexes.ankle],
+            keypoints[MUSCLE_UP_FOOT_INDEX[dominantSide]],
+          ),
         'Elevación del talón',
+      ),
+      createLiveAngleReading(
+        'Altura talón',
+        footMeasurement ? Math.round(footMeasurement.heelLiftRatio * 100) / 100 : null,
+        'WORLD 3D · 0 suelo · ≥0.25 arriba',
+        undefined,
+        undefined,
+        '',
       ),
     ];
   }
@@ -6248,9 +6430,14 @@ function calculateExtremityAngleReadings(
           : exercise === 'press-hombros-maquina' && joint === 'wrist'
             ? `Alineación ${SHOULDER_MACHINE_PRESS_ACCEPTED_WRIST_MIN_ANGLE}–${SHOULDER_MACHINE_PRESS_ACCEPTED_WRIST_MAX_ANGLE}°`
         : 'Ángulo articular';
+      const value = joint === 'ankle'
+        && exercise !== null
+        && FOOT_REFINEMENT_EXERCISES.has(exercise)
+        ? calculateFootMeasurement(keypoints, side)?.ankleAngle ?? calculateAngle(first, center, last)
+        : calculateAngle(first, center, last);
       return createLiveAngleReading(
         `${singularLabel(label)}${sideLabel}`,
-        calculateAngle(first, center, last),
+        value,
         target,
       );
     });
@@ -6932,6 +7119,10 @@ function Home() {
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const previousFootExerciseRef = useRef<ExerciseId | null>(null);
+  const previousFootRatioRef = useRef<number | null>(null);
+  const heelRaiseFootPhaseRef = useRef<'up' | 'down' | null>(null);
+  const previousLegAngleRef = useRef<number | null>(null);
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -7002,6 +7193,10 @@ function Home() {
     lastDetectorTimestampRef.current = Number.NEGATIVE_INFINITY;
     videoSizeRef.current = { width: 0, height: 0 };
     stabilityFramesRef.current = 0;
+    previousFootExerciseRef.current = null;
+    previousFootRatioRef.current = null;
+    heelRaiseFootPhaseRef.current = null;
+    previousLegAngleRef.current = null;
     setDetectionStable(false);
   }, []);
 
@@ -7164,6 +7359,36 @@ function Home() {
           pose?.keypoints,
           measurementSide,
         );
+      if (previousFootExerciseRef.current !== selectedExerciseForFrame) {
+        previousFootExerciseRef.current = selectedExerciseForFrame;
+        previousFootRatioRef.current = null;
+        heelRaiseFootPhaseRef.current = null;
+        previousLegAngleRef.current = null;
+      }
+      const previousLegAngleForFrame = previousLegAngleRef.current;
+      const heelRaiseFootMeasurement = selectedExerciseForFrame === 'elevacion-talones-pie'
+        && measurementSide
+        ? calculateFootMeasurement(pose?.keypoints, measurementSide)
+        : null;
+      const heelRaiseIsDescending = Boolean(
+        heelRaiseFootMeasurement
+        && previousFootRatioRef.current !== null
+        && heelRaiseFootPhaseRef.current === 'up'
+        && heelRaiseFootMeasurement.heelLiftRatio
+          < previousFootRatioRef.current - 0.01
+        && heelRaiseFootMeasurement.heelLiftRatio > HEEL_LIFT_WARN_RATIO,
+      );
+      if (heelRaiseFootMeasurement) {
+        if (heelRaiseFootMeasurement.heelLiftRatio >= HEEL_RAISE_UP_RATIO) {
+          heelRaiseFootPhaseRef.current = 'up';
+        } else if (heelRaiseFootMeasurement.heelLiftRatio <= HEEL_RAISE_DOWN_RATIO) {
+          heelRaiseFootPhaseRef.current = 'down';
+        }
+        previousFootRatioRef.current = heelRaiseFootMeasurement.heelLiftRatio;
+      } else if (selectedExerciseForFrame !== 'elevacion-talones-pie') {
+        previousFootRatioRef.current = null;
+        heelRaiseFootPhaseRef.current = null;
+      }
       const frameCanMeasure = Boolean(
         frameCameraReady
         && hasFreshPose
@@ -7470,6 +7695,40 @@ function Home() {
         setExerciseRepPhase(resetTracker.phase);
         setExerciseMinimumAngle(resetTracker.endpointAngle);
       }
+      if (
+        rawAngle !== null
+        && !frameLowConfidence
+        && hasFreshPose
+        && frameDetectionStable
+      ) {
+        previousLegAngleRef.current = rawAngle;
+      } else if (selectedExerciseForFrame !== 'sentadillas'
+        && selectedExerciseForFrame !== 'prensa-piernas'
+        && selectedExerciseForFrame !== 'zancadas'
+        && selectedExerciseForFrame !== 'zancada-banco') {
+        previousLegAngleRef.current = null;
+      }
+      const heelLiftFeedback = getHeelLiftWarning(
+        selectedExerciseForFrame,
+        pose?.keypoints,
+        measurementSide,
+        squatTrackerRef.current.phase,
+        exerciseRepTrackerRef.current.phase,
+        previousLegAngleForFrame,
+        rawAngle,
+      );
+      const heelRaiseFeedback = heelRaiseIsDescending
+        ? {
+            tone: 'warning' as const,
+            message: 'Baja el talón con control',
+            detail: `La elevación sigue en ${Math.round(
+              (heelRaiseFootMeasurement?.heelLiftRatio ?? 0) * 100,
+            )}% durante el descenso. Llega hasta ≤${HEEL_RAISE_DOWN_RATIO} para apoyar el pie.`,
+          }
+        : null;
+      const footTechniqueFeedback = frameLowConfidence
+        ? null
+        : heelLiftFeedback ?? heelRaiseFeedback;
       let displayAngle = frameDetectionStable ? nextAngle : null;
       if (nextAngle === null) {
         angleDisplaySamplesRef.current = [];
@@ -7526,7 +7785,8 @@ function Home() {
       setTechniqueFeedback(
         frameLowConfidence
           ? lowConfidenceFeedback
-          : selectedExerciseRef.current === 'flexiones'
+          : footTechniqueFeedback
+            ?? (selectedExerciseRef.current === 'flexiones'
           ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide)
           : selectedExerciseRef.current === 'flexiones-declinadas'
             ? getPushupTechniqueFeedback(pose?.keypoints, nextDominantSide, 'declined')
@@ -7581,8 +7841,15 @@ function Home() {
                  ? getBenchLungeTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : selectedExerciseRef.current === 'plancha'
                 ? getPlankTechniqueFeedback(pose?.keypoints, nextDominantSide)
-            : defaultTechniqueFeedback,
+             : defaultTechniqueFeedback),
       );
+      if (
+        !frameLowConfidence
+        && selectedExerciseRef.current === 'sentadillas'
+        && heelLiftFeedback
+      ) {
+        setSquatFeedback(heelLiftFeedback);
+      }
       if (frameLowConfidence) {
         if (selectedExerciseRef.current === 'sentadillas') {
           setSquatFeedback(lowConfidenceFeedback);
@@ -7620,6 +7887,7 @@ function Home() {
           video,
           pose,
           cameraFacingModeRef.current === 'user',
+          FOOT_OVERLAY_EXERCISES.has(selectedExerciseForFrame),
         );
       }
 
@@ -9023,7 +9291,11 @@ function Home() {
                               className="live-angle-reading"
                             >
                               <span className="live-angle-label">{reading.label}</span>
-                              <strong>{reading.value === null ? '—' : `${reading.value}°`}</strong>
+                              <strong>
+                                {reading.value === null
+                                  ? '—'
+                                  : `${reading.value}${reading.unit ?? '°'}`}
+                              </strong>
                               <small>{reading.target}</small>
                             </div>
                           ))}

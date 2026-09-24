@@ -64,6 +64,12 @@ export const skeletonConnections: Array<[number, number]> = [
   [29, 31], [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
 ];
 
+// Conexiones de talón y punta; se dibujan aparte para poder atenuarlas como una unidad.
+export const footConnections: Array<[number, number]> = [
+  [27, 29], [27, 31], [29, 31],
+  [28, 30], [28, 32], [30, 32],
+];
+
 function landmarkScore(landmark: NormalizedLandmark | Landmark) {
   const presence = (landmark as NormalizedLandmark & { presence?: number }).presence ?? 0;
   return Math.max(landmark.visibility ?? 0, presence);

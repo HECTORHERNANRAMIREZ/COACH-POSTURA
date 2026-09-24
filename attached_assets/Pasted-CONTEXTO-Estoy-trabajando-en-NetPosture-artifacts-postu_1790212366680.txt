@@ -1,0 +1,36 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas las Fases 1 a 5 (One Euro, retención por score, huesos, consistencia izquierda/derecha, modelo heavy con fallback y cámara 1280x720). Los landmarks de pie (29/30 talones, 31/32 puntas) ya pasan por los filtros de las fases anteriores. Esta es la FASE 6: aprovechar los puntos de pie para mejorar la lectura de tobillo y pie en los ejercicios de pierna. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño general, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Haz solo los cambios mínimos.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector.
+- No cambies los umbrales de repeticiones existentes salvo que sea imprescindible; si lo haces, dime cuál y por qué.
+- Todos los parámetros ajustables van como constantes con nombre, con un comentario que explique qué hacen.
+- No añadas restricciones de longitud de hueso para segmentos del pie (tobillo-talón, tobillo-punta): son demasiado cortos y ruidosos.
+
+TAREA
+1. Localiza en el catálogo los ejercicios de pierna que usan tobillo o pie. Como mínimo: sentadillas, zancadas, elevación de talones de pie (elevacion-talones-pie), prensa y hip thrust (hip-thrust-barra). Busca en el catálogo los ids exactos de los demás ejercicios de pierna y dime la lista final que consideraste.
+2. Estrategia de visibilidad, para no hacer más estricto el encuadre sin necesidad:
+   - En elevación de talones: los puntos de pie (talón y punta) SÍ son necesarios. Añade 'foot' a trackedJoints de ese ejercicio y actualiza trackedAngleLabels si corresponde.
+   - En el resto de ejercicios de pierna: los puntos de pie son opcionales. Si están disponibles y son fiables (no retenidos), úsalos para refinar; si no lo están, usa el tobillo como hasta ahora. NO los añadas como articulación requerida en trackedJoints, para no generar advertencias de encuadre nuevas.
+3. Lecturas nuevas, calculadas con coordenadas WORLD 3D y sobre los puntos ya filtrados:
+   - Ángulo de tobillo: rodilla -> tobillo -> punta del pie (indices 25/26 -> 27/28 -> 31/32).
+   - Altura del talón respecto a la punta: diferencia vertical entre talón (29/30) y punta (31/32) en world 3D, normalizada por la longitud del pie (distancia talón-punta) para que no dependa del tamaño del usuario ni de la distancia a la cámara.
+4. Uso concreto por ejercicio:
+   - Elevación de talones: usa la altura normalizada del talón para detectar la subida (talón levantado) y la bajada (talón apoyado), con constantes HEEL_RAISE_UP_RATIO y HEEL_RAISE_DOWN_RATIO (valores iniciales 0.25 y 0.10, ajustables). Mantén la lógica de contador existente y solo usa esta lectura como señal más precisa cuando los puntos de pie sean fiables; si no lo son, mantén el comportamiento actual.
+   - Sentadillas, zancadas y prensa: si el talón se levanta más de HEEL_LIFT_WARN_RATIO (valor inicial 0.20) durante la fase descendente, añade una advertencia de tono `warning` con un mensaje corto en español (por ejemplo, "Mantén los talones apoyados"). Solo si los puntos de pie son fiables.
+   - Hip thrust: úsalos solo para el overlay, sin nuevas reglas de feedback.
+5. Los puntos de pie retenidos (held) o con baja confianza NO deben generar feedback nuevo ni cambiar fases del contador; aplica el mismo flag de baja confianza de la Fase 2.
+6. Overlay:
+   - Dibuja los puntos de pie y sus conexiones (tobillo-talón, talón-punta, tobillo-punta, en ambos lados) SOLO en los ejercicios que los usan, según el punto 4.
+   - Añade esas conexiones como un conjunto separado de skeletonConnections (por ejemplo footConnections) para no alterar el esqueleto que ya se dibuja en los demás ejercicios.
+   - Usa el mismo criterio visual de puntos retenidos (color #ffd166, opacidad 0.5).
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH) y que el flujo cámara -> modelo -> tracking arranca.
+- Confirma que dominadas y un ejercicio de brazo no cambian de comportamiento y que las sentadillas siguen contando repeticiones como antes cuando los pies no se ven o no son fiables.
+- No instales dependencias nuevas salvo que sea imprescindible.
+
+ENTREGA
+Al terminar dame un resumen con: archivos modificados, la lista final de ejercicios de pierna considerados y cuál usa qué, valores iniciales de cada constante, qué ejercicios pasaron a requerir 'foot' en trackedJoints (debería ser solo elevación de talones) y qué debo probar en cámara real (por ejemplo, sentadillas levantando a propósito los talones, y elevaciones de talones de perfil).
