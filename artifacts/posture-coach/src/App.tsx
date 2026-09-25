@@ -7467,6 +7467,28 @@ function Home() {
     }, 1800);
   }, []);
 
+  const copyCombinedDiagnostics = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API no disponible');
+      }
+      await navigator.clipboard.writeText(
+        JSON.stringify(pullupDiagnosticBufferRef.current, null, 2),
+      );
+      setDiagnosticCopyMessage('Copiado');
+    } catch {
+      setDiagnosticCopyMessage('No se pudo copiar');
+    }
+
+    if (diagnosticCopyMessageTimeoutRef.current !== null) {
+      window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
+    }
+    diagnosticCopyMessageTimeoutRef.current = window.setTimeout(() => {
+      setDiagnosticCopyMessage(null);
+      diagnosticCopyMessageTimeoutRef.current = null;
+    }, 1800);
+  }, []);
+
   const copyViewDiagnostics = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -8076,6 +8098,21 @@ function Home() {
         };
         const leftElbowAngle = pullupElbowAnglesForFrame.left;
         const rightElbowAngle = pullupElbowAnglesForFrame.right;
+        const frontBackDiagnostics = pose
+          ? getFrontBackDiagnostics(pose)
+          : null;
+        const unifiedView = {
+          shoulderYawDeg: viewEstimate.shoulderYawDeg,
+          hipYawDeg: viewEstimate.hipYawDeg,
+          yawDeg: nextViewAlignment.yawDeg,
+          leftShoulderX: frontBackDiagnostics?.leftShoulderX ?? null,
+          rightShoulderX: frontBackDiagnostics?.rightShoulderX ?? null,
+          faceScore: frontBackDiagnostics?.faceScore ?? null,
+          earScore: frontBackDiagnostics?.earScore ?? null,
+          cameraFacingMode: cameraFacingModeRef.current,
+          estimatedView: nextViewAlignment.estimatedView,
+          status: nextViewAlignment.status,
+        };
         const diagnosticSnapshot: ExerciseDiagnosticSnapshot = {
           timestamp: frameTimestamp,
           exercise: selectedExerciseForFrame,
@@ -8175,24 +8212,13 @@ function Home() {
             visiblePoints,
             pullupAngleForFrame,
           ),
+          view: unifiedView,
         };
-        const frontBackDiagnostics = pose
-          ? getFrontBackDiagnostics(pose)
-          : null;
         const viewDiagnosticSnapshot: ViewDiagnosticSnapshot = {
           timestamp: frameTimestamp,
           exercise: selectedExerciseForFrame,
-          shoulderYawDeg: viewEstimate.shoulderYawDeg,
-          hipYawDeg: viewEstimate.hipYawDeg,
-          yawDeg: nextViewAlignment.yawDeg,
-          leftShoulderX: frontBackDiagnostics?.leftShoulderX ?? null,
-          rightShoulderX: frontBackDiagnostics?.rightShoulderX ?? null,
-          faceScore: frontBackDiagnostics?.faceScore ?? null,
-          earScore: frontBackDiagnostics?.earScore ?? null,
-          cameraFacingMode: cameraFacingModeRef.current,
-          estimatedView: nextViewAlignment.estimatedView,
+          ...unifiedView,
           recommendedView,
-          status: nextViewAlignment.status,
           atBottom: pullupExtremityValidation.atBottom,
           atTop: pullupExtremityValidation.atTop,
         };
@@ -10160,6 +10186,15 @@ function Home() {
                     >
                       <Copy size={13} strokeWidth={2} aria-hidden="true" />
                       <span>Copiar diagnóstico</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="diagnostic-copy-button"
+                      data-testid="button-copy-combined-diagnostics"
+                      onClick={() => void copyCombinedDiagnostics()}
+                    >
+                      <Copy size={13} strokeWidth={2} aria-hidden="true" />
+                      <span>Copiar diagnóstico completo</span>
                     </button>
                     {diagnosticCopyMessage && (
                       <span

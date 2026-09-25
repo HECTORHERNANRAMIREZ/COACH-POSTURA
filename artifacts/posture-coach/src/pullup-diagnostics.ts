@@ -61,4 +61,16 @@ export type ExerciseDiagnosticSnapshot = {
   goodRepetitions: number;
   event: string | null;
   blockingReasons: string[];
+  view: {
+    shoulderYawDeg: number | null;
+    hipYawDeg: number | null;
+    yawDeg: number | null;
+    leftShoulderX: number | null;
+    rightShoulderX: number | null;
+    faceScore: number | null;
+    earScore: number | null;
+    cameraFacingMode: string;
+    estimatedView: string;
+    status: string;
+  };
 };

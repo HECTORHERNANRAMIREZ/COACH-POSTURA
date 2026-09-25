@@ -1,0 +1,32 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto: tenemos dos exportaciones de diagnóstico separadas ([pullup-diagnostics] y [view-diagnostics]) que se graban en buffers independientes de 200 frames cada uno. En la práctica, sus rangos de tiempo no coinciden (en una sesión real, pullup cubrió 45613-55127ms y view cubrió 48889-66803ms), lo que impide correlacionar con precisión qué estaba pasando con la vista exactamente en los momentos donde atTop/atBottom fueron true.
+
+Tarea — ETAPA 4: unificar diagnóstico en un solo registro por frame
+
+1. En el mismo processFrame() donde ya se construye el ExerciseDiagnosticSnapshot (pullup), agrega los campos de vista ya existentes (shoulderYawDeg, hipYawDeg, yawDeg, leftShoulderX, rightShoulderX, faceScore, earScore, cameraFacingMode, estimatedView, status) como un sub-objeto, por ejemplo:
+
+view: {
+  shoulderYawDeg: number | null;
+  hipYawDeg: number | null;
+  yawDeg: number | null;
+  leftShoulderX: number | null;
+  rightShoulderX: number | null;
+  faceScore: number | null;
+  earScore: number | null;
+  cameraFacingMode: string;
+  estimatedView: string;
+  status: string;
+}
+
+2. Esto debe leer los mismos valores que ya calcula ViewEstimator en ese frame — no recalcules nada, no crees lógica paralela.
+
+3. Mantén los botones/exports existentes de "Copiar diagnóstico" y "Copiar vista" tal como están (por compatibilidad), pero agrega uno nuevo: "Copiar diagnóstico completo" que exporte el snapshot unificado con ambos bloques garantizado por el mismo timestamp de frame.
+
+4. No cambies ninguna lógica de conteo, rangos, tolerancias, ni la clasificación de vista. Es solo una unificación de exportación de datos.
+
+Verificación obligatoria:
+- pnpm --filter @workspace/posture-coach run typecheck
+- Confirma que el nuevo export unificado tiene exactamente el mismo número de entradas que el buffer de pullup, y que cada entrada trae su bloque view correspondiente al mismo frame exacto (mismo timestamp, no aproximado).
+
+No implementes nada más. Esto es solo para poder diagnosticar con precisión en el siguiente paso.
