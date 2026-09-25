@@ -137,6 +137,7 @@ import {
   assessExerciseView,
   createInitialViewAlignment,
   createUnknownViewEstimate,
+  getFrontBackDiagnostics,
   type ExerciseView,
   type ViewAlignmentState,
 } from '@/view-estimation';
@@ -186,6 +187,11 @@ type ViewDiagnosticSnapshot = {
   shoulderYawDeg: number | null;
   hipYawDeg: number | null;
   yawDeg: number | null;
+  leftShoulderX: number | null;
+  rightShoulderX: number | null;
+  faceScore: number | null;
+  earScore: number | null;
+  cameraFacingMode: CameraFacingMode;
   estimatedView: ViewAlignmentState['estimatedView'];
   recommendedView: ViewAlignmentState['recommendedView'];
   status: ViewAlignmentState['status'];
@@ -8170,12 +8176,20 @@ function Home() {
             pullupAngleForFrame,
           ),
         };
+        const frontBackDiagnostics = pose
+          ? getFrontBackDiagnostics(pose)
+          : null;
         const viewDiagnosticSnapshot: ViewDiagnosticSnapshot = {
           timestamp: frameTimestamp,
           exercise: selectedExerciseForFrame,
           shoulderYawDeg: viewEstimate.shoulderYawDeg,
           hipYawDeg: viewEstimate.hipYawDeg,
           yawDeg: nextViewAlignment.yawDeg,
+          leftShoulderX: frontBackDiagnostics?.leftShoulderX ?? null,
+          rightShoulderX: frontBackDiagnostics?.rightShoulderX ?? null,
+          faceScore: frontBackDiagnostics?.faceScore ?? null,
+          earScore: frontBackDiagnostics?.earScore ?? null,
+          cameraFacingMode: cameraFacingModeRef.current,
           estimatedView: nextViewAlignment.estimatedView,
           recommendedView,
           status: nextViewAlignment.status,

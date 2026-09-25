@@ -165,7 +165,14 @@ function getPitchDeg(
   ) * (180 / Math.PI);
 }
 
-function estimateFrontBack(pose: Pose): EstimatedView {
+export type FrontBackDiagnostics = {
+  leftShoulderX: number | null;
+  rightShoulderX: number | null;
+  faceScore: number;
+  earScore: number;
+};
+
+export function getFrontBackDiagnostics(pose: Pose): FrontBackDiagnostics {
   const nose = getReliableImagePoint(pose, 0);
   const leftEye = getReliableImagePoint(pose, 2);
   const rightEye = getReliableImagePoint(pose, 5);
@@ -178,17 +185,31 @@ function estimateFrontBack(pose: Pose): EstimatedView {
     .map((point) => point?.score ?? 0);
   const earFeatures = [leftEar, rightEar]
     .map((point) => point?.score ?? 0);
-  const faceScore = average(facialFeatures) ?? 0;
-  const earScore = average(earFeatures) ?? 0;
-  if (!leftShoulder || !rightShoulder) return 'unknown';
+
+  return {
+    leftShoulderX: leftShoulder?.x ?? null,
+    rightShoulderX: rightShoulder?.x ?? null,
+    faceScore: average(facialFeatures) ?? 0,
+    earScore: average(earFeatures) ?? 0,
+  };
+}
+
+function estimateFrontBack(pose: Pose): EstimatedView {
+  const {
+    leftShoulderX,
+    rightShoulderX,
+    faceScore,
+    earScore,
+  } = getFrontBackDiagnostics(pose);
+  if (leftShoulderX === null || rightShoulderX === null) return 'unknown';
 
   // En la pose no espejada que recibe el detector, una persona de frente
   // suele tener su hombro anatómico izquierdo a la derecha de la imagen;
   // de espaldas ocurre lo contrario. La señal de nariz/ojos prevalece y el
   // orden de hombros resuelve los casos en los que la cara está parcialmente
   // oculta.
-  const frontShoulderOrder = leftShoulder.x > rightShoulder.x;
-  const backShoulderOrder = leftShoulder.x < rightShoulder.x;
+  const frontShoulderOrder = leftShoulderX > rightShoulderX;
+  const backShoulderOrder = leftShoulderX < rightShoulderX;
   if (
     faceScore >= VIEW_MIN_SCORE
     && (
