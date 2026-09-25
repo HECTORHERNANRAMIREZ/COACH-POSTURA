@@ -53,6 +53,10 @@ export type ViewEstimatorOptions = {
   reinforceBackToFront?: boolean;
 };
 
+export type ViewAssessmentOptions = {
+  allowFrontForBack?: boolean;
+};
+
 export type ViewAssessment = {
   recommendedView: ExerciseView;
   estimatedView: EstimatedView;
@@ -263,6 +267,7 @@ function classifyByYaw(
 function getViewDeviation(
   recommendedView: ExerciseView,
   estimate: ViewEstimate,
+  options: ViewAssessmentOptions = {},
 ) {
   if (recommendedView === 'any') return 0;
   if (estimate.yawDeg === null || estimate.view === 'unknown') return null;
@@ -274,7 +279,10 @@ function getViewDeviation(
       ? estimate.yawDeg
       : VIEW_OPPOSITE_DISTANCE_DEG;
   }
-  return estimate.view === 'back'
+  return (
+    estimate.view === 'back'
+    || (options.allowFrontForBack && estimate.view === 'front')
+  )
     ? estimate.yawDeg
     : VIEW_OPPOSITE_DISTANCE_DEG;
 }
@@ -293,9 +301,10 @@ export function createUnknownViewEstimate(): ViewEstimate {
 export function createViewAssessment(
   recommendedView: ExerciseView = 'any',
   estimate: ViewEstimate = createUnknownViewEstimate(),
+  options: ViewAssessmentOptions = {},
 ): ViewAssessment {
   const toleranceDeg = VIEW_TOLERANCE_DEFAULT_DEG;
-  const deviationDeg = getViewDeviation(recommendedView, estimate);
+  const deviationDeg = getViewDeviation(recommendedView, estimate, options);
   const known = recommendedView === 'any' || deviationDeg !== null;
   const status: ViewStatus = recommendedView === 'any'
     ? 'good'
@@ -323,8 +332,9 @@ export function assessExerciseView(
   recommendedView: ExerciseView = 'any',
   estimate: ViewEstimate = createUnknownViewEstimate(),
   viewToleranceDeg = VIEW_TOLERANCE_DEFAULT_DEG,
+  options: ViewAssessmentOptions = {},
 ): ViewAssessment {
-  const assessment = createViewAssessment(recommendedView, estimate);
+  const assessment = createViewAssessment(recommendedView, estimate, options);
   if (recommendedView === 'any' || assessment.deviationDeg === null) {
     return {
       ...assessment,
@@ -496,6 +506,16 @@ function getViewFeedback(
     return {
       message: `Acércate a una vista ${getViewLabel(assessment.recommendedView)}`,
       detail: 'Puedes continuar, pero una vista más alineada hará más fiable la lectura.',
+    };
+  }
+  if (
+    assessment.status === 'good'
+    && assessment.recommendedView === 'back'
+    && assessment.estimatedView === 'front'
+  ) {
+    return {
+      message: 'Vista frontal válida',
+      detail: 'Puedes continuar. La vista trasera sigue siendo la recomendada para mantener mejor visibles las articulaciones.',
     };
   }
   return {

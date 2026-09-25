@@ -518,7 +518,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'espalda',
     description: 'Lleva los codos hacia abajo y evita balancear el cuerpo.',
     angleLabel: 'Codo · tracción vertical',
-    cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
+    cameraNote: 'Nota: vista trasera recomendada; la frontal también es válida si dejas visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -533,7 +533,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'espalda',
     description: 'Mismo recorrido que la dominada, con agarre supino.',
     angleLabel: 'Extensión completa · cabeza sobre muñecas',
-    cameraNote: 'Nota: vista trasera; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
+    cameraNote: 'Nota: vista trasera recomendada; la frontal también es válida si dejas visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -7685,6 +7685,8 @@ function Home() {
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
       const activeExerciseDefinition = getExercise(selectedExerciseForFrame);
+      const allowsFrontView = selectedExerciseForFrame === 'dominadas'
+        || selectedExerciseForFrame === 'dominadas-supinas';
       const sideConsistentPose = detectedPose
         ? sideConsistencyRef.current.filter(
             detectedPose,
@@ -7716,7 +7718,10 @@ function Home() {
         ? viewEstimatorRef.current.update(
             pose,
             cameraFacingModeRef.current,
-            { reinforceBackToFront: reinforceBackToFrontRef.current },
+            {
+              reinforceBackToFront: reinforceBackToFrontRef.current
+                && !allowsFrontView,
+            },
           )
         : createUnknownViewEstimate();
       if (!pose) {
@@ -7725,7 +7730,12 @@ function Home() {
       }
       const nextViewAlignment = pose
         ? viewAlignmentGuardRef.current.update(
-            assessExerciseView(recommendedView, viewEstimate, viewToleranceDeg),
+            assessExerciseView(
+              recommendedView,
+              viewEstimate,
+              viewToleranceDeg,
+              { allowFrontForBack: allowsFrontView },
+            ),
             now,
           )
         : {
@@ -7744,7 +7754,10 @@ function Home() {
           };
       const previousViewAlignment = viewAlignmentRef.current;
       viewAlignmentRef.current = nextViewAlignment;
-      if (!reinforceBackToFrontRef.current) {
+      if (allowsFrontView) {
+        backViewStableSinceRef.current = null;
+        reinforceBackToFrontRef.current = false;
+      } else if (!reinforceBackToFrontRef.current) {
         const validBackView = (
           recommendedView === 'back'
           && nextViewAlignment.estimatedView === 'back'

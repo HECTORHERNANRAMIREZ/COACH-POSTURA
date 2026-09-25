@@ -1,0 +1,21 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Decisión de producto confirmada por el dueño de la app: para dominadas, no importa si la persona se graba de frente o de espaldas — lo único que importa es que su cuerpo esté completamente visible y que los ángulos cumplan el rango ya calibrado. La vista LATERAL (side) sigue siendo un problema real porque oculta articulaciones, esa sí debe seguir bloqueando.
+
+Tarea — implementar:
+
+1. Para el ejercicio 'dominadas' (y 'dominadas-supinas' si aplica), cambia la evaluación de vista para que tanto estimatedView='front' como estimatedView='back' cuenten como válidas (status 'good' o 'acceptable', según corresponda por yaw), en vez de forzar status='bad' cuando no es 'back'. Mantén 'side' y 'unknown' con su comportamiento actual de bloqueo/neutralidad.
+
+2. La interfaz debe seguir sugiriendo al usuario grabarse de espaldas como recomendación (texto/tip visual), pero esto ya NO debe traducirse en bloqueo de medición si el usuario está de frente con buena visibilidad.
+
+3. Revisa dónde vive la lógica de "recommendedView: back" para dominadas y ajústala mínimamente — probablemente en getViewDeviation() o assessExerciseView(), donde hoy 'front' fuerza VIEW_OPPOSITE_DISTANCE_DEG (180°). Ahora, si estimatedView es 'front' Y recommendedView es 'back' PERO el yaw es bajo (buena vista frontal real), no debe forzarse esa desviación de 180°.
+
+4. Verifica que la lógica de estabilidad reforzada back→front que implementamos en el paso anterior ya no sea necesaria para dominadas (puede quedar como protección general para otros ejercicios que sí dependan estrictamente de una vista, pero para dominadas ya no debería activarse ningún bloqueo por este motivo).
+
+5. No toques bottomBase, topBase, tolerancias de ángulo, ni la lógica de qué cuenta como repetición correcta o incorrecta. Esto es solo sobre qué vista se considera aceptable.
+
+Verificación obligatoria:
+- pnpm --filter @workspace/posture-coach run typecheck
+- Nueva sesión real de dominadas ("Copiar diagnóstico completo"). Esta vez debe mostrar: measurementBlocked=false en la mayoría de frames, frameStable=true con frecuencia, y lo más importante — phase avanzando más allá de "esperando abajo", con al menos 1 repetición contada (correcta o incorrecta según tu ejecución real).
+
+Implementa ya, no solo investigues. Esta vez confirma con la sesión real si por fin se cuenta al menos una repetición.
