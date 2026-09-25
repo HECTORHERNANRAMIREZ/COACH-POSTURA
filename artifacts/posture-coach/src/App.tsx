@@ -131,6 +131,7 @@ import {
 import {
   VIEW_TOLERANCE_DEFAULT_DEG,
   VIEW_SEMIPROFILE_TOLERANCE_DEG,
+  VIEW_BACK_ESTABLISH_SECONDS,
   VIEW_UI_UPDATE_MS,
   ViewAlignmentGuard,
   ViewEstimator,
@@ -7410,6 +7411,8 @@ function Home() {
   const viewEstimatorRef = useRef(new ViewEstimator());
   const viewAlignmentGuardRef = useRef(new ViewAlignmentGuard());
   const viewAlignmentRef = useRef<ViewAlignmentState>(createInitialViewAlignment());
+  const backViewStableSinceRef = useRef<number | null>(null);
+  const reinforceBackToFrontRef = useRef(false);
   const lastViewUiUpdateRef = useRef(0);
   const lastPullupDiagnosticLogAtRef = useRef(0);
   const pullupDiagnosticBufferRef = useRef<ExerciseDiagnosticSnapshot[]>([]);
@@ -7581,6 +7584,8 @@ function Home() {
     viewEstimatorRef.current.reset();
     viewAlignmentGuardRef.current.reset();
     viewAlignmentRef.current = createInitialViewAlignment();
+    backViewStableSinceRef.current = null;
+    reinforceBackToFrontRef.current = false;
     lastViewUiUpdateRef.current = 0;
     setViewAlignment(viewAlignmentRef.current);
     rawPoseForDebugRef.current = undefined;
@@ -7708,7 +7713,11 @@ function Home() {
       const viewToleranceDeg = activeExerciseDefinition?.viewToleranceDeg
         ?? VIEW_TOLERANCE_DEFAULT_DEG;
       const viewEstimate = pose
-        ? viewEstimatorRef.current.update(pose, cameraFacingModeRef.current)
+        ? viewEstimatorRef.current.update(
+            pose,
+            cameraFacingModeRef.current,
+            { reinforceBackToFront: reinforceBackToFrontRef.current },
+          )
         : createUnknownViewEstimate();
       if (!pose) {
         viewEstimatorRef.current.markPoseMissing();
@@ -7735,6 +7744,27 @@ function Home() {
           };
       const previousViewAlignment = viewAlignmentRef.current;
       viewAlignmentRef.current = nextViewAlignment;
+      if (!reinforceBackToFrontRef.current) {
+        const validBackView = (
+          recommendedView === 'back'
+          && nextViewAlignment.estimatedView === 'back'
+          && (
+            nextViewAlignment.status === 'good'
+            || nextViewAlignment.status === 'acceptable'
+          )
+        );
+        if (validBackView) {
+          backViewStableSinceRef.current ??= now;
+          if (
+            now - backViewStableSinceRef.current
+            >= VIEW_BACK_ESTABLISH_SECONDS * 1000
+          ) {
+            reinforceBackToFrontRef.current = true;
+          }
+        } else {
+          backViewStableSinceRef.current = null;
+        }
+      }
       if (
         nextViewAlignment.status !== previousViewAlignment.status
         || nextViewAlignment.blocking !== previousViewAlignment.blocking

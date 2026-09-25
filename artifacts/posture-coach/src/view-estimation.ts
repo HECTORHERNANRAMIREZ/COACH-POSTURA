@@ -18,6 +18,10 @@ export const VIEW_MIN_SCORE = 0.4;
 export const VIEW_FACE_MARGIN = 0.05;
 // Frames consecutivos necesarios para cambiar entre frente y espalda.
 export const VIEW_FACE_SWITCH_FRAMES = 5;
+// Tiempo de vista trasera válida necesario para activar la estabilidad reforzada.
+export const VIEW_BACK_ESTABLISH_SECONDS = 1;
+// Evidencia consecutiva adicional para aceptar un cambio transitorio back → front.
+export const VIEW_BACK_TO_FRONT_SWITCH_FRAMES = 12;
 // Frames sin pose antes de limpiar por completo la estimación de vista.
 export const VIEW_POSE_MISSING_RESET_FRAMES = 10;
 // Tiempo que una vista incorrecta debe mantenerse antes de mostrar el aviso fuerte.
@@ -43,6 +47,10 @@ export type ViewEstimate = {
   pitchDeg: number | null;
   view: EstimatedView;
   source: 'shoulders' | 'hips' | 'unknown';
+};
+
+export type ViewEstimatorOptions = {
+  reinforceBackToFront?: boolean;
 };
 
 export type ViewAssessment = {
@@ -353,6 +361,7 @@ export class ViewEstimator {
   update(
     pose: Pose,
     cameraFacingMode: CameraFacingMode = 'environment',
+    options: ViewEstimatorOptions = {},
   ): ViewEstimate {
     this.missingPoseFrames = 0;
     const leftShoulder = getWorldPoint(pose, 11);
@@ -412,7 +421,12 @@ export class ViewEstimator {
         this.faceCandidate = candidateView;
         this.faceCandidateFrames = 1;
       }
-      if (this.faceCandidateFrames >= VIEW_FACE_SWITCH_FRAMES) {
+      const requiredSwitchFrames = options.reinforceBackToFront
+        && this.stableView === 'back'
+        && candidateView === 'front'
+        ? VIEW_BACK_TO_FRONT_SWITCH_FRAMES
+        : VIEW_FACE_SWITCH_FRAMES;
+      if (this.faceCandidateFrames >= requiredSwitchFrames) {
         this.stableView = candidateView;
         this.faceCandidate = 'unknown';
         this.faceCandidateFrames = 0;
