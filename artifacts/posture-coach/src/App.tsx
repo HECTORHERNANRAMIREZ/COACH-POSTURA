@@ -3176,6 +3176,8 @@ function advancePullupTracker(
   return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
 }
 
+const HAND_DETAIL_LANDMARKS = new Set([17, 18, 19, 20, 21, 22]);
+
 function drawSkeleton(
   canvas: HTMLCanvasElement,
   video: HTMLVideoElement,
@@ -3203,24 +3205,25 @@ function drawSkeleton(
 
   const drawConnections = (connections: Array<[number, number]>) => {
     connections.forEach(([start, end]) => {
-    const first = keypoints[start];
-    const second = keypoints[end];
-    if (!first || !second || (first.score ?? 0) < 0.3 || (second.score ?? 0) < 0.3) return;
-    const firstX = mirror ? width - first.x : first.x;
-    const secondX = mirror ? width - second.x : second.x;
-    const connectionHeld = isHeldPoint(first) || isHeldPoint(second);
-    context.beginPath();
-    context.moveTo(firstX, first.y);
-    context.lineTo(secondX, second.y);
-    const connectionHasBoneHeld = first.heldReason === 'bone-length'
-      || second.heldReason === 'bone-length';
-    context.strokeStyle = connectionHeld
-      ? debugVisuals && connectionHasBoneHeld
-        ? DEBUG_BONE_HELD_COLOR
-        : HELD_POINT_COLOR
-      : GREEN;
-    context.globalAlpha = connectionHeld ? HELD_POINT_ALPHA : 1;
-    context.stroke();
+      if (HAND_DETAIL_LANDMARKS.has(start) || HAND_DETAIL_LANDMARKS.has(end)) return;
+      const first = keypoints[start];
+      const second = keypoints[end];
+      if (!first || !second || (first.score ?? 0) < 0.3 || (second.score ?? 0) < 0.3) return;
+      const firstX = mirror ? width - first.x : first.x;
+      const secondX = mirror ? width - second.x : second.x;
+      const connectionHeld = isHeldPoint(first) || isHeldPoint(second);
+      context.beginPath();
+      context.moveTo(firstX, first.y);
+      context.lineTo(secondX, second.y);
+      const connectionHasBoneHeld = first.heldReason === 'bone-length'
+        || second.heldReason === 'bone-length';
+      context.strokeStyle = connectionHeld
+        ? debugVisuals && connectionHasBoneHeld
+          ? DEBUG_BONE_HELD_COLOR
+          : HELD_POINT_COLOR
+        : GREEN;
+      context.globalAlpha = connectionHeld ? HELD_POINT_ALPHA : 1;
+      context.stroke();
     });
   };
 
@@ -3234,6 +3237,7 @@ function drawSkeleton(
 
   context.shadowBlur = Math.max(3, width / 200);
   keypoints.forEach((point, index) => {
+    if (HAND_DETAIL_LANDMARKS.has(index)) return;
     if (
       !showFoot
       && footConnections.some(([start, end]) => start === index || end === index)
