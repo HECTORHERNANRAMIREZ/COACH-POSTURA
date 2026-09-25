@@ -2294,6 +2294,62 @@
   outline-offset: 3px;
 }
 
+.diagnostic-copy-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.diagnostic-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.34rem;
+  min-height: 1.82rem;
+  padding: 0.38rem 0.58rem;
+  border: 1px solid rgba(181, 255, 197, 0.24);
+  border-radius: 999px;
+  background: rgba(7, 24, 24, 0.82);
+  box-shadow: 0 0.45rem 1.1rem rgba(0, 0, 0, 0.2);
+  color: rgba(181, 255, 197, 0.78);
+  cursor: pointer;
+  font-family: var(--app-font-sans);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.diagnostic-copy-button:hover {
+  border-color: rgba(181, 255, 197, 0.52);
+  background: rgba(12, 42, 32, 0.94);
+  transform: translateY(-1px);
+}
+
+.diagnostic-copy-button:focus-visible {
+  outline: 2px solid #b5ffc5;
+  outline-offset: 3px;
+}
+
+.diagnostic-copy-status {
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(6, 15, 28, 0.9);
+  font-family: var(--app-font-sans);
+  font-size: 0.56rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.diagnostic-copy-status.is-success {
+  color: #8bffa5;
+}
+
+.diagnostic-copy-status.is-error {
+  color: #ff9b93;
+}
+
 .diagnostic-panel {
   width: min(15rem, calc(100vw - 1rem));
   max-height: min(42vh, 18rem);

@@ -24,6 +24,7 @@ import {
   Camera,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Maximize2,
   ShieldCheck,
   Square,
@@ -176,6 +177,8 @@ const pullupScrollFrames = [
 // directamente mientras agregamos y ajustamos ejercicios.
 // Para reactivar login y pagos, cambiar este valor a true.
 const AUTH_AND_BILLING_ENABLED = false;
+const PULLUP_DIAGNOSTIC_BUFFER_LIMIT = 200;
+const PULLUP_DIAGNOSTIC_EXPORT_ENABLED = import.meta.env.DEV;
 
 const clerkPubKey = AUTH_AND_BILLING_ENABLED
   ? publishableKeyFromHost(
@@ -7362,6 +7365,7 @@ function Home() {
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
   const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
+  const [diagnosticCopyMessage, setDiagnosticCopyMessage] = useState<string | null>(null);
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
   const [expandedMuscleGroups, setExpandedMuscleGroups] = useState<Record<string, boolean>>({});
   const errorCountRef = useRef(0);
@@ -7389,6 +7393,8 @@ function Home() {
   const viewAlignmentRef = useRef<ViewAlignmentState>(createInitialViewAlignment());
   const lastViewUiUpdateRef = useRef(0);
   const lastPullupDiagnosticLogAtRef = useRef(0);
+  const pullupDiagnosticBufferRef = useRef<ExerciseDiagnosticSnapshot[]>([]);
+  const diagnosticCopyMessageTimeoutRef = useRef<number | null>(null);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -7417,6 +7423,28 @@ function Home() {
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
     setErrorCount(errorCountRef.current);
+  }, []);
+
+  const copyPullupDiagnostics = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API no disponible');
+      }
+      await navigator.clipboard.writeText(
+        JSON.stringify(pullupDiagnosticBufferRef.current, null, 2),
+      );
+      setDiagnosticCopyMessage('Copiado');
+    } catch {
+      setDiagnosticCopyMessage('No se pudo copiar');
+    }
+
+    if (diagnosticCopyMessageTimeoutRef.current !== null) {
+      window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
+    }
+    diagnosticCopyMessageTimeoutRef.current = window.setTimeout(() => {
+      setDiagnosticCopyMessage(null);
+      diagnosticCopyMessageTimeoutRef.current = null;
+    }, 1800);
   }, []);
 
   useEffect(() => {
@@ -8106,6 +8134,13 @@ function Home() {
             pullupAngleForFrame,
           ),
         };
+        pullupDiagnosticBufferRef.current.push(diagnosticSnapshot);
+        if (pullupDiagnosticBufferRef.current.length > PULLUP_DIAGNOSTIC_BUFFER_LIMIT) {
+          pullupDiagnosticBufferRef.current.splice(
+            0,
+            pullupDiagnosticBufferRef.current.length - PULLUP_DIAGNOSTIC_BUFFER_LIMIT,
+          );
+        }
         if (now - lastPullupDiagnosticLogAtRef.current >= 500) {
           console.log('[pullup-diagnostics]', diagnosticSnapshot);
           lastPullupDiagnosticLogAtRef.current = now;
@@ -8605,6 +8640,12 @@ function Home() {
     setExerciseGoodRepetitions(0);
     setExerciseRepPhase('esperando inicio');
     setExerciseMinimumAngle(null);
+    pullupDiagnosticBufferRef.current = [];
+    setDiagnosticCopyMessage(null);
+    if (diagnosticCopyMessageTimeoutRef.current !== null) {
+      window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
+      diagnosticCopyMessageTimeoutRef.current = null;
+    }
     previousSideRef.current = null;
      sideViewCandidateRef.current = null;
      sideViewStableFramesRef.current = 0;
@@ -8759,9 +8800,19 @@ function Home() {
   }, [stopResources]);
 
   useEffect(() => () => stopResources(), [stopResources]);
+  useEffect(() => () => {
+    if (diagnosticCopyMessageTimeoutRef.current !== null) {
+      window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
+    }
+  }, []);
 
   const isActive = phase === 'requesting' || phase === 'loading-model' || phase === 'tracking';
   const activeExercise = getExercise(selectedExercise);
+  const isPullupExerciseSelected = selectedExercise === 'dominadas'
+    || selectedExercise === 'dominadas-supinas'
+    || selectedExercise === 'dominadas-comando';
+  const canExportPullupDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED
+    && isPullupExerciseSelected;
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
@@ -10019,6 +10070,28 @@ function Home() {
                 ) : null}
               </div>
               <div className="diagnostic-dock">
+                {canExportPullupDiagnostics && (
+                  <div className="diagnostic-copy-control">
+                    <button
+                      type="button"
+                      className="diagnostic-copy-button"
+                      data-testid="button-copy-pullup-diagnostics"
+                      onClick={() => void copyPullupDiagnostics()}
+                    >
+                      <Copy size={13} strokeWidth={2} aria-hidden="true" />
+                      <span>Copiar diagnóstico</span>
+                    </button>
+                    {diagnosticCopyMessage && (
+                      <span
+                        className={`diagnostic-copy-status ${diagnosticCopyMessage === 'Copiado' ? 'is-success' : 'is-error'}`}
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {diagnosticCopyMessage}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <button
                   type="button"
                   className="diagnostic-toggle"
