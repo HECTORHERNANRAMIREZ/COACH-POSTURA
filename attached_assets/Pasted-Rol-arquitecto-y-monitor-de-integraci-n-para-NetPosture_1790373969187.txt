@@ -1,0 +1,26 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado con datos reales (200 frames, [view-diagnostics], persona de espaldas todo el tiempo):
+- leftShoulderX > rightShoulderX en el 100% de los frames (779 vs 165, 637 vs 24, etc.) — el patrón que el código interpreta como 'front', pese a que la persona estaba de espaldas. cameraFacingMode = 'user' en todos los frames.
+- faceScore promedió 0.998 (rango 0.99-0.9999) en el 100% de los frames, prácticamente idéntico a earScore (diferencia promedio de solo 0.0004) — es decir, faceScore nunca cae, ni de espaldas. MediaPipe sigue asignando alta confianza a nariz/ojos aunque estén ocluidos.
+
+Esto confirma dos problemas simultáneos:
+A) El orden de hombros está probablemente invertido por el espejo del feed de cámara frontal (facingMode 'user'), no por una convención de MediaPipe realmente al revés.
+B) faceScore no es una señal confiable para distinguir frente/espalda: se mantiene alto incluso con la cara oculta, así que cualquier lógica que dependa de "faceScore bajo = espalda" fallará sistemáticamente en cámaras frontales.
+
+Tarea — fix en dos partes:
+
+1. Confirma si el <video>/canvas que alimenta a MediaPipe recibe el frame ya espejado cuando facingMode === 'user' (busca dónde se captura el stream y si hay algún flip antes de pasarlo al detector, aparte del CSS transform visual que ya vimos en App.tsx). Cita el código exacto.
+
+2. Si confirmas que el frame de entrada está espejado en modo 'user': corrige frontShoulderOrder/backShoulderOrder para que consideren cameraFacingMode. Por ejemplo, invirtiendo la comparación de x cuando facingMode === 'user', o corrigiendo el x antes de comparar. Muéstrame el cambio exacto.
+
+3. Reduce el peso de faceScore como señal decisiva: dado que se mantiene alto incluso de espaldas, ya no debe poder forzar 'front' por sí solo cuando el orden de hombros (corregido) diga 'back'. Propón el ajuste mínimo (por ejemplo, dar prioridad al orden de hombros corregido sobre faceScore, en vez de la lógica actual donde cualquiera de los dos basta). Explica el cambio exacto antes de aplicarlo.
+
+4. No toques bottomBase, topBase, tolerancias de ángulo de codo, umbrales de yaw (30°/50°/45°), ni la lógica de conteo de repeticiones.
+
+Verificación obligatoria:
+- pnpm --filter @workspace/posture-coach run typecheck
+- Nueva sesión real de espaldas (mismo procedimiento de [view-diagnostics]): debe mostrar estimatedView = 'back' y status = 'good' o 'acceptable' en la gran mayoría de frames.
+- Pégame el JSON completo de esa nueva sesión para confirmarlo con datos, no con tu palabra.
+
+Implementa los puntos 1-3 ya, no solo investigues — ya tenemos evidencia suficiente para actuar.
