@@ -3108,14 +3108,22 @@ function advancePullupTracker(
   let completedMinimumAngle: number | null = null;
 
   if (nextTracker.phase === 'esperando abajo') {
-    if (isAtBottomByAngle) {
+    if (isAtBottom) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = isAtBottom;
+      nextTracker.currentRepCorrect = true;
     }
   } else if (nextTracker.phase === 'abajo') {
-    if (hasStartedPull && isRising) {
-      nextTracker.phase = 'subiendo';
-      nextTracker.minimumAngle = smoothedAngle;
+    if (!hasStartedPull && isAtBottomByAngle && !isAtBottom) {
+      nextTracker.phase = 'esperando abajo';
+      nextTracker.currentRepCorrect = false;
+    } else {
+      if (isAtBottom) {
+        nextTracker.currentRepCorrect = true;
+      }
+      if (hasStartedPull && isRising) {
+        nextTracker.phase = 'subiendo';
+        nextTracker.minimumAngle = smoothedAngle;
+      }
     }
   } else if (nextTracker.phase === 'subiendo') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
