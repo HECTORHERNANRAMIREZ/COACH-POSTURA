@@ -138,6 +138,7 @@ import {
   createInitialViewAlignment,
   createUnknownViewEstimate,
   getFrontBackDiagnostics,
+  type CameraFacingMode,
   type ExerciseView,
   type ViewAlignmentState,
 } from '@/view-estimation';
@@ -382,7 +383,6 @@ function handleExerciseImageError(
 }
 
 type PoseSide = 'left' | 'right';
-type CameraFacingMode = 'user' | 'environment';
 type SessionPhase = 'exercise-select' | 'requesting' | 'loading-model' | 'tracking' | 'error';
 type PoseCandidate = {
   pose: Pose;
@@ -7686,7 +7686,7 @@ function Home() {
       const viewToleranceDeg = activeExerciseDefinition?.viewToleranceDeg
         ?? VIEW_TOLERANCE_DEFAULT_DEG;
       const viewEstimate = pose
-        ? viewEstimatorRef.current.update(pose)
+        ? viewEstimatorRef.current.update(pose, cameraFacingModeRef.current)
         : createUnknownViewEstimate();
       if (!pose) {
         viewEstimatorRef.current.markPoseMissing();

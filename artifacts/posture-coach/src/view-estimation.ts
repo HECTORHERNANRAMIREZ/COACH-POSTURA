@@ -34,6 +34,7 @@ export const VIEW_OPPOSITE_DISTANCE_DEG = 180;
 export type ExerciseView = 'front' | 'side' | 'back' | 'any';
 export type EstimatedView = ExerciseView | 'unknown';
 export type ViewStatus = 'good' | 'acceptable' | 'bad' | 'unknown';
+export type CameraFacingMode = 'user' | 'environment';
 
 export type ViewEstimate = {
   shoulderYawDeg: number | null;
@@ -194,7 +195,10 @@ export function getFrontBackDiagnostics(pose: Pose): FrontBackDiagnostics {
   };
 }
 
-function estimateFrontBack(pose: Pose): EstimatedView {
+function estimateFrontBack(
+  pose: Pose,
+  cameraFacingMode: CameraFacingMode,
+): EstimatedView {
   const {
     leftShoulderX,
     rightShoulderX,
@@ -203,25 +207,28 @@ function estimateFrontBack(pose: Pose): EstimatedView {
   } = getFrontBackDiagnostics(pose);
   if (leftShoulderX === null || rightShoulderX === null) return 'unknown';
 
-  // En la pose no espejada que recibe el detector, una persona de frente
-  // suele tener su hombro anatómico izquierdo a la derecha de la imagen;
-  // de espaldas ocurre lo contrario. La señal de nariz/ojos prevalece y el
-  // orden de hombros resuelve los casos en los que la cara está parcialmente
-  // oculta.
-  const frontShoulderOrder = leftShoulderX > rightShoulderX;
-  const backShoulderOrder = leftShoulderX < rightShoulderX;
+  // La cámara frontal entrega en este pipeline el orden horizontal invertido
+  // respecto a la cámara trasera para estos landmarks anatómicos.
+  const frontShoulderOrder = cameraFacingMode === 'user'
+    ? leftShoulderX < rightShoulderX
+    : leftShoulderX > rightShoulderX;
+  const backShoulderOrder = cameraFacingMode === 'user'
+    ? leftShoulderX > rightShoulderX
+    : leftShoulderX < rightShoulderX;
+  // El orden de hombros es la señal geométrica disponible para distinguir
+  // frente/espalda. Los scores faciales pueden permanecer altos con la cara
+  // ocluida, por lo que no deben contradecirlo.
+  if (frontShoulderOrder) return 'front';
+  if (backShoulderOrder) return 'back';
   if (
     faceScore >= VIEW_MIN_SCORE
-    && (
-      faceScore >= earScore + VIEW_FACE_MARGIN
-      || frontShoulderOrder
-    )
+    && faceScore >= earScore + VIEW_FACE_MARGIN
   ) {
     return 'front';
   }
   if (
     faceScore < VIEW_MIN_SCORE
-    && (backShoulderOrder || earScore >= faceScore + VIEW_FACE_MARGIN)
+    && earScore >= faceScore + VIEW_FACE_MARGIN
   ) {
     return 'back';
   }
@@ -343,7 +350,10 @@ export class ViewEstimator {
   private faceCandidate: EstimatedView = 'unknown';
   private faceCandidateFrames = 0;
 
-  update(pose: Pose): ViewEstimate {
+  update(
+    pose: Pose,
+    cameraFacingMode: CameraFacingMode = 'environment',
+  ): ViewEstimate {
     this.missingPoseFrames = 0;
     const leftShoulder = getWorldPoint(pose, 11);
     const rightShoulder = getWorldPoint(pose, 12);
@@ -381,7 +391,7 @@ export class ViewEstimator {
     }
 
     const frontBackView = smoothedYaw <= VIEW_SIDE_BOUNDARY_DEG + VIEW_HYSTERESIS_DEG
-      ? estimateFrontBack(pose)
+      ? estimateFrontBack(pose, cameraFacingMode)
       : 'side';
     const candidateView = classifyByYaw(
       smoothedYaw,
