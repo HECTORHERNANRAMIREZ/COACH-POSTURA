@@ -3043,6 +3043,17 @@ type PullupExtremityValidation = {
   atTop: boolean;
 };
 
+type PullupExtremityReadings = {
+  left: {
+    shoulder: number | null;
+    elbow: number | null;
+  };
+  right: {
+    shoulder: number | null;
+    elbow: number | null;
+  };
+};
+
 type PullupTrackerConfig = {
   topMinAngle: number;
   topMaxAngle: number;
@@ -3058,10 +3069,15 @@ const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   topMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
 };
 
-function getPullupExtremityValidation(
+function getPullupExtremityReadings(
   keypoints: PosePoint[] | undefined,
-): PullupExtremityValidation {
-  if (!keypoints) return { atBottom: false, atTop: false };
+): PullupExtremityReadings {
+  if (!keypoints) {
+    return {
+      left: { shoulder: null, elbow: null },
+      right: { shoulder: null, elbow: null },
+    };
+  }
 
   const sideReadings = (side: PoseSide) => {
     const indexes = sideKeypoints[side];
@@ -3079,12 +3095,19 @@ function getPullupExtremityValidation(
     };
   };
 
-  const readings = (['left', 'right'] as PoseSide[]).map(sideReadings);
+  const [left, right] = (['left', 'right'] as PoseSide[]).map(sideReadings);
+  return { left, right };
+}
+
+function getPullupExtremityValidation(
+  keypoints: PosePoint[] | undefined,
+  extremityReadings = getPullupExtremityReadings(keypoints),
+): PullupExtremityValidation {
   const allInRange = (
     key: 'shoulder' | 'elbow',
     min: number,
     max: number,
-  ) => readings.every((reading) => {
+  ) => [extremityReadings.left, extremityReadings.right].every((reading) => {
     const value = reading[key];
     return value !== null && isWithinPullupAngle(value, min, max);
   });
@@ -8014,8 +8037,14 @@ function Home() {
       const pullupHeadOverWrists = isPullupExercise
         ? isHeadOverBothWrists(pose?.keypoints)
         : null;
+      const pullupExtremityReadings = isPullupExercise
+        ? getPullupExtremityReadings(pose?.keypoints)
+        : {
+            left: { shoulder: null, elbow: null },
+            right: { shoulder: null, elbow: null },
+          };
       const pullupExtremityValidation = isPullupExercise
-        ? getPullupExtremityValidation(pose?.keypoints)
+        ? getPullupExtremityValidation(pose?.keypoints, pullupExtremityReadings)
         : { atBottom: false, atTop: false };
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
@@ -8131,6 +8160,8 @@ function Home() {
         const nose = pose?.keypoints?.[0];
         const leftWrist = pose?.keypoints?.[sideKeypoints.left.wrist];
         const rightWrist = pose?.keypoints?.[sideKeypoints.right.wrist];
+        const leftShoulder = pose?.keypoints?.[sideKeypoints.left.shoulder];
+        const rightShoulder = pose?.keypoints?.[sideKeypoints.right.shoulder];
         const leftElbow = pose?.keypoints?.[sideKeypoints.left.elbow];
         const rightElbow = pose?.keypoints?.[sideKeypoints.right.elbow];
         const relationToNose = (
@@ -8182,6 +8213,42 @@ function Home() {
             underBothWrists: pullupHeadOverWrists === null
               ? null
               : !pullupHeadOverWrists,
+          },
+          shoulders: {
+            left: {
+              angle: pullupExtremityReadings.left.shoulder,
+              confidence: leftShoulder?.score ?? null,
+              valid: pullupExtremityReadings.left.shoulder !== null,
+              inBottomRange: pullupExtremityReadings.left.shoulder !== null
+                && isWithinPullupAngle(
+                  pullupExtremityReadings.left.shoulder,
+                  PULLUP_BOTTOM_SHOULDER_MIN_ANGLE,
+                  PULLUP_BOTTOM_MAX_ANGLE,
+                ),
+              inTopRange: pullupExtremityReadings.left.shoulder !== null
+                && isWithinPullupAngle(
+                  pullupExtremityReadings.left.shoulder,
+                  PULLUP_TOP_SHOULDER_MIN_ANGLE,
+                  PULLUP_TOP_SHOULDER_MAX_ANGLE,
+                ),
+            },
+            right: {
+              angle: pullupExtremityReadings.right.shoulder,
+              confidence: rightShoulder?.score ?? null,
+              valid: pullupExtremityReadings.right.shoulder !== null,
+              inBottomRange: pullupExtremityReadings.right.shoulder !== null
+                && isWithinPullupAngle(
+                  pullupExtremityReadings.right.shoulder,
+                  PULLUP_BOTTOM_SHOULDER_MIN_ANGLE,
+                  PULLUP_BOTTOM_MAX_ANGLE,
+                ),
+              inTopRange: pullupExtremityReadings.right.shoulder !== null
+                && isWithinPullupAngle(
+                  pullupExtremityReadings.right.shoulder,
+                  PULLUP_TOP_SHOULDER_MIN_ANGLE,
+                  PULLUP_TOP_SHOULDER_MAX_ANGLE,
+                ),
+            },
           },
           elbows: {
             left: {

@@ -23,6 +23,22 @@ export type ExerciseDiagnosticSnapshot = {
     overBothWrists: boolean | null;
     underBothWrists: boolean | null;
   };
+  shoulders: {
+    left: {
+      angle: number | null;
+      confidence: number | null;
+      valid: boolean;
+      inBottomRange: boolean;
+      inTopRange: boolean;
+    };
+    right: {
+      angle: number | null;
+      confidence: number | null;
+      valid: boolean;
+      inBottomRange: boolean;
+      inTopRange: boolean;
+    };
+  };
   elbows: {
     left: {
       angle: number | null;
