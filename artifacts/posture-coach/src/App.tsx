@@ -6434,6 +6434,30 @@ function calculatePullupJointReadings(
   ];
 }
 
+function calculatePullupBilateralElbowAngle(
+  keypoints: PosePoint[] | undefined,
+) {
+  if (!keypoints) return null;
+
+  const elbowAngles = (['left', 'right'] as PoseSide[])
+    .map((side) => {
+      const indexes = sideKeypoints[side];
+      return calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      );
+    });
+
+  const validElbowAngles = elbowAngles.filter(
+    (value): value is number => value !== null,
+  );
+  if (validElbowAngles.length !== elbowAngles.length) return null;
+  return Math.round(
+    validElbowAngles.reduce((sum, value) => sum + value, 0) / validElbowAngles.length,
+  );
+}
+
 function calculateExtremityAngleReadings(
   exercise: ExerciseId | null,
   keypoints: PosePoint[] | undefined,
@@ -7596,13 +7620,21 @@ function Home() {
         stableLateralSide,
       );
       const frameCameraReady = nextCameraGuidance.tone === 'ready';
+      const pullupAngleForFrame = (
+        selectedExerciseForFrame === 'dominadas'
+        || selectedExerciseForFrame === 'dominadas-supinas'
+        || selectedExerciseForFrame === 'dominadas-comando'
+      )
+        ? calculatePullupBilateralElbowAngle(pose?.keypoints)
+        : null;
       const rawAngle = selectedExerciseForFrame === 'sentadillas'
         ? calculateSquatAngle(pose?.keypoints)
-        : calculateExerciseAngle(
-          selectedExerciseForFrame,
-          pose?.keypoints,
-          measurementSide,
-        );
+        : pullupAngleForFrame
+          ?? calculateExerciseAngle(
+            selectedExerciseForFrame,
+            pose?.keypoints,
+            measurementSide,
+          );
       if (previousFootExerciseRef.current !== selectedExerciseForFrame) {
         previousFootExerciseRef.current = selectedExerciseForFrame;
         previousFootRatioRef.current = null;
