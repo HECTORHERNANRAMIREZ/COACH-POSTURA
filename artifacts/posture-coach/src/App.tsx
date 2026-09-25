@@ -145,6 +145,7 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+import type { ExerciseDiagnosticSnapshot } from '@/pullup-diagnostics';
 
 const queryClient = new QueryClient();
 const TOTAL_FRAMES = 11;
@@ -3010,6 +3011,8 @@ type PullupTrackerUpdate = {
   tracker: PullupTracker;
   smoothedAngle: number;
   completedMinimumAngle: number | null;
+  isAtBottom: boolean;
+  hasReachedTop: boolean;
 };
 
 type PullupExtremityValidation = {
@@ -3081,7 +3084,13 @@ function advancePullupTracker(
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
   const smoothedAngle = median(samples);
   if (smoothedAngle === null) {
-    return { tracker, smoothedAngle: rawAngle, completedMinimumAngle: null };
+    return {
+      tracker,
+      smoothedAngle: rawAngle,
+      completedMinimumAngle: null,
+      isAtBottom: false,
+      hasReachedTop: false,
+    };
   }
 
   const nextTracker: PullupTracker = {
@@ -3185,7 +3194,13 @@ function advancePullupTracker(
     }
   }
 
-  return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
+  return {
+    tracker: nextTracker,
+    smoothedAngle,
+    completedMinimumAngle,
+    isAtBottom,
+    hasReachedTop,
+  };
 }
 
 const HAND_DETAIL_LANDMARKS = new Set([17, 18, 19, 20, 21, 22]);
@@ -6445,25 +6460,108 @@ function calculatePullupJointReadings(
 function calculatePullupBilateralElbowAngle(
   keypoints: PosePoint[] | undefined,
 ) {
-  if (!keypoints) return null;
+  return calculatePullupElbowAngles(keypoints).averagedRawAngle;
+}
 
-  const elbowAngles = (['left', 'right'] as PoseSide[])
-    .map((side) => {
-      const indexes = sideKeypoints[side];
-      return calculateAngle(
-        keypoints[indexes.shoulder],
-        keypoints[indexes.elbow],
-        keypoints[indexes.wrist],
+function calculatePullupElbowAngles(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) {
+    return { left: null, right: null, averagedRawAngle: null };
+  }
+
+  const left = calculateAngle(
+    keypoints[sideKeypoints.left.shoulder],
+    keypoints[sideKeypoints.left.elbow],
+    keypoints[sideKeypoints.left.wrist],
+  );
+  const right = calculateAngle(
+    keypoints[sideKeypoints.right.shoulder],
+    keypoints[sideKeypoints.right.elbow],
+    keypoints[sideKeypoints.right.wrist],
+  );
+
+  return {
+    left,
+    right,
+    averagedRawAngle: left === null || right === null
+      ? null
+      : Math.round((left + right) / 2),
+  };
+}
+
+function getPullupDiagnosticBlockingReasons(
+  keypoints: PosePoint[] | undefined,
+  exerciseStarted: boolean,
+  frameDetectionStable: boolean,
+  viewBlocksFrame: boolean,
+  visiblePoints: number,
+  averagedRawAngle: number | null,
+) {
+  const reasons: string[] = [];
+  const trackedPoints = [
+    { label: 'nariz', point: keypoints?.[0], minimumScore: 0.2, lowConfidenceReason: null },
+    {
+      label: 'muñeca izquierda',
+      point: keypoints?.[sideKeypoints.left.wrist],
+      minimumScore: 0.2,
+      lowConfidenceReason: null,
+    },
+    {
+      label: 'muñeca derecha',
+      point: keypoints?.[sideKeypoints.right.wrist],
+      minimumScore: 0.2,
+      lowConfidenceReason: null,
+    },
+    {
+      label: 'codo izquierdo',
+      point: keypoints?.[sideKeypoints.left.elbow],
+      minimumScore: CAMERA_POINT_MIN_SCORE,
+      lowConfidenceReason: 'codo izquierdo con confianza baja',
+    },
+    {
+      label: 'codo derecho',
+      point: keypoints?.[sideKeypoints.right.elbow],
+      minimumScore: CAMERA_POINT_MIN_SCORE,
+      lowConfidenceReason: 'codo derecho con confianza baja',
+    },
+    {
+      label: 'hombro izquierdo',
+      point: keypoints?.[sideKeypoints.left.shoulder],
+      minimumScore: CAMERA_POINT_MIN_SCORE,
+      lowConfidenceReason: 'hombro izquierdo con confianza baja',
+    },
+    {
+      label: 'hombro derecho',
+      point: keypoints?.[sideKeypoints.right.shoulder],
+      minimumScore: CAMERA_POINT_MIN_SCORE,
+      lowConfidenceReason: 'hombro derecho con confianza baja',
+    },
+  ];
+
+  trackedPoints.forEach(({ label, point, minimumScore, lowConfidenceReason }) => {
+    if (!point) {
+      reasons.push(`${label} no visible`);
+      return;
+    }
+    if (isHeldPoint(point)) {
+      const heldReason = point.heldReason ? ` (${point.heldReason})` : '';
+      reasons.push(
+        `punto retenido por filtro: ${label}${heldReason}`,
       );
-    });
+      return;
+    }
+    if ((point.score ?? 0) < minimumScore) {
+      if (lowConfidenceReason) reasons.push(lowConfidenceReason);
+      else reasons.push(`${label} no visible`);
+    }
+  });
 
-  const validElbowAngles = elbowAngles.filter(
-    (value): value is number => value !== null,
-  );
-  if (validElbowAngles.length !== elbowAngles.length) return null;
-  return Math.round(
-    validElbowAngles.reduce((sum, value) => sum + value, 0) / validElbowAngles.length,
-  );
+  if (viewBlocksFrame) reasons.push('vista incorrecta');
+  if (!frameDetectionStable) reasons.push('pose inestable');
+  if (visiblePoints < 5) reasons.push('pocos puntos visibles');
+  if (averagedRawAngle === null) reasons.push('ángulo no calculable');
+  if (!exerciseStarted) reasons.push('ejercicio no iniciado');
+
+  return [...new Set(reasons)];
 }
 
 function calculateExtremityAngleReadings(
@@ -7290,6 +7388,7 @@ function Home() {
   const viewAlignmentGuardRef = useRef(new ViewAlignmentGuard());
   const viewAlignmentRef = useRef<ViewAlignmentState>(createInitialViewAlignment());
   const lastViewUiUpdateRef = useRef(0);
+  const lastPullupDiagnosticLogAtRef = useRef(0);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
   const lastAngleDisplayAtRef = useRef(0);
@@ -7628,13 +7727,13 @@ function Home() {
         stableLateralSide,
       );
       const frameCameraReady = nextCameraGuidance.tone === 'ready';
-      const pullupAngleForFrame = (
-        selectedExerciseForFrame === 'dominadas'
+      const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
-        || selectedExerciseForFrame === 'dominadas-comando'
-      )
-        ? calculatePullupBilateralElbowAngle(pose?.keypoints)
-        : null;
+        || selectedExerciseForFrame === 'dominadas-comando';
+      const pullupElbowAnglesForFrame = isPullupExercise
+        ? calculatePullupElbowAngles(pose?.keypoints)
+        : { left: null, right: null, averagedRawAngle: null };
+      const pullupAngleForFrame = pullupElbowAnglesForFrame.averagedRawAngle;
       const rawAngle = selectedExerciseForFrame === 'sentadillas'
         ? calculateSquatAngle(pose?.keypoints)
         : pullupAngleForFrame
@@ -7777,6 +7876,13 @@ function Home() {
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
       setMuscleUpAngles(displayMuscleUpAngles);
       let nextAngle = frameMeasurementBlocked ? null : rawAngle;
+      const pullupHeadOverWrists = isPullupExercise
+        ? isHeadOverBothWrists(pose?.keypoints)
+        : null;
+      const pullupExtremityValidation = isPullupExercise
+        ? getPullupExtremityValidation(pose?.keypoints)
+        : { atBottom: false, atTop: false };
+      let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
         exerciseStartedRef.current
         && hasFreshPose
@@ -7834,12 +7940,13 @@ function Home() {
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
-          isHeadOverBothWrists(pose?.keypoints) === true,
-          getPullupExtremityValidation(pose?.keypoints),
+          pullupHeadOverWrists === true,
+          pullupExtremityValidation,
           isSupinePullup
             ? SUPINE_PULLUP_TRACKER_CONFIG
             : STANDARD_PULLUP_TRACKER_CONFIG,
         );
+        pullupDiagnosticUpdate = pullupUpdate;
         pullupTrackerRef.current = pullupUpdate.tracker;
         nextAngle = pullupUpdate.smoothedAngle;
         setPullupRepetitions(pullupUpdate.tracker.repetitions);
@@ -7883,6 +7990,125 @@ function Home() {
               ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
           );
+        }
+      }
+      if (isPullupExercise) {
+        const nose = pose?.keypoints?.[0];
+        const leftWrist = pose?.keypoints?.[sideKeypoints.left.wrist];
+        const rightWrist = pose?.keypoints?.[sideKeypoints.right.wrist];
+        const leftElbow = pose?.keypoints?.[sideKeypoints.left.elbow];
+        const rightElbow = pose?.keypoints?.[sideKeypoints.right.elbow];
+        const relationToNose = (
+          wrist: PosePoint | undefined,
+        ): ExerciseDiagnosticSnapshot['head']['leftWristRelation'] => {
+          if (!wrist || !nose) return 'unknown';
+          return wrist.y < nose.y ? 'above' : 'below';
+        };
+        const leftElbowAngle = pullupElbowAnglesForFrame.left;
+        const rightElbowAngle = pullupElbowAnglesForFrame.right;
+        const diagnosticSnapshot: ExerciseDiagnosticSnapshot = {
+          timestamp: frameTimestamp,
+          exercise: selectedExerciseForFrame,
+          exerciseStarted: exerciseStartedRef.current,
+          phase: pullupTrackerRef.current.phase,
+          cameraReady: frameCameraReady,
+          poseDetected: visiblePoints >= 5,
+          frameStable: frameDetectionStable,
+          measurementBlocked: frameMeasurementBlocked,
+          modelInfo: {
+            model: detector.activeModel ?? null,
+            delegate: detector.activeDelegate ?? null,
+          },
+          head: {
+            noseY: nose?.y ?? null,
+            leftWristY: leftWrist?.y ?? null,
+            rightWristY: rightWrist?.y ?? null,
+            noseConfidence: nose?.score ?? null,
+            leftWristConfidence: leftWrist?.score ?? null,
+            rightWristConfidence: rightWrist?.score ?? null,
+            leftWristRelation: relationToNose(leftWrist),
+            rightWristRelation: relationToNose(rightWrist),
+            overBothWrists: pullupHeadOverWrists,
+            underBothWrists: pullupHeadOverWrists === null
+              ? null
+              : !pullupHeadOverWrists,
+          },
+          elbows: {
+            left: {
+              angle: leftElbowAngle,
+              confidence: leftElbow?.score ?? null,
+              valid: leftElbowAngle !== null,
+              inBottomRange: leftElbowAngle !== null
+                && isWithinPullupAngle(
+                  leftElbowAngle,
+                  PULLUP_BOTTOM_MIN_ANGLE,
+                  PULLUP_BOTTOM_MAX_ANGLE,
+                ),
+              inTopRange: leftElbowAngle !== null
+                && isWithinPullupAngle(
+                  leftElbowAngle,
+                  PULLUP_TOP_ELBOW_MIN_ANGLE,
+                  PULLUP_TOP_ELBOW_MAX_ANGLE,
+                ),
+            },
+            right: {
+              angle: rightElbowAngle,
+              confidence: rightElbow?.score ?? null,
+              valid: rightElbowAngle !== null,
+              inBottomRange: rightElbowAngle !== null
+                && isWithinPullupAngle(
+                  rightElbowAngle,
+                  PULLUP_BOTTOM_MIN_ANGLE,
+                  PULLUP_BOTTOM_MAX_ANGLE,
+                ),
+              inTopRange: rightElbowAngle !== null
+                && isWithinPullupAngle(
+                  rightElbowAngle,
+                  PULLUP_TOP_ELBOW_MIN_ANGLE,
+                  PULLUP_TOP_ELBOW_MAX_ANGLE,
+                ),
+            },
+            averagedRawAngle: pullupAngleForFrame,
+          },
+          ranges: {
+            bottomBase: [PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE],
+            bottomTolerance: PULLUP_TOLERANCE_DEG,
+            bottomEffective: [
+              Math.max(0, PULLUP_BOTTOM_MIN_ANGLE - PULLUP_TOLERANCE_DEG),
+              Math.min(180, PULLUP_BOTTOM_MAX_ANGLE + PULLUP_TOLERANCE_DEG),
+            ],
+            topBase: [PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE],
+            topTolerance: PULLUP_TOLERANCE_DEG,
+            topEffective: [
+              Math.max(0, PULLUP_TOP_ELBOW_MIN_ANGLE - PULLUP_TOLERANCE_DEG),
+              Math.min(180, PULLUP_TOP_ELBOW_MAX_ANGLE + PULLUP_TOLERANCE_DEG),
+            ],
+          },
+          conditions: {
+            atBottom: pullupExtremityValidation.atBottom,
+            atTop: pullupExtremityValidation.atTop,
+            isAtBottom: pullupDiagnosticUpdate?.isAtBottom ?? false,
+            hasReachedTop: pullupDiagnosticUpdate?.hasReachedTop ?? false,
+          },
+          smoothedAngle: pullupDiagnosticUpdate?.smoothedAngle
+            ?? pullupTrackerRef.current.lastAngle,
+          minimumAngle: pullupTrackerRef.current.minimumAngle,
+          topFrames: pullupTrackerRef.current.topFrames,
+          repetitions: pullupTrackerRef.current.repetitions,
+          goodRepetitions: pullupTrackerRef.current.goodRepetitions,
+          event: pullupTrackerRef.current.event,
+          blockingReasons: getPullupDiagnosticBlockingReasons(
+            pose?.keypoints,
+            exerciseStartedRef.current,
+            frameDetectionStable,
+            viewBlocksFrame,
+            visiblePoints,
+            pullupAngleForFrame,
+          ),
+        };
+        if (now - lastPullupDiagnosticLogAtRef.current >= 500) {
+          console.log('[pullup-diagnostics]', diagnosticSnapshot);
+          lastPullupDiagnosticLogAtRef.current = now;
         }
       }
       const rowTechniqueReady = selectedExerciseForFrame !== 'remo-barra'
