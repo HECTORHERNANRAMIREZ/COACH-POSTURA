@@ -9599,6 +9599,23 @@ function Home() {
                         ? 'Iniciar ejercicio'
                         : 'Buscando cuerpo'}
                 </button>
+                {hasEvaluationCounter && (
+                  <div
+                    className="rep-counter-hud"
+                    aria-label="Contador de repeticiones"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  >
+                    <div className="rep-counter-stat rep-counter-stat--good">
+                      <span>Correctas</span>
+                      <strong>{correctRepetitions}</strong>
+                    </div>
+                    <div className="rep-counter-stat rep-counter-stat--bad">
+                      <span>Incorrectas</span>
+                      <strong>{Math.max(0, evaluatedRepetitions - correctRepetitions)}</strong>
+                    </div>
+                  </div>
+                )}
                   {selectedExercise !== 'fondos'
                     && selectedExercise !== 'dominadas'
                     && selectedExercise !== 'dominadas-supinas'
