@@ -1,0 +1,17 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado con datos reales: en los 6 frames donde atTop/atBottom fueron true durante una sesión real de dominadas, leftShoulderX fue consistentemente MENOR que rightShoulderX (ej: 334.5 vs 453.6), mientras que en los frames de la misma sesión clasificados correctamente como 'back' (parado, sin flexionar), leftShoulderX era consistentemente MAYOR (ej: 522 vs 243). faceScore y earScore estaban en 1.0 en ambos casos, así que no influyeron — el volteo fue puramente en el orden de hombros, coincidiendo exactamente con los momentos de mayor flexión de brazo.
+
+Esto indica que el movimiento real (llegar arriba o abajo de la dominada) invierte momentáneamente el orden x de los hombros detectado, ya sea por rotación real del torso o por confusión de MediaPipe al etiquetar izquierda/derecha durante oclusión del brazo.
+
+Tarea — hacer la clasificación front/back más robusta frente a este ruido momentáneo, SIN aflojar ningún rango ni criterio de corrección de la dominada:
+
+1. Propón un mecanismo de "estabilidad reforzada" para el cambio de back→front (no para front→back): una vez que estimatedView se ha mantenido en 'back' con status 'good'/'acceptable' durante un período sostenido al inicio de la sesión, exige más evidencia (más frames consecutivos, o un umbral de yaw más alto) antes de aceptar un cambio a 'front' o 'unknown'. Esto reduce falsos cambios de vista durante el movimiento normal del ejercicio, sin ocultar un cambio real y sostenido de orientación.
+
+2. Muéstrame dónde vive hoy la lógica de histéresis actual (VIEW_FACE_SWITCH_FRAMES=5, VIEW_WINDOW_FRAMES=30) y qué tanto tendría que ajustarse para lograr esto, o si hace falta un mecanismo nuevo.
+
+3. Alternativa a evaluar y comparar: en vez de tocar la histéresis de vista, ¿es más simple y seguro exigir que la MUÑECA y el CODO relevantes tengan score alto (no solo el hombro) antes de que un frame pueda invalidar por 'vista incorrecta' durante una fase de posible atTop/atBottom? Dime cuál de las dos alternativas es menos riesgosa y por qué.
+
+4. No toques bottomBase, topBase, tolerancias de ángulo, ni la lógica de qué cuenta como repetición correcta o incorrecta. Esto es solo estabilidad de la señal de vista.
+
+Preséntame las dos alternativas con su análisis de riesgo, y espera mi decisión antes de implementar.
