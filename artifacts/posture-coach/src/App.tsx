@@ -180,6 +180,19 @@ const AUTH_AND_BILLING_ENABLED = false;
 const PULLUP_DIAGNOSTIC_BUFFER_LIMIT = 200;
 const PULLUP_DIAGNOSTIC_EXPORT_ENABLED = import.meta.env.DEV;
 
+type ViewDiagnosticSnapshot = {
+  timestamp: number;
+  exercise: ExerciseId;
+  shoulderYawDeg: number | null;
+  hipYawDeg: number | null;
+  yawDeg: number | null;
+  estimatedView: ViewAlignmentState['estimatedView'];
+  recommendedView: ViewAlignmentState['recommendedView'];
+  status: ViewAlignmentState['status'];
+  atBottom: boolean;
+  atTop: boolean;
+};
+
 const clerkPubKey = AUTH_AND_BILLING_ENABLED
   ? publishableKeyFromHost(
       window.location.hostname,
@@ -7394,6 +7407,7 @@ function Home() {
   const lastViewUiUpdateRef = useRef(0);
   const lastPullupDiagnosticLogAtRef = useRef(0);
   const pullupDiagnosticBufferRef = useRef<ExerciseDiagnosticSnapshot[]>([]);
+  const viewDiagnosticBufferRef = useRef<ViewDiagnosticSnapshot[]>([]);
   const diagnosticCopyMessageTimeoutRef = useRef<number | null>(null);
   const angleDisplaySamplesRef = useRef<number[]>([]);
   const angleDisplayRef = useRef<number | null>(null);
@@ -7432,6 +7446,28 @@ function Home() {
       }
       await navigator.clipboard.writeText(
         JSON.stringify(pullupDiagnosticBufferRef.current, null, 2),
+      );
+      setDiagnosticCopyMessage('Copiado');
+    } catch {
+      setDiagnosticCopyMessage('No se pudo copiar');
+    }
+
+    if (diagnosticCopyMessageTimeoutRef.current !== null) {
+      window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
+    }
+    diagnosticCopyMessageTimeoutRef.current = window.setTimeout(() => {
+      setDiagnosticCopyMessage(null);
+      diagnosticCopyMessageTimeoutRef.current = null;
+    }, 1800);
+  }, []);
+
+  const copyViewDiagnostics = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API no disponible');
+      }
+      await navigator.clipboard.writeText(
+        JSON.stringify(viewDiagnosticBufferRef.current, null, 2),
       );
       setDiagnosticCopyMessage('Copiado');
     } catch {
@@ -8134,6 +8170,25 @@ function Home() {
             pullupAngleForFrame,
           ),
         };
+        const viewDiagnosticSnapshot: ViewDiagnosticSnapshot = {
+          timestamp: frameTimestamp,
+          exercise: selectedExerciseForFrame,
+          shoulderYawDeg: viewEstimate.shoulderYawDeg,
+          hipYawDeg: viewEstimate.hipYawDeg,
+          yawDeg: nextViewAlignment.yawDeg,
+          estimatedView: nextViewAlignment.estimatedView,
+          recommendedView,
+          status: nextViewAlignment.status,
+          atBottom: pullupExtremityValidation.atBottom,
+          atTop: pullupExtremityValidation.atTop,
+        };
+        viewDiagnosticBufferRef.current.push(viewDiagnosticSnapshot);
+        if (viewDiagnosticBufferRef.current.length > PULLUP_DIAGNOSTIC_BUFFER_LIMIT) {
+          viewDiagnosticBufferRef.current.splice(
+            0,
+            viewDiagnosticBufferRef.current.length - PULLUP_DIAGNOSTIC_BUFFER_LIMIT,
+          );
+        }
         pullupDiagnosticBufferRef.current.push(diagnosticSnapshot);
         if (pullupDiagnosticBufferRef.current.length > PULLUP_DIAGNOSTIC_BUFFER_LIMIT) {
           pullupDiagnosticBufferRef.current.splice(
@@ -8142,17 +8197,7 @@ function Home() {
           );
         }
         if (now - lastPullupDiagnosticLogAtRef.current >= 500) {
-          console.log('[view-diagnostics]', {
-            timestamp: frameTimestamp,
-            shoulderYawDeg: viewEstimate.shoulderYawDeg,
-            hipYawDeg: viewEstimate.hipYawDeg,
-            yawDeg: nextViewAlignment.yawDeg,
-            estimatedView: nextViewAlignment.estimatedView,
-            recommendedView,
-            status: nextViewAlignment.status,
-            atBottom: pullupExtremityValidation.atBottom,
-            atTop: pullupExtremityValidation.atTop,
-          });
+          console.log('[view-diagnostics]', viewDiagnosticSnapshot);
           console.log('[pullup-diagnostics]', diagnosticSnapshot);
           lastPullupDiagnosticLogAtRef.current = now;
         }
@@ -8652,6 +8697,7 @@ function Home() {
     setExerciseRepPhase('esperando inicio');
     setExerciseMinimumAngle(null);
     pullupDiagnosticBufferRef.current = [];
+    viewDiagnosticBufferRef.current = [];
     setDiagnosticCopyMessage(null);
     if (diagnosticCopyMessageTimeoutRef.current !== null) {
       window.clearTimeout(diagnosticCopyMessageTimeoutRef.current);
@@ -10083,6 +10129,15 @@ function Home() {
               <div className="diagnostic-dock">
                 {canExportPullupDiagnostics && (
                   <div className="diagnostic-copy-control">
+                    <button
+                      type="button"
+                      className="diagnostic-copy-button"
+                      data-testid="button-copy-view-diagnostics"
+                      onClick={() => void copyViewDiagnostics()}
+                    >
+                      <Copy size={13} strokeWidth={2} aria-hidden="true" />
+                      <span>Copiar vista</span>
+                    </button>
                     <button
                       type="button"
                       className="diagnostic-copy-button"
