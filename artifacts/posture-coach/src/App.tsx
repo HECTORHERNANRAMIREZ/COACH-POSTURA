@@ -8142,6 +8142,17 @@ function Home() {
           );
         }
         if (now - lastPullupDiagnosticLogAtRef.current >= 500) {
+          console.log('[view-diagnostics]', {
+            timestamp: frameTimestamp,
+            shoulderYawDeg: viewEstimate.shoulderYawDeg,
+            hipYawDeg: viewEstimate.hipYawDeg,
+            yawDeg: nextViewAlignment.yawDeg,
+            estimatedView: nextViewAlignment.estimatedView,
+            recommendedView,
+            status: nextViewAlignment.status,
+            atBottom: pullupExtremityValidation.atBottom,
+            atTop: pullupExtremityValidation.atTop,
+          });
           console.log('[pullup-diagnostics]', diagnosticSnapshot);
           lastPullupDiagnosticLogAtRef.current = now;
         }

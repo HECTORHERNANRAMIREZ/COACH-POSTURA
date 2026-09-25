@@ -36,6 +36,8 @@ export type EstimatedView = ExerciseView | 'unknown';
 export type ViewStatus = 'good' | 'acceptable' | 'bad' | 'unknown';
 
 export type ViewEstimate = {
+  shoulderYawDeg: number | null;
+  hipYawDeg: number | null;
   yawDeg: number | null;
   pitchDeg: number | null;
   view: EstimatedView;
@@ -243,6 +245,8 @@ function getViewDeviation(
 
 export function createUnknownViewEstimate(): ViewEstimate {
   return {
+    shoulderYawDeg: null,
+    hipYawDeg: null,
     yawDeg: null,
     pitchDeg: null,
     view: 'unknown',
@@ -346,6 +350,8 @@ export class ViewEstimator {
 
     if (smoothedYaw === null) {
       return {
+        shoulderYawDeg: shoulderYaw,
+        hipYawDeg: hipYaw,
         yawDeg: null,
         pitchDeg,
         view: this.stableView,
@@ -387,6 +393,8 @@ export class ViewEstimator {
     }
 
     return {
+      shoulderYawDeg: shoulderYaw,
+      hipYawDeg: hipYaw,
       yawDeg: smoothedYaw,
       pitchDeg,
       view: this.stableView,
