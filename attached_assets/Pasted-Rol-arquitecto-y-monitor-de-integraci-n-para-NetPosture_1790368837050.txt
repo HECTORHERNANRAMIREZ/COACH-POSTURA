@@ -1,0 +1,25 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado (investigación previa, sin implementar todavía):
+- advancePullupTracker() solo se ejecuta si frameDetectionStable === true.
+- frameDetectionStable exige 4 frames consecutivos con !frameMeasurementBlocked.
+- frameMeasurementBlocked = frameLowConfidence || viewBlocksFrame.
+- viewBlocksFrame viene de ViewAlignmentGuard, que hoy bloquea tanto si assessment.status === 'bad' como si assessment.status === 'unknown' (no clasificable).
+- Esto es la causa raíz confirmada: aunque los ángulos y extremidades cumplan los rangos calibrados (atTop, atBottom), si la vista no se clasifica con certeza, el guard bloquea, la estabilidad nunca llega a 4 frames, y advancePullupTracker() nunca se llama. Por eso no se cuenta ninguna repetición, ni correcta ni incorrecta.
+
+Tarea — ETAPA 3A: quitar el bloqueo por vista "unknown"
+
+1. Localiza el archivo donde vive ViewAlignmentGuard y confírmalo en tu respuesta.
+
+2. Cuando assessment.status === 'unknown', NO marques wasBlocking = true. Trátalo como neutro (no bloquea, no agrega 'vista incorrecta' a blockingReasons). Solo assessment.status === 'bad' debe seguir bloqueando.
+
+3. NO toques bottomBase, topBase, ninguna tolerancia, ni el límite de 180° del codo.
+
+4. NO cambies la lógica de isAtBottom, hasReachedTop, ni las condiciones dentro de advancePullupTracker() que ya evalúan si una repetición es correcta o incorrecta.
+
+Verificación obligatoria, indícame el resultado de cada una:
+- pnpm --filter @workspace/posture-coach run typecheck → resultado exacto.
+- Confirma explícitamente si viewBlocksFrame dejó de aparecer en blockingReasons cuando status era unknown, pero siguió apareciendo cuando era bad.
+- Haz una prueba corta en vivo (sin necesidad de repeticiones completas todavía) y confirma si phase logra salir de "esperando abajo" al menos una vez.
+
+No implementes nada fuera de estos 4 puntos. No modifiques rangos ni umbrales de ángulo bajo ningún pretexto.

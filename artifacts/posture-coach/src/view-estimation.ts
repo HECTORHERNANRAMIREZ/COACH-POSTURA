@@ -477,7 +477,7 @@ export class ViewAlignmentGuard {
     } else {
       this.badSince = null;
       this.recoverSince = null;
-      this.wasBlocking = true;
+      this.wasBlocking = false;
     }
 
     const alertVisible = assessment.status === 'bad'
