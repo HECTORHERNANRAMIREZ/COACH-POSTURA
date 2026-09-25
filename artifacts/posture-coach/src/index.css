@@ -669,6 +669,10 @@
   object-position: center;
 }
 
+.exercise-card-image--contain {
+  object-fit: contain;
+}
+
 .exercise-card-zoom-hint {
   position: absolute;
   right: 0.18rem;

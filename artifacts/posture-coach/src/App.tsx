@@ -303,7 +303,7 @@ const exerciseImages: Record<ExerciseId, string> = {
   'extensiones-maquina': machineExtensionImage,
   'curl-femoral': `${basePath}/hamstring-curl-seated.png`,
   'elevacion-talones-pie': `${basePath}/standing-calf-raise.png`,
-  'maquina-aductores': `${basePath}/adductor-machine.png`,
+  'maquina-aductores': `${basePath}/adductor-machine-reference.png`,
   'hip-thrust-barra': `${basePath}/hip-thrust-barbell.png`,
   zancadas: lungeImage,
   'zancada-banco': benchLungeImage,
@@ -8821,7 +8821,11 @@ function Home() {
                                       onClick={() => setPreviewExercise(exercise)}
                                     >
                                        <img
-                                         className="exercise-card-image"
+                                         className={`exercise-card-image${
+                                           exercise.id === 'maquina-aductores'
+                                             ? ' exercise-card-image--contain'
+                                             : ''
+                                         }`}
                                          src={exerciseImages[exercise.id] || getExerciseImageFallback(exercise)}
                                          alt={`Ilustración de ${exercise.name}`}
                                          onError={(event) => handleExerciseImageError(event, exercise)}
