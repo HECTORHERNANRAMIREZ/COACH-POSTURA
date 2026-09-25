@@ -1725,19 +1725,16 @@ const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const POSE_MODEL_LOAD_TIMEOUT_MS = 30000;
-// Calibración derivada de la secuencia de referencia enviada por el usuario:
-// abajo: codos extendidos; arriba: cabeza sobre las muñecas y codos cerrados.
-const PULLUP_BOTTOM_MIN_ANGLE = 135;
+// Calibración de dominadas basada en las lecturas de la ejecución de referencia:
+// abajo: codo extendido; arriba: cabeza sobre las manos y codo flexionado.
+const PULLUP_BOTTOM_MIN_ANGLE = 145;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
 const PULLUP_NO_LOCKOUT_ANGLE = 155;
-const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 105;
-const PULLUP_BOTTOM_WRIST_MIN_ANGLE = 130;
+const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 125;
 const PULLUP_TOP_SHOULDER_MIN_ANGLE = 70;
-const PULLUP_TOP_SHOULDER_MAX_ANGLE = 110;
-const PULLUP_TOP_ELBOW_MIN_ANGLE = 85;
-const PULLUP_TOP_ELBOW_MAX_ANGLE = 115;
-const PULLUP_TOP_WRIST_MIN_ANGLE = 130;
-const PULLUP_TOP_WRIST_MAX_ANGLE = 160;
+const PULLUP_TOP_SHOULDER_MAX_ANGLE = 125;
+const PULLUP_TOP_ELBOW_MIN_ANGLE = 70;
+const PULLUP_TOP_ELBOW_MAX_ANGLE = 135;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
@@ -3044,17 +3041,12 @@ function getPullupExtremityValidation(
         keypoints[indexes.elbow],
         keypoints[indexes.wrist],
       ),
-      wrist: calculateAngle(
-        keypoints[indexes.elbow],
-        keypoints[indexes.wrist],
-        keypoints[WRIST_TIP_INDEX[side]],
-      ),
     };
   };
 
   const readings = (['left', 'right'] as PoseSide[]).map(sideReadings);
   const allInRange = (
-    key: 'shoulder' | 'elbow' | 'wrist',
+    key: 'shoulder' | 'elbow',
     min: number,
     max: number,
   ) => readings.every((reading) => {
@@ -3064,11 +3056,9 @@ function getPullupExtremityValidation(
 
   return {
     atBottom: allInRange('shoulder', PULLUP_BOTTOM_SHOULDER_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE)
-      && allInRange('elbow', PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE)
-      && allInRange('wrist', PULLUP_BOTTOM_WRIST_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
+      && allInRange('elbow', PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
     atTop: allInRange('shoulder', PULLUP_TOP_SHOULDER_MIN_ANGLE, PULLUP_TOP_SHOULDER_MAX_ANGLE)
-      && allInRange('elbow', PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE)
-      && allInRange('wrist', PULLUP_TOP_WRIST_MIN_ANGLE, PULLUP_TOP_WRIST_MAX_ANGLE),
+      && allInRange('elbow', PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE),
   };
 }
 
@@ -3109,7 +3099,7 @@ function advancePullupTracker(
       nextTracker.currentRepCorrect = isAtBottom;
     }
   } else if (nextTracker.phase === 'abajo') {
-    if (hasStartedPull) {
+    if (hasStartedPull && isRising) {
       nextTracker.phase = 'subiendo';
       nextTracker.minimumAngle = smoothedAngle;
     }
@@ -3118,7 +3108,7 @@ function advancePullupTracker(
       ? smoothedAngle
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
 
-    nextTracker.topFrames = hasReachedTopByAngle ? nextTracker.topFrames + 1 : 0;
+    nextTracker.topFrames = hasReachedTop ? nextTracker.topFrames + 1 : 0;
     if (nextTracker.topFrames >= 2) {
       nextTracker.phase = 'arriba';
       nextTracker.topFrames = 0;
@@ -3126,6 +3116,12 @@ function advancePullupTracker(
         && hasReachedTop
         && headOverWrists
         && extremities.atTop;
+      nextTracker.repetitions += 1;
+      nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
+      if (nextTracker.currentRepCorrect) {
+        nextTracker.goodRepetitions += 1;
+      }
+      completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
@@ -3137,12 +3133,6 @@ function advancePullupTracker(
     nextTracker.topFrames = 0;
     if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.repetitions += 1;
-      const repetitionWasCorrect = nextTracker.currentRepCorrect && isAtBottom;
-      nextTracker.event = repetitionWasCorrect ? 'valid' : 'invalid';
-      if (repetitionWasCorrect) {
-        nextTracker.goodRepetitions += 1;
-      }
       nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (smoothedAngle > config.topMaxAngle) {
