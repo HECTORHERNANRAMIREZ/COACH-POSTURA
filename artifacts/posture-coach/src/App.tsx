@@ -9240,9 +9240,6 @@ function Home() {
   const canExportPullupDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED
     && isPullupExerciseSelected;
   const isStandardPullupSelected = selectedExercise === 'dominadas';
-  const pullupCalibrationReady = isStandardPullupSelected
-    && pullupCalibrationSuccessfulRef.current;
-  const pullupCalibrationWaitingForStart = pullupCalibrationReady && !exerciseStarted;
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
@@ -9257,9 +9254,7 @@ function Home() {
           ? pullupPreparationCountdown !== null
             ? `Prepárate en la barra · ${pullupPreparationCountdown}`
             : 'Cuerpo registrado ✓ · cuélgate en la barra'
-        : pullupCalibrationWaitingForStart
-          ? 'Preparación completada'
-          : personDetected
+        : personDetected
           ? cameraReady
             ? viewAlignment.status === 'bad' || viewAlignment.status === 'unknown'
               ? viewAlignment.message
@@ -9723,9 +9718,7 @@ function Home() {
                         ? pullupPreparationCountdown !== null
                           ? `Cuélgate en la barra · ${pullupPreparationCountdown}`
                           : 'Prepárate en la barra'
-                      : pullupCalibrationWaitingForStart
-                        ? 'Preparación completada'
-                        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
+                       : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
                           ? `Registrando durante ${PULLUP_BODY_DETECTION_HOLD_MS / 1000} segundos`
                         : personDetected
                         ? cameraReady
@@ -9748,9 +9741,7 @@ function Home() {
                         ? 'Mantén cabeza, hombros, codos, muñecas, caderas, rodillas y tobillos visibles para registrar tu cuerpo.'
                         : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
                           ? 'Cuélgate en la barra. Al terminar la cuenta regresiva se activarán automáticamente el monitoreo y el conteo.'
-                      : pullupCalibrationWaitingForStart
-                        ? 'La preparación terminó. El ejercicio se activará automáticamente.'
-                        : personDetected
+                       : personDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
                           : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
@@ -10388,33 +10379,21 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
-                <button
-                  type="button"
-                  className="exercise-start-button camera-start-button"
-                  disabled={
-                    phase !== 'tracking'
-                    || (
-                      !exerciseStarted
-                      && (isStandardPullupSelected
-                        ? true
-                        : !personDetected)
-                    )
-                  }
-                  aria-pressed={exerciseStarted}
-                  onClick={toggleExercise}
-                >
-                  {exerciseStarted
-                    ? 'Terminar ejercicio'
-                    : isStandardPullupSelected
-                      ? pullupPreparationCountdown !== null
-                        ? `Preparando · ${pullupPreparationCountdown}`
-                        : 'Preparando ejercicio'
-                    : pullupCalibrationWaitingForStart
-                      ? 'Iniciar ejercicio'
+                {(exerciseStarted || !isStandardPullupSelected) && (
+                  <button
+                    type="button"
+                    className="exercise-start-button camera-start-button"
+                    disabled={phase !== 'tracking' || (!exerciseStarted && !personDetected)}
+                    aria-pressed={exerciseStarted}
+                    onClick={toggleExercise}
+                  >
+                    {exerciseStarted
+                      ? 'Terminar ejercicio'
                       : personDetected
                         ? 'Iniciar ejercicio'
                         : 'Buscando cuerpo'}
-                </button>
+                  </button>
+                )}
                 {hasEvaluationCounter && (
                   <div
                     className="rep-counter-hud"
