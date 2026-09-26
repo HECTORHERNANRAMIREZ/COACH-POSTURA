@@ -424,6 +424,7 @@ type SquatTracker = {
 };
 type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
 type PullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
+type PullupPreparationStage = 'body-detection' | 'bar-preparation' | 'active';
 type PullupTracker = {
   phase: PullupPhase;
   repetitions: number;
@@ -1763,7 +1764,8 @@ const PULLUP_TOP_ELBOW_MIN_ANGLE = 70;
 const PULLUP_TOP_ELBOW_MAX_ANGLE = 135;
 const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
-const PULLUP_CALIBRATION_HOLD_MS = 2500;
+const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
+const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
 // Calibración derivada del video de referencia del usuario:
@@ -3655,7 +3657,11 @@ type PullupCalibrationStatus = 'pending' | 'calibrating' | 'ready';
 function getPullupCalibrationPoints(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return [];
 
-  return (['left', 'right'] as PoseSide[]).flatMap((side) => {
+  const headPoints = HEAD_LANDMARK_INDICES.map((index, pointIndex) => ({
+    label: `cabeza ${pointIndex + 1}`,
+    point: keypoints[index],
+  }));
+  const bodyPoints = (['left', 'right'] as PoseSide[]).flatMap((side) => {
     const indexes = sideKeypoints[side];
     const sideLabel = side === 'left' ? 'izquierda' : 'derecha';
     return [
@@ -3663,8 +3669,11 @@ function getPullupCalibrationPoints(keypoints: PosePoint[] | undefined) {
       { label: `codo ${sideLabel}`, point: keypoints[indexes.elbow] },
       { label: `muñeca ${sideLabel}`, point: keypoints[indexes.wrist] },
       { label: `cadera ${sideLabel}`, point: keypoints[indexes.hip] },
+      { label: `rodilla ${sideLabel}`, point: keypoints[indexes.knee] },
+      { label: `tobillo ${sideLabel}`, point: keypoints[indexes.ankle] },
     ];
   });
+  return [...headPoints, ...bodyPoints];
 }
 
 function isFreshPullupCalibrationPoint(point: PosePoint | undefined) {
@@ -7379,6 +7388,8 @@ function Home() {
     message: 'Ajustando la cámara',
     detail: 'Mantente dentro del encuadre para validar tu posición.',
   });
+  const [pullupPreparationStage, setPullupPreparationStage] = useState<PullupPreparationStage>('body-detection');
+  const [pullupPreparationCountdown, setPullupPreparationCountdown] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
   const [modelStatus, setModelStatus] = useState('Modelo sin iniciar');
@@ -7487,6 +7498,9 @@ function Home() {
   const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pullupCalibrationReadySinceRef = useRef<number | null>(null);
   const pullupCalibrationSuccessfulRef = useRef(false);
+  const pullupPreparationStageRef = useRef<PullupPreparationStage>('body-detection');
+  const pullupPreparationStartedAtRef = useRef<number | null>(null);
+  const pullupPreparationCountdownRef = useRef<number | null>(null);
   const previousFootExerciseRef = useRef<ExerciseId | null>(null);
   const previousFootRatioRef = useRef<number | null>(null);
   const heelRaiseFootPhaseRef = useRef<'up' | 'down' | null>(null);
@@ -7496,6 +7510,18 @@ function Home() {
     if (pullupCalibrationStatusRef.current === status) return;
     pullupCalibrationStatusRef.current = status;
     setPullupCalibrationStatus(status);
+  }, []);
+
+  const updatePullupPreparationStage = useCallback((stage: PullupPreparationStage) => {
+    if (pullupPreparationStageRef.current === stage) return;
+    pullupPreparationStageRef.current = stage;
+    setPullupPreparationStage(stage);
+  }, []);
+
+  const updatePullupPreparationCountdown = useCallback((seconds: number | null) => {
+    if (pullupPreparationCountdownRef.current === seconds) return;
+    pullupPreparationCountdownRef.current = seconds;
+    setPullupPreparationCountdown(seconds);
   }, []);
 
   const incrementErrorCount = useCallback(() => {
@@ -7935,15 +7961,25 @@ function Home() {
         || selectedExerciseForFrame === 'dominadas-comando';
       const pullupCalibrationLocked = selectedExerciseForFrame === 'dominadas'
         && pullupCalibrationSuccessfulRef.current;
+      const currentPullupPreparationStage = pullupPreparationStageRef.current;
+      const currentPullupPreparationCountdown = pullupPreparationCountdownRef.current;
       const nextCameraGuidance = pullupCalibrationLocked || pullupTrackingIsAnchored
         ? {
             tone: 'ready' as const,
             message: pullupTrackingIsAnchored
               ? 'Sesión activa · seguimiento anclado'
-              : 'Calibración exitosa',
+              : currentPullupPreparationStage === 'bar-preparation'
+                ? `Cuerpo registrado ✓ · cuélgate en la barra${
+                  currentPullupPreparationCountdown === null
+                    ? ''
+                    : ` · ${currentPullupPreparationCountdown}`
+                }`
+                : 'Calibración exitosa',
             detail: pullupTrackingIsAnchored
               ? 'Los puntos confirmados permanecen anclados. Los ángulos siguen actualizándose con tu movimiento real.'
-              : 'Puedes acercarte para pulsar Iniciar ejercicio. La calibración no se perderá.',
+              : currentPullupPreparationStage === 'bar-preparation'
+                ? 'Organízate en la barra. El análisis comenzará automáticamente al terminar la cuenta regresiva.'
+                : 'La detección inicial terminó. Prepárate para continuar.',
           }
         : rawCameraGuidance;
       const frameCameraReady = rawCameraGuidance.tone === 'ready';
@@ -8013,23 +8049,61 @@ function Home() {
       ) {
         const calibrationPoints = getPullupCalibrationPoints(pose?.keypoints);
         const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
-          && calibrationPoints.length === 8
+          && calibrationPoints.length === 15
           && calibrationPoints.every(({ point }) => isFreshPullupCalibrationPoint(point));
 
         if (calibrationFrameReady) {
           pullupCalibrationReadySinceRef.current ??= now;
           updatePullupCalibrationStatus('calibrating');
+          const calibrationElapsed = now - pullupCalibrationReadySinceRef.current;
+          updatePullupPreparationCountdown(
+            Math.max(
+              1,
+              Math.ceil((PULLUP_BODY_DETECTION_HOLD_MS - calibrationElapsed) / 1000),
+            ),
+          );
           if (
-            now - pullupCalibrationReadySinceRef.current
-            >= PULLUP_CALIBRATION_HOLD_MS
+            calibrationElapsed >= PULLUP_BODY_DETECTION_HOLD_MS
           ) {
             pullupCalibrationSuccessfulRef.current = true;
             pullupCalibrationReadySinceRef.current = null;
             updatePullupCalibrationStatus('ready');
+            pullupPreparationStartedAtRef.current = now;
+            updatePullupPreparationStage('bar-preparation');
+            updatePullupPreparationCountdown(
+              Math.ceil(PULLUP_BAR_PREPARATION_COUNTDOWN_MS / 1000),
+            );
           }
         } else {
           pullupCalibrationReadySinceRef.current = null;
           updatePullupCalibrationStatus('pending');
+          if (pullupPreparationStageRef.current === 'body-detection') {
+            updatePullupPreparationCountdown(null);
+          }
+        }
+      }
+      if (
+        selectedExerciseForFrame === 'dominadas'
+        && pullupCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+        && pullupPreparationStageRef.current === 'bar-preparation'
+      ) {
+        const preparationStartedAt = pullupPreparationStartedAtRef.current ?? now;
+        pullupPreparationStartedAtRef.current = preparationStartedAt;
+        const preparationElapsed = now - preparationStartedAt;
+        if (preparationElapsed >= PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
+          exerciseStartedRef.current = true;
+          setExerciseStarted(true);
+          updatePullupPreparationStage('active');
+          updatePullupPreparationCountdown(null);
+          setPullupFeedback(defaultTechniqueFeedback);
+        } else {
+          updatePullupPreparationCountdown(
+            Math.max(
+              1,
+              Math.ceil((PULLUP_BAR_PREPARATION_COUNTDOWN_MS - preparationElapsed) / 1000),
+            ),
+          );
         }
       }
       const repetitionConfig = getRepetitionConfig(selectedExerciseForFrame);
@@ -8845,7 +8919,12 @@ function Home() {
     if (activeRef.current) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     }
-  }, [incrementErrorCount, updatePullupCalibrationStatus]);
+  }, [
+    incrementErrorCount,
+    updatePullupPreparationCountdown,
+    updatePullupCalibrationStatus,
+    updatePullupPreparationStage,
+  ]);
 
   const loadDetector = useCallback(async () => {
     let timeoutId: number | null = null;
@@ -8883,6 +8962,11 @@ function Home() {
       pullupCalibrationReadySinceRef.current = null;
       updatePullupCalibrationStatus('pending');
     }
+    pullupPreparationStageRef.current = 'body-detection';
+    pullupPreparationStartedAtRef.current = null;
+    pullupPreparationCountdownRef.current = null;
+    setPullupPreparationStage('body-detection');
+    setPullupPreparationCountdown(null);
     stopResources();
     setPoseDetected(false);
     setFaceDetected(false);
@@ -9040,6 +9124,11 @@ function Home() {
         pullupCalibrationSuccessfulRef.current = false;
         pullupCalibrationReadySinceRef.current = null;
         updatePullupCalibrationStatus('pending');
+        pullupPreparationStageRef.current = 'body-detection';
+        pullupPreparationStartedAtRef.current = null;
+        pullupPreparationCountdownRef.current = null;
+        setPullupPreparationStage('body-detection');
+        setPullupPreparationCountdown(null);
       }
       setSquatFeedback(defaultSquatFeedback);
       setPullupFeedback(defaultTechniqueFeedback);
@@ -9047,9 +9136,9 @@ function Home() {
       return;
     }
 
-    const canStartAnchoredPullup = selectedExerciseRef.current === 'dominadas'
-      && pullupCalibrationSuccessfulRef.current;
-    if (!canStartAnchoredPullup && !faceDetected && !poseDetected) return;
+    if (selectedExerciseRef.current === 'dominadas') return;
+
+    if (!faceDetected && !poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
@@ -9066,6 +9155,11 @@ function Home() {
     pullupCalibrationSuccessfulRef.current = false;
     pullupCalibrationReadySinceRef.current = null;
     updatePullupCalibrationStatus('pending');
+    pullupPreparationStageRef.current = 'body-detection';
+    pullupPreparationStartedAtRef.current = null;
+    pullupPreparationCountdownRef.current = null;
+    setPullupPreparationStage('body-detection');
+    setPullupPreparationCountdown(null);
     setPoseDetected(false);
     setFaceDetected(false);
     setCameraReady(false);
@@ -9153,19 +9247,27 @@ function Home() {
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? pullupCalibrationWaitingForStart
-        ? 'Calibración exitosa ✓ · pulsa Iniciar ejercicio'
-        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
-          ? 'Mantén la posición para calibrar'
-        : personDetected
-        ? cameraReady
-          ? viewAlignment.status === 'bad' || viewAlignment.status === 'unknown'
-            ? viewAlignment.message
-            : 'Colócate en posición y pulsa Iniciar ejercicio'
-          : poseDetected
-            ? 'Cuerpo detectado ✓ · puedes iniciar'
-            : 'Rostro detectado ✓ · puedes iniciar'
-        : 'Buscando tu cuerpo...'
+      ? isStandardPullupSelected && pullupPreparationStage === 'body-detection'
+        ? pullupPreparationCountdown !== null
+          ? `Registrando tu cuerpo · ${pullupPreparationCountdown}`
+          : pullupCalibrationStatus === 'calibrating'
+            ? 'Mantén todo tu cuerpo visible'
+            : 'Buscando y registrando tu cuerpo...'
+        : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
+          ? pullupPreparationCountdown !== null
+            ? `Prepárate en la barra · ${pullupPreparationCountdown}`
+            : 'Cuerpo registrado ✓ · cuélgate en la barra'
+        : pullupCalibrationWaitingForStart
+          ? 'Preparación completada'
+          : personDetected
+          ? cameraReady
+            ? viewAlignment.status === 'bad' || viewAlignment.status === 'unknown'
+              ? viewAlignment.message
+              : 'Colócate en posición y pulsa Iniciar ejercicio'
+            : poseDetected
+              ? 'Cuerpo detectado ✓ · puedes iniciar'
+              : 'Rostro detectado ✓ · puedes iniciar'
+          : 'Buscando tu cuerpo...'
       : poseDetected
         ? cameraReady
           ? viewAlignment.blocking
@@ -9613,10 +9715,18 @@ function Home() {
                         : !detectionStable
                           ? 'Mejorando detección'
                           : 'Ejercicio iniciado'
+                      : isStandardPullupSelected && pullupPreparationStage === 'body-detection'
+                        ? pullupPreparationCountdown !== null
+                          ? `Registrando cuerpo · ${pullupPreparationCountdown}`
+                          : 'Buscando tu cuerpo...'
+                      : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
+                        ? pullupPreparationCountdown !== null
+                          ? `Cuélgate en la barra · ${pullupPreparationCountdown}`
+                          : 'Prepárate en la barra'
                       : pullupCalibrationWaitingForStart
-                        ? 'Calibración completada'
+                        ? 'Preparación completada'
                         : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
-                          ? 'Calibrando durante 2.5 segundos'
+                          ? `Registrando durante ${PULLUP_BODY_DETECTION_HOLD_MS / 1000} segundos`
                         : personDetected
                         ? cameraReady
                           ? '¿Ya estás listo?'
@@ -9634,10 +9744,12 @@ function Home() {
                           : hasEvaluationCounter
                             ? 'El contador está activo. Detén el curso cuando hayas terminado.'
                             : 'Las lecturas están activas. Mantén la posición y completa el movimiento con control.'
+                      : isStandardPullupSelected && pullupPreparationStage === 'body-detection'
+                        ? 'Mantén cabeza, hombros, codos, muñecas, caderas, rodillas y tobillos visibles para registrar tu cuerpo.'
+                        : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
+                          ? 'Cuélgate en la barra. Al terminar la cuenta regresiva se activarán automáticamente el monitoreo y el conteo.'
                       : pullupCalibrationWaitingForStart
-                        ? 'La calibración de 2.5 segundos quedó guardada. Acércate a la pantalla y pulsa Iniciar ejercicio; no se volverá a validar antes de comenzar.'
-                        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
-                          ? 'Mantén hombros, codos, muñecas y caderas visibles y en verde sin moverte durante 2.5 segundos.'
+                        ? 'La preparación terminó. El ejercicio se activará automáticamente.'
                         : personDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
@@ -10213,6 +10325,28 @@ function Home() {
                   }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
+                {isStandardPullupSelected
+                  && !exerciseStarted
+                  && pullupPreparationCountdown !== null && (
+                    <div
+                      className="pullup-preparation-overlay"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <span>
+                        {pullupPreparationStage === 'body-detection'
+                          ? 'Registrando tu cuerpo'
+                          : 'Cuélgate en la barra'}
+                      </span>
+                      <strong>{pullupPreparationCountdown}</strong>
+                      <small>
+                        {pullupPreparationStage === 'body-detection'
+                          ? 'Mantente quieto y visible'
+                          : 'El ejercicio comenzará automáticamente'}
+                      </small>
+                    </div>
+                  )}
                 {DEBUG_LIMB_TRACKING_ACTIVE && (
                   <div className="limb-debug-panel" aria-hidden="true">
                     <div className="limb-debug-panel__title">DEBUG · EXTREMIDADES</div>
@@ -10262,7 +10396,7 @@ function Home() {
                     || (
                       !exerciseStarted
                       && (isStandardPullupSelected
-                        ? !pullupCalibrationReady
+                        ? true
                         : !personDetected)
                     )
                   }
@@ -10271,6 +10405,10 @@ function Home() {
                 >
                   {exerciseStarted
                     ? 'Terminar ejercicio'
+                    : isStandardPullupSelected
+                      ? pullupPreparationCountdown !== null
+                        ? `Preparando · ${pullupPreparationCountdown}`
+                        : 'Preparando ejercicio'
                     : pullupCalibrationWaitingForStart
                       ? 'Iniciar ejercicio'
                       : personDetected

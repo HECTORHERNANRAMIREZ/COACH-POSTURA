@@ -1080,6 +1080,49 @@
   transform: translate(-50%, -1px);
 }
 
+.pullup-preparation-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  display: grid;
+  justify-items: center;
+  gap: 0.28rem;
+  min-width: min(15rem, calc(100% - 2rem));
+  padding: 1rem 1.25rem 1.1rem;
+  border: 1px solid rgba(139, 255, 165, 0.42);
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(145deg, rgba(7, 24, 19, 0.94), rgba(8, 22, 28, 0.92)),
+    rgba(8, 22, 28, 0.94);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.28), 0 0 2rem rgba(57, 255, 106, 0.1);
+  color: #dfffe6;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.pullup-preparation-overlay span {
+  color: rgba(223, 255, 230, 0.8);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.pullup-preparation-overlay strong {
+  color: #8bffa5;
+  font-size: clamp(3.2rem, 10vw, 5.25rem);
+  font-weight: 850;
+  line-height: 0.95;
+  text-shadow: 0 0 1.5rem rgba(57, 255, 106, 0.28);
+}
+
+.pullup-preparation-overlay small {
+  color: rgba(205, 231, 211, 0.68);
+  font-size: 0.65rem;
+}
+
 .rep-counter-hud {
   position: absolute;
   z-index: 3;
