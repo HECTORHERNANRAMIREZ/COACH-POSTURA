@@ -435,6 +435,8 @@ type PullupTracker = {
   lastAngle: number | null;
   topFrames: number;
   currentRepCorrect: boolean;
+  bottomReadyFrames: number;
+  isArmed: boolean;
 };
 type ExerciseRepPhase = 'esperando inicio' | 'inicio' | 'en movimiento' | 'final';
 type ExerciseRepDirection = 'decrease' | 'increase';
@@ -1755,6 +1757,7 @@ const POSE_MODEL_LOAD_TIMEOUT_MS = 30000;
 // abajo: codo extendido; arriba: codo flexionado.
 const PULLUP_BOTTOM_MIN_ANGLE = 145;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
+const PULLUP_PULL_ACTIVATION_ANGLE = 135;
 const PULLUP_NO_LOCKOUT_ANGLE = 155;
 // Solo se muestran en diagnóstico; no bloquean ni validan repeticiones.
 const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 125;
@@ -1764,6 +1767,7 @@ const PULLUP_TOP_ELBOW_MIN_ANGLE = 70;
 const PULLUP_TOP_ELBOW_MAX_ANGLE = 135;
 const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
+const PULLUP_BOTTOM_STABLE_FRAMES = 3;
 const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
@@ -2604,7 +2608,7 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
     case 'dominadas-supinas':
       return [
         `Inicio / regreso: codo ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · tolerancia ±${PULLUP_TOLERANCE_DEG}°`,
-        `Activación: codo <${PULLUP_NO_LOCKOUT_ANGLE}°`,
+        `Activación: codo ≤${PULLUP_PULL_ACTIVATION_ANGLE}°`,
         'Parte alta: cabeza sobre ambas muñecas',
       ];
     case 'dominadas-comando':
@@ -2935,6 +2939,8 @@ function createPullupTracker(): PullupTracker {
     lastAngle: null,
     topFrames: 0,
     currentRepCorrect: false,
+    bottomReadyFrames: 0,
+    isArmed: false,
   };
 }
 
@@ -3135,10 +3141,30 @@ function advancePullupTracker(
     PULLUP_BOTTOM_MIN_ANGLE,
     PULLUP_BOTTOM_MAX_ANGLE,
   );
-  const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
+  const hasStartedPull = smoothedAngle <= PULLUP_PULL_ACTIVATION_ANGLE;
   const hasReachedTop = headOverWrists;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
+
+  if (!nextTracker.isArmed) {
+    nextTracker.bottomReadyFrames = isAtBottom
+      ? tracker.bottomReadyFrames + 1
+      : 0;
+    if (nextTracker.bottomReadyFrames >= PULLUP_BOTTOM_STABLE_FRAMES) {
+      nextTracker.isArmed = true;
+      nextTracker.bottomReadyFrames = 0;
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = true;
+      nextTracker.minimumAngle = null;
+    }
+    return {
+      tracker: nextTracker,
+      smoothedAngle,
+      completedMinimumAngle,
+      isAtBottom,
+      hasReachedTop,
+    };
+  }
 
   if (nextTracker.phase === 'esperando abajo') {
     if (isAtBottom) {
@@ -8092,6 +8118,11 @@ function Home() {
         pullupPreparationStartedAtRef.current = preparationStartedAt;
         const preparationElapsed = now - preparationStartedAt;
         if (preparationElapsed >= PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
+          pullupTrackerRef.current = createPullupTracker();
+          setPullupRepetitions(0);
+          setPullupGoodRepetitions(0);
+          setPullupPhase('esperando abajo');
+          setPullupMinimumAngle(null);
           exerciseStartedRef.current = true;
           setExerciseStarted(true);
           updatePullupPreparationStage('active');
@@ -9340,7 +9371,7 @@ function Home() {
     );
   const pullupElbowIsExtended = angle !== null
     && isWithinPullupAngle(angle, PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE);
-  const pullupHasStarted = angle !== null && angle < PULLUP_NO_LOCKOUT_ANGLE;
+  const pullupHasStarted = angle !== null && angle <= PULLUP_PULL_ACTIVATION_ANGLE;
   const angleHistoryLabel = angleHistory.length
     ? angleHistory.map((value) => `${value}°`).join(' · ')
     : '—';
