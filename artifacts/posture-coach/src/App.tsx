@@ -6601,6 +6601,25 @@ function getPullupDiagnosticBlockingReasons(
     }
   });
 
+  [
+    {
+      label: 'cadera izquierda',
+      point: keypoints?.[sideKeypoints.left.hip],
+    },
+    {
+      label: 'cadera derecha',
+      point: keypoints?.[sideKeypoints.right.hip],
+    },
+  ].forEach(({ label, point }) => {
+    if (
+      !point
+      || (point.score ?? 0) < 0.2
+      || getAngleMeasurementCoordinates(point) === null
+    ) {
+      reasons.push(`${label} no visible`);
+    }
+  });
+
   if (viewBlocksFrame) reasons.push('vista incorrecta');
   if (!frameDetectionStable) reasons.push('pose inestable');
   if (visiblePoints < 5) reasons.push('pocos puntos visibles');
@@ -8162,8 +8181,12 @@ function Home() {
         const rightWrist = pose?.keypoints?.[sideKeypoints.right.wrist];
         const leftShoulder = pose?.keypoints?.[sideKeypoints.left.shoulder];
         const rightShoulder = pose?.keypoints?.[sideKeypoints.right.shoulder];
+        const leftHip = pose?.keypoints?.[sideKeypoints.left.hip];
+        const rightHip = pose?.keypoints?.[sideKeypoints.right.hip];
         const leftElbow = pose?.keypoints?.[sideKeypoints.left.elbow];
         const rightElbow = pose?.keypoints?.[sideKeypoints.right.elbow];
+        const leftHipWorldCoords = getAngleMeasurementCoordinates(leftHip);
+        const rightHipWorldCoords = getAngleMeasurementCoordinates(rightHip);
         const relationToNose = (
           wrist: PosePoint | undefined,
         ): ExerciseDiagnosticSnapshot['head']['leftWristRelation'] => {
@@ -8248,6 +8271,22 @@ function Home() {
                   PULLUP_TOP_SHOULDER_MIN_ANGLE,
                   PULLUP_TOP_SHOULDER_MAX_ANGLE,
                 ),
+            },
+          },
+          hips: {
+            left: {
+              score: leftHip?.score ?? null,
+              held: leftHip?.held ?? null,
+              heldReason: leftHip?.heldReason ?? null,
+              hasWorldCoords: leftHipWorldCoords !== null,
+              worldCoords: leftHipWorldCoords,
+            },
+            right: {
+              score: rightHip?.score ?? null,
+              held: rightHip?.held ?? null,
+              heldReason: rightHip?.heldReason ?? null,
+              hasWorldCoords: rightHipWorldCoords !== null,
+              worldCoords: rightHipWorldCoords,
             },
           },
           elbows: {

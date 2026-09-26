@@ -39,6 +39,22 @@ export type ExerciseDiagnosticSnapshot = {
       inTopRange: boolean;
     };
   };
+  hips: {
+    left: {
+      score: number | null;
+      held: boolean | null;
+      heldReason: string | null;
+      hasWorldCoords: boolean;
+      worldCoords: { x: number; y: number; z: number } | null;
+    };
+    right: {
+      score: number | null;
+      held: boolean | null;
+      heldReason: string | null;
+      hasWorldCoords: boolean;
+      worldCoords: { x: number; y: number; z: number } | null;
+    };
+  };
   elbows: {
     left: {
       angle: number | null;
