@@ -526,7 +526,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'hip', label: 'caderas' },
     ],
     trackBothSides: true,
-    trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas y codos 70–135°'],
+    trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas'],
   },
   {
     id: 'dominadas-supinas',
@@ -541,7 +541,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'wrist', label: 'muñecas' },
     ],
     trackBothSides: true,
-    trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas y codos 70–135°'],
+    trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas'],
   },
   {
     id: 'dominadas-comando',
@@ -2603,7 +2603,7 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       return [
         `Inicio / regreso: codo ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · tolerancia ±${PULLUP_TOLERANCE_DEG}°`,
         `Activación: codo <${PULLUP_NO_LOCKOUT_ANGLE}°`,
-        `Parte alta: cabeza sobre ambas muñecas · ambos codos ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}° · tolerancia ±${PULLUP_TOLERANCE_DEG}°`,
+        'Parte alta: cabeza sobre ambas muñecas',
       ];
     case 'dominadas-comando':
       return [
@@ -3043,7 +3043,6 @@ type PullupTrackerUpdate = {
 
 type PullupExtremityValidation = {
   atBottom: boolean;
-  atTop: boolean;
 };
 
 type PullupExtremityReadings = {
@@ -3055,21 +3054,6 @@ type PullupExtremityReadings = {
     shoulder: number | null;
     elbow: number | null;
   };
-};
-
-type PullupTrackerConfig = {
-  topMinAngle: number;
-  topMaxAngle: number;
-};
-
-const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
-  topMinAngle: PULLUP_TOP_ELBOW_MIN_ANGLE,
-  topMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
-};
-
-const SUPINE_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
-  topMinAngle: PULLUP_TOP_ELBOW_MIN_ANGLE,
-  topMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
 };
 
 function getPullupExtremityReadings(
@@ -3115,7 +3099,6 @@ function getPullupExtremityValidation(
 
   return {
     atBottom: allElbowsInRange(PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
-    atTop: allElbowsInRange(PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE),
   };
 }
 
@@ -3124,7 +3107,6 @@ function advancePullupTracker(
   rawAngle: number,
   headOverWrists: boolean,
   extremities: PullupExtremityValidation,
-  config: PullupTrackerConfig = STANDARD_PULLUP_TRACKER_CONFIG,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
   const smoothedAngle = median(samples);
@@ -3152,14 +3134,7 @@ function advancePullupTracker(
     PULLUP_BOTTOM_MAX_ANGLE,
   );
   const hasStartedPull = smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE;
-  const hasReachedTopByAngle = isWithinPullupAngle(
-    smoothedAngle,
-    config.topMinAngle,
-    config.topMaxAngle,
-  );
-  const hasReachedTop = hasReachedTopByAngle
-    && headOverWrists
-    && extremities.atTop;
+  const hasReachedTop = headOverWrists;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
 
@@ -3192,8 +3167,7 @@ function advancePullupTracker(
       nextTracker.topFrames = 0;
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
-        && headOverWrists
-        && extremities.atTop;
+        && headOverWrists;
       nextTracker.repetitions += 1;
       nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
       if (nextTracker.currentRepCorrect) {
@@ -3213,7 +3187,7 @@ function advancePullupTracker(
       nextTracker.phase = 'abajo';
       nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
-    } else if (!isWithinPullupAngle(smoothedAngle, config.topMinAngle, config.topMaxAngle)) {
+    } else if (!headOverWrists) {
       nextTracker.phase = 'bajando';
     }
   } else if (nextTracker.phase === 'bajando') {
@@ -3224,12 +3198,6 @@ function advancePullupTracker(
 
     if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.repetitions += 1;
-      const repetitionWasCorrect = nextTracker.currentRepCorrect && isAtBottom;
-      nextTracker.event = repetitionWasCorrect ? 'valid' : 'invalid';
-      if (repetitionWasCorrect) {
-        nextTracker.goodRepetitions += 1;
-      }
       nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isRising && smoothedAngle < PULLUP_NO_LOCKOUT_ANGLE) {
@@ -5190,7 +5158,7 @@ function getPullupTechniqueFeedback(
   return {
     tone: 'success',
     message: 'Dominada válida',
-    detail: `Cabeza sobre ambas muñecas · codo a ${elbowAngle}° · completa el recorrido entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}° arriba.`,
+    detail: `Cabeza sobre ambas muñecas · codo a ${elbowAngle}° · inicia y regresa con los codos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°.`,
   };
 }
 
@@ -5227,7 +5195,7 @@ function getSupinePullupTechniqueFeedback(
   return {
     tone: 'success',
     message: 'Dominada supina válida',
-    detail: `Cabeza sobre ambas muñecas · codo a ${elbowAngle}° · completa el recorrido entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}° arriba con agarre supino.`,
+    detail: `Cabeza sobre ambas muñecas · codo a ${elbowAngle}° · inicia y regresa con los codos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° con agarre supino.`,
   };
 }
 
@@ -8164,7 +8132,7 @@ function Home() {
           };
       const pullupExtremityValidation = isPullupExercise
         ? getPullupExtremityValidation(pose?.keypoints, pullupExtremityReadings)
-        : { atBottom: false, atTop: false };
+        : { atBottom: false };
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
         exerciseStartedRef.current
@@ -8225,9 +8193,6 @@ function Home() {
           rawAngle,
           pullupHeadOverWrists === true,
           pullupExtremityValidation,
-          isSupinePullup
-            ? SUPINE_PULLUP_TRACKER_CONFIG
-            : STANDARD_PULLUP_TRACKER_CONFIG,
         );
         pullupDiagnosticUpdate = pullupUpdate;
         pullupTrackerRef.current = pullupUpdate.tracker;
@@ -8244,8 +8209,8 @@ function Home() {
             tone: 'success',
             message: `Repetición ${pullupUpdate.tracker.repetitions}: BIEN ✓`,
             detail: isSupinePullup
-              ? `Cabeza sobre ambas muñecas · extensión de codos ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y parte alta ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}° · agarre supino.`
-              : `Cabeza sobre ambas muñecas · extensión de codos ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y parte alta ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}°.`,
+              ? `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · agarre supino.`
+              : `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°.`,
           });
         } else if (pullupUpdate.tracker.event === 'invalid') {
           setPullupFeedback({
@@ -8442,7 +8407,7 @@ function Home() {
           },
           conditions: {
             atBottom: pullupExtremityValidation.atBottom,
-            atTop: pullupExtremityValidation.atTop,
+            atTop: pullupHeadOverWrists === true,
             isAtBottom: pullupDiagnosticUpdate?.isAtBottom ?? false,
             hasReachedTop: pullupDiagnosticUpdate?.hasReachedTop ?? false,
           },
@@ -8469,7 +8434,7 @@ function Home() {
           ...unifiedView,
           recommendedView,
           atBottom: pullupExtremityValidation.atBottom,
-          atTop: pullupExtremityValidation.atTop,
+          atTop: pullupHeadOverWrists === true,
         };
         viewDiagnosticBufferRef.current.push(viewDiagnosticSnapshot);
         if (viewDiagnosticBufferRef.current.length > PULLUP_DIAGNOSTIC_BUFFER_LIMIT) {
@@ -9713,8 +9678,8 @@ function Home() {
                   </div>
                   <p>
                     {selectedExercise === 'dominadas-supinas'
-                      ? `Cabeza sobre ambas muñecas · extensión de codos ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y parte alta ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}° · agarre supino.`
-                      : `Cabeza sobre ambas muñecas · extensión de codos ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° y parte alta ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}°.`}
+                      ? `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · agarre supino.`
+                      : `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°.`}
                   </p>
                 </div>
               )}
@@ -9723,7 +9688,7 @@ function Home() {
                   <summary>Qué debe cumplir tu dominada</summary>
                   <ul>
                     <li><b>Extensión:</b> el rango base es {PULLUP_BOTTOM_MIN_ANGLE}°–{PULLUP_BOTTOM_MAX_ANGLE}° y se acepta una tolerancia de ±{PULLUP_TOLERANCE_DEG}°.</li>
-                    <li><b>Parte alta:</b> coloca la cabeza sobre ambas muñecas y alcanza el rango superior de flexión en ambos codos.</li>
+                    <li><b>Parte alta:</b> coloca la cabeza sobre ambas muñecas.</li>
                   </ul>
                 </details>
               )}
@@ -9732,7 +9697,7 @@ function Home() {
                   <summary>Qué debe cumplir tu dominada supina</summary>
                   <ul>
                     <li><b>Agarre:</b> usa el agarre supino que muestra la imagen.</li>
-                    <li><b>Recorrido:</b> extiende bien los codos, coloca la cabeza sobre ambas muñecas, alcanza el rango superior de flexión y vuelve a extender los brazos.</li>
+                    <li><b>Recorrido:</b> extiende completamente los codos, coloca la cabeza sobre ambas muñecas y vuelve a extender los brazos con control.</li>
                   </ul>
                 </details>
               )}
