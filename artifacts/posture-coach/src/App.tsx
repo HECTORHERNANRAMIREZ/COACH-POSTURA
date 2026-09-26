@@ -523,6 +523,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
       { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
     ],
     trackBothSides: true,
     trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Altura: cabeza por encima de las muñecas'],
@@ -1761,6 +1762,7 @@ const PULLUP_TOP_ELBOW_MIN_ANGLE = 70;
 const PULLUP_TOP_ELBOW_MAX_ANGLE = 135;
 const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
+const PULLUP_CALIBRATION_HOLD_MS = 2500;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
 // Calibración derivada del video de referencia del usuario:
@@ -3678,6 +3680,32 @@ function getTrackedPointsForExercise(
         point: keypoints[index],
       }];
     }));
+}
+
+type PullupCalibrationStatus = 'pending' | 'calibrating' | 'ready';
+
+function getPullupCalibrationPoints(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return [];
+
+  return (['left', 'right'] as PoseSide[]).flatMap((side) => {
+    const indexes = sideKeypoints[side];
+    const sideLabel = side === 'left' ? 'izquierda' : 'derecha';
+    return [
+      { label: `hombro ${sideLabel}`, point: keypoints[indexes.shoulder] },
+      { label: `codo ${sideLabel}`, point: keypoints[indexes.elbow] },
+      { label: `muñeca ${sideLabel}`, point: keypoints[indexes.wrist] },
+      { label: `cadera ${sideLabel}`, point: keypoints[indexes.hip] },
+    ];
+  });
+}
+
+function isFreshPullupCalibrationPoint(point: PosePoint | undefined) {
+  return Boolean(
+    point
+    && !isHeldPoint(point)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+    && hasWorldCoordinates(point),
+  );
 }
 
 function isHeldPoint(point: PosePoint | undefined) {
@@ -7366,6 +7394,7 @@ function Home() {
   const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
   const exerciseStartedRef = useRef(false);
   const [exerciseStarted, setExerciseStarted] = useState(false);
+  const [pullupCalibrationStatus, setPullupCalibrationStatus] = useState<PullupCalibrationStatus>('pending');
   const [poseDetected, setPoseDetected] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [detectionStable, setDetectionStable] = useState(false);
@@ -7480,10 +7509,19 @@ function Home() {
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
+  const pullupCalibrationReadySinceRef = useRef<number | null>(null);
+  const pullupCalibrationSuccessfulRef = useRef(false);
   const previousFootExerciseRef = useRef<ExerciseId | null>(null);
   const previousFootRatioRef = useRef<number | null>(null);
   const heelRaiseFootPhaseRef = useRef<'up' | 'down' | null>(null);
   const previousLegAngleRef = useRef<number | null>(null);
+
+  const updatePullupCalibrationStatus = useCallback((status: PullupCalibrationStatus) => {
+    if (pullupCalibrationStatusRef.current === status) return;
+    pullupCalibrationStatusRef.current = status;
+    setPullupCalibrationStatus(status);
+  }, []);
 
   const incrementErrorCount = useCallback(() => {
     errorCountRef.current += 1;
@@ -7623,6 +7661,7 @@ function Home() {
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
+    poseFilterRef.current.setPersistentHold(false);
     viewEstimatorRef.current.reset();
     viewAlignmentGuardRef.current.reset();
     viewAlignmentRef.current = createInitialViewAlignment();
@@ -7697,6 +7736,10 @@ function Home() {
       ].slice(-FPS_WINDOW_FRAMES);
       const poses = detectedResult ? [detectedResult] : [];
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
+      const pullupSessionActive = selectedExerciseForFrame === 'dominadas'
+        && exerciseStartedRef.current
+        && pullupCalibrationSuccessfulRef.current;
+      poseFilterRef.current.setPersistentHold(pullupSessionActive);
       const previousPoseTrack = primaryPoseTrackRef.current;
       const primaryPose = selectPrimaryPose(
         poses,
@@ -7885,17 +7928,26 @@ function Home() {
         && stableLateralSide
         ? stableLateralSide
         : nextDominantSide;
-      const frameLowConfidence = hasHeldPointForExercise(
+      const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
+        && exerciseStartedRef.current
+        && pullupCalibrationSuccessfulRef.current;
+      const detectedFrameLowConfidence = hasHeldPointForExercise(
         selectedExerciseForFrame,
         pose?.keypoints,
         measurementSide,
       );
-      const frameMeasurementBlocked = frameLowConfidence || viewBlocksFrame;
+      const frameLowConfidence = pullupTrackingIsAnchored
+        ? false
+        : detectedFrameLowConfidence;
+      const effectiveViewBlocksFrame = pullupTrackingIsAnchored
+        ? false
+        : viewBlocksFrame;
+      const frameMeasurementBlocked = frameLowConfidence || effectiveViewBlocksFrame;
       const visiblePoints = pose?.keypoints?.filter((point) => (
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
-      const nextCameraGuidance = getCameraGuidance(
+      const rawCameraGuidance = getCameraGuidance(
         selectedExerciseForFrame,
         pose?.keypoints,
         measurementSide,
@@ -7903,10 +7955,23 @@ function Home() {
         video.videoHeight,
         stableLateralSide,
       );
-      const frameCameraReady = nextCameraGuidance.tone === 'ready';
       const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
         || selectedExerciseForFrame === 'dominadas-comando';
+      const pullupCalibrationLocked = selectedExerciseForFrame === 'dominadas'
+        && pullupCalibrationSuccessfulRef.current;
+      const nextCameraGuidance = pullupCalibrationLocked || pullupTrackingIsAnchored
+        ? {
+            tone: 'ready' as const,
+            message: pullupTrackingIsAnchored
+              ? 'Sesión activa · seguimiento anclado'
+              : 'Calibración exitosa',
+            detail: pullupTrackingIsAnchored
+              ? 'Los puntos confirmados permanecen anclados. Los ángulos siguen actualizándose con tu movimiento real.'
+              : 'Puedes acercarte para pulsar Iniciar ejercicio. La calibración no se perderá.',
+          }
+        : rawCameraGuidance;
+      const frameCameraReady = rawCameraGuidance.tone === 'ready';
       const pullupElbowAnglesForFrame = isPullupExercise
         ? calculatePullupElbowAngles(pose?.keypoints)
         : { left: null, right: null, averagedRawAngle: null };
@@ -7960,7 +8025,35 @@ function Home() {
         ? Math.min(8, stabilityFramesRef.current + 1)
         : 0;
       const frameDetectionStable = stabilityFramesRef.current >= 4;
-      setDetectionStable(frameDetectionStable);
+      setDetectionStable(frameDetectionStable || pullupTrackingIsAnchored);
+      const effectiveFrameDetectionStable = frameDetectionStable || pullupTrackingIsAnchored;
+      const effectiveFrameCameraReady = frameCameraReady || pullupTrackingIsAnchored;
+      if (
+        selectedExerciseForFrame === 'dominadas'
+        && !pullupCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+      ) {
+        const calibrationPoints = getPullupCalibrationPoints(pose?.keypoints);
+        const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
+          && calibrationPoints.length === 8
+          && calibrationPoints.every(({ point }) => isFreshPullupCalibrationPoint(point));
+
+        if (calibrationFrameReady) {
+          pullupCalibrationReadySinceRef.current ??= now;
+          updatePullupCalibrationStatus('calibrating');
+          if (
+            now - pullupCalibrationReadySinceRef.current
+            >= PULLUP_CALIBRATION_HOLD_MS
+          ) {
+            pullupCalibrationSuccessfulRef.current = true;
+            pullupCalibrationReadySinceRef.current = null;
+            updatePullupCalibrationStatus('ready');
+          }
+        } else {
+          pullupCalibrationReadySinceRef.current = null;
+          updatePullupCalibrationStatus('pending');
+        }
+      }
       const repetitionConfig = getRepetitionConfig(selectedExerciseForFrame);
       const repetitionAngle = repetitionConfig
         ? calculateRepetitionAngle(
@@ -8114,8 +8207,8 @@ function Home() {
           || selectedExerciseRef.current === 'dominadas-supinas')
         && exerciseStartedRef.current
         && hasFreshPose
-        && frameCameraReady
-        && frameDetectionStable
+        && effectiveFrameCameraReady
+        && effectiveFrameDetectionStable
         && rawAngle !== null
         && !frameMeasurementBlocked
       ) {
@@ -8519,7 +8612,7 @@ function Home() {
       const footTechniqueFeedback = frameMeasurementBlocked
         ? null
         : heelLiftFeedback ?? heelRaiseFeedback;
-      let displayAngle = frameDetectionStable ? nextAngle : null;
+      let displayAngle = effectiveFrameDetectionStable ? nextAngle : null;
       if (nextAngle === null) {
         angleDisplaySamplesRef.current = [];
         angleDisplayRef.current = null;
@@ -8542,9 +8635,13 @@ function Home() {
       }
 
       fpsFramesRef.current += 1;
-      setPoseDetected(visiblePoints >= 5);
+      setPoseDetected(pullupTrackingIsAnchored || visiblePoints >= 5);
       setFaceDetected(nextFaceDetected);
-      setCameraReady(frameCameraReady);
+      setCameraReady(
+        frameCameraReady
+        || pullupCalibrationLocked
+        || pullupTrackingIsAnchored,
+      );
       setCameraGuidance(nextCameraGuidance);
       setDominantSide(measurementSide);
       setSideConfidence(nextDominantSideResult?.average ?? null);
@@ -8575,7 +8672,7 @@ function Home() {
       setTechniqueFeedback(
         frameLowConfidence
           ? lowConfidenceFeedback
-          : viewBlocksFrame
+          : effectiveViewBlocksFrame
             ? {
                 tone: 'warning',
                 message: nextViewAlignment.message,
@@ -8646,7 +8743,7 @@ function Home() {
       ) {
         setSquatFeedback(heelLiftFeedback);
       }
-      if (viewBlocksFrame) {
+      if (effectiveViewBlocksFrame) {
         const viewFeedback: TechniqueFeedback = {
           tone: 'warning',
           message: nextViewAlignment.message,
@@ -8776,7 +8873,7 @@ function Home() {
     if (activeRef.current) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
     }
-  }, [incrementErrorCount]);
+  }, [incrementErrorCount, updatePullupCalibrationStatus]);
 
   const loadDetector = useCallback(async () => {
     let timeoutId: number | null = null;
@@ -8809,6 +8906,11 @@ function Home() {
     setSelectedExercise(activeExercise);
     exerciseStartedRef.current = preserveExerciseStarted;
     setExerciseStarted(preserveExerciseStarted);
+    if (!(activeExercise === 'dominadas' && preserveExerciseStarted)) {
+      pullupCalibrationSuccessfulRef.current = false;
+      pullupCalibrationReadySinceRef.current = null;
+      updatePullupCalibrationStatus('pending');
+    }
     stopResources();
     setPoseDetected(false);
     setFaceDetected(false);
@@ -8960,19 +9062,28 @@ function Home() {
     if (exerciseStartedRef.current) {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
+      poseFilterRef.current.setPersistentHold(false);
+      if (selectedExerciseRef.current === 'dominadas') {
+        poseFilterRef.current.reset();
+        pullupCalibrationSuccessfulRef.current = false;
+        pullupCalibrationReadySinceRef.current = null;
+        updatePullupCalibrationStatus('pending');
+      }
       setSquatFeedback(defaultSquatFeedback);
       setPullupFeedback(defaultTechniqueFeedback);
       setTechniqueFeedback(defaultTechniqueFeedback);
       return;
     }
 
-    if (!faceDetected && !poseDetected) return;
+    const canStartAnchoredPullup = selectedExerciseRef.current === 'dominadas'
+      && pullupCalibrationSuccessfulRef.current;
+    if (!canStartAnchoredPullup && !faceDetected && !poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
-  }, [faceDetected, phase, poseDetected]);
+  }, [faceDetected, phase, poseDetected, updatePullupCalibrationStatus]);
 
   const returnToWelcome = useCallback(() => {
     stopResources();
@@ -8980,6 +9091,9 @@ function Home() {
     setSelectedExercise(null);
     exerciseStartedRef.current = false;
     setExerciseStarted(false);
+    pullupCalibrationSuccessfulRef.current = false;
+    pullupCalibrationReadySinceRef.current = null;
+    updatePullupCalibrationStatus('pending');
     setPoseDetected(false);
     setFaceDetected(false);
     setCameraReady(false);
@@ -9043,7 +9157,7 @@ function Home() {
      sideViewStableFramesRef.current = 0;
     sideSwitchesRef.current = 0;
     setPhase('exercise-select');
-  }, [stopResources]);
+  }, [stopResources, updatePullupCalibrationStatus]);
 
   useEffect(() => () => stopResources(), [stopResources]);
   useEffect(() => () => {
@@ -9059,11 +9173,19 @@ function Home() {
     || selectedExercise === 'dominadas-comando';
   const canExportPullupDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED
     && isPullupExerciseSelected;
+  const isStandardPullupSelected = selectedExercise === 'dominadas';
+  const pullupCalibrationReady = isStandardPullupSelected
+    && pullupCalibrationSuccessfulRef.current;
+  const pullupCalibrationWaitingForStart = pullupCalibrationReady && !exerciseStarted;
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
     : !exerciseStarted
-      ? personDetected
+      ? pullupCalibrationWaitingForStart
+        ? 'Calibración exitosa ✓ · pulsa Iniciar ejercicio'
+        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
+          ? 'Mantén la posición para calibrar'
+        : personDetected
         ? cameraReady
           ? viewAlignment.status === 'bad' || viewAlignment.status === 'unknown'
             ? viewAlignment.message
@@ -9519,7 +9641,11 @@ function Home() {
                         : !detectionStable
                           ? 'Mejorando detección'
                           : 'Ejercicio iniciado'
-                      : personDetected
+                      : pullupCalibrationWaitingForStart
+                        ? 'Calibración completada'
+                        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
+                          ? 'Calibrando durante 2.5 segundos'
+                        : personDetected
                         ? cameraReady
                           ? '¿Ya estás listo?'
                           : poseDetected
@@ -9536,7 +9662,11 @@ function Home() {
                           : hasEvaluationCounter
                             ? 'El contador está activo. Detén el curso cuando hayas terminado.'
                             : 'Las lecturas están activas. Mantén la posición y completa el movimiento con control.'
-                      : personDetected
+                      : pullupCalibrationWaitingForStart
+                        ? 'La calibración de 2.5 segundos quedó guardada. Acércate a la pantalla y pulsa Iniciar ejercicio; no se volverá a validar antes de comenzar.'
+                        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
+                          ? 'Mantén hombros, codos, muñecas y caderas visibles y en verde sin moverte durante 2.5 segundos.'
+                        : personDetected
                         ? cameraReady
                           ? 'Colócate en posición y comienza cuando quieras.'
                           : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
@@ -10156,12 +10286,22 @@ function Home() {
                 <button
                   type="button"
                   className="exercise-start-button camera-start-button"
-                  disabled={phase !== 'tracking' || (!personDetected && !exerciseStarted)}
+                  disabled={
+                    phase !== 'tracking'
+                    || (
+                      !exerciseStarted
+                      && (isStandardPullupSelected
+                        ? !pullupCalibrationReady
+                        : !personDetected)
+                    )
+                  }
                   aria-pressed={exerciseStarted}
                   onClick={toggleExercise}
                 >
                   {exerciseStarted
-                    ? 'Detener curso'
+                    ? 'Terminar ejercicio'
+                    : pullupCalibrationWaitingForStart
+                      ? 'Iniciar ejercicio'
                       : personDetected
                         ? 'Iniciar ejercicio'
                         : 'Buscando cuerpo'}

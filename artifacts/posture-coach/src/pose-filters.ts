@@ -190,6 +190,12 @@ export class PoseOneEuroFilter {
 
   private missingPoseFrames = 0;
 
+  private persistentHold = false;
+
+  setPersistentHold(enabled: boolean) {
+    this.persistentHold = enabled;
+  }
+
   filter(pose: Pose, timestamp: number): Pose {
     this.missingPoseFrames = 0;
 
@@ -249,13 +255,18 @@ export class PoseOneEuroFilter {
         continue;
       }
 
-      if (state.lastPoint && state.heldFrames < MAX_HELD_FRAMES) {
+      if (
+        state.lastPoint
+        && (state.heldFrames < MAX_HELD_FRAMES || this.persistentHold)
+      ) {
         state.heldFrames += 1;
         const stalePoint = {
           ...state.lastPoint,
           held: true,
           heldFrames: state.heldFrames,
-          heldReason: point?.heldReason ?? 'low-score',
+          heldReason: this.persistentHold
+            ? 'persistent' as const
+            : point?.heldReason ?? 'low-score',
         };
         state.lastPoint = stalePoint;
         keypoints[index] = stalePoint;
@@ -265,7 +276,9 @@ export class PoseOneEuroFilter {
             score: stalePoint.score,
             held: true,
             heldFrames: state.heldFrames,
-            heldReason: point?.heldReason ?? 'low-score',
+            heldReason: this.persistentHold
+              ? 'persistent'
+              : point?.heldReason ?? 'low-score',
             world: state.lastWorld,
           };
         }
@@ -281,7 +294,7 @@ export class PoseOneEuroFilter {
 
   markPoseMissing() {
     this.missingPoseFrames += 1;
-    if (this.missingPoseFrames > POSE_MISSING_RESET_FRAMES) {
+    if (this.missingPoseFrames > POSE_MISSING_RESET_FRAMES && !this.persistentHold) {
       this.reset();
     }
   }

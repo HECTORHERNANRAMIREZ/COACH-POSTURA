@@ -1,0 +1,39 @@
+Rol: arquitecto de NetPosture, ejercicio "dominadas".
+
+FLUJO DEFINITIVO A IMPLEMENTAR:
+
+1. Usuario elige "Dominadas en barra" del catálogo.
+2. Sistema muestra cámara en vivo y pide: "Muéstrate por completo" — overlay de puntos de colores sobre hombros, codos, muñecas y caderas (verde=detectado, rojo=no detectado), igual al que ya está implementado.
+3. Cuando TODAS las articulaciones requeridas están en verde de forma sostenida (2.5 segundos), el sistema considera la calibración EXITOSA y guarda ese estado.
+
+IMPORTANTE - periodo de transición: 
+Después de una calibración exitosa, es normal y ESPERADO que el usuario deba acercarse al dispositivo/pantalla para presionar el botón "Iniciar ejercicio". Durante ese momento de acercarse, es NORMAL que algunas articulaciones salgan del encuadre o dejen de detectarse (porque el usuario ya no está en la posición de dominada, sino caminando hacia la pantalla). Esto NO debe:
+- Resetear la calibración exitosa ya lograda.
+- Mostrar de nuevo los mensajes de "no detectado" como error.
+- Bloquear el botón "Iniciar ejercicio" una vez que ya se logró la calibración de 2.5 segundos.
+
+Es decir: una vez lograda la calibración exitosa, el botón "Iniciar ejercicio" debe quedar disponible y esperando el clic, SIN revalidar continuamente la detección hasta que el usuario presione el botón.
+
+4. Al presionar "Iniciar ejercicio" (sin importar si en ese instante el usuario está lejos, cerca, o si algún punto momentáneamente no se ve porque se está acomodando de nuevo en posición): las articulaciones quedan ANCLADAS ("modo persistente") durante toda la sesión activa. El sistema NO debe volver a marcar ninguna articulación como "no detectada" ni soltar el tracking, sin importar caídas de confianza, giros del cuerpo, o pérdida momentánea del punto. Solo el botón "Terminar ejercicio" libera este anclaje.
+5. Al presionar "Terminar ejercicio": se libera el anclaje, se cierra la sesión y se muestra el resumen (repeticiones totales y correctas).
+
+IMPORTANTE - matiz técnico que SÍ debe respetarse (para que el conteo de repeticiones siga funcionando):
+- "Anclar" la articulación significa que el sistema deja de invalidarla o marcarla como "perdida" por baja confianza momentánea.
+- PERO los ÁNGULOS (codo, hombro) deben seguir leyéndose y actualizándose en tiempo real con el movimiento real del usuario durante todo el ejercicio — de lo contrario no se podría saber cuándo el usuario sube o baja, y el conteo de repeticiones correctas/incorrectas dejaría de funcionar.
+- Es decir: se ancla la "confianza de detección" (no se vuelve a exigir la validación estricta de calibración), pero el movimiento se sigue leyendo en vivo una vez que la persona vuelve a estar en posición frente a la cámara.
+
+Tarea:
+
+1. Implementa un estado "calibración exitosa, esperando inicio" que se guarda desde el momento en que se cumplen los 2.5 segundos en verde, y que NO se revalida ni se resetea aunque el usuario se aleje/acerque de la cámara después de eso.
+2. Implementa el estado "sesión activa / anclada" que se activa con "Iniciar ejercicio" y se desactiva con "Terminar ejercicio".
+3. Durante ese estado activo, usa el mecanismo de retención (held/heldReason) ya existente pero con tolerancia MÁXIMA (prácticamente no soltar el punto) para hombros, codos, muñecas y caderas.
+4. Fuera de esos dos estados (antes de empezar la calibración, o después de "Terminar"), todo vuelve al comportamiento estricto normal.
+5. No cambies los rangos de ángulos, ni las condiciones atBottom/atTop, ni la lógica de conteo — el conteo debe seguir dependiendo del movimiento real, solo cambia qué tan fácil es "perder" el tracking de un punto ya confirmado.
+
+Verificación:
+- pnpm --filter @workspace/posture-coach run typecheck
+- pnpm --filter @workspace/posture-coach run build
+- Confirma archivo y líneas exactas donde se implementó cada estado.
+- Explícame con tus palabras: ¿el conteo de repeticiones sigue dependiendo de los ángulos reales del usuario, o de alguna forma quedaría "congelado" también? (Necesito estar 100% seguro de que esto no rompe el conteo).
+
+Implementa esto para dominadas.
