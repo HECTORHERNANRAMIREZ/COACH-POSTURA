@@ -17,6 +17,17 @@ export const MAX_HELD_FRAMES = 8;
 const POSE_MISSING_RESET_FRAMES = 10;
 // Son las muñecas, tobillos, talones y puntas de los pies, que suelen introducir más ruido.
 const LIMB_LANDMARKS = new Set([15, 16, 27, 28, 29, 30, 31, 32]);
+const PERSISTENT_POSE_ANCHOR_INDICES = [11, 12, 23, 24];
+const LIMB_PARENT_INDEX: Record<number, number> = {
+  13: 11,
+  14: 12,
+  15: 13,
+  16: 14,
+  25: 23,
+  26: 24,
+  27: 25,
+  28: 26,
+};
 
 export type OneEuroParameters = {
   // Frecuencia mínima de corte: más baja significa más suavizado en reposo.
@@ -192,6 +203,8 @@ export class PoseOneEuroFilter {
 
   private persistentHold = false;
 
+  private lastPose?: Pose;
+
   setPersistentHold(enabled: boolean) {
     this.persistentHold = enabled;
   }
@@ -201,6 +214,8 @@ export class PoseOneEuroFilter {
 
     const keypoints: PosePoint[] = [];
     const worldLandmarks: PosePoint[] = [];
+    const previousKeypoints = this.lastPose?.keypoints ?? [];
+    const previousWorldLandmarks = this.lastPose?.worldLandmarks ?? [];
 
     for (let index = 0; index < POSE_LANDMARK_COUNT; index += 1) {
       const state = this.states[index];
@@ -259,11 +274,68 @@ export class PoseOneEuroFilter {
         state.lastPoint
         && (state.heldFrames < MAX_HELD_FRAMES || this.persistentHold)
       ) {
-        state.heldFrames += 1;
+        const parentIndex = this.persistentHold ? LIMB_PARENT_INDEX[index] : undefined;
+        const currentParent = parentIndex === undefined
+          ? undefined
+          : pose.keypoints[parentIndex];
+        const previousParent = parentIndex === undefined
+          ? undefined
+          : previousKeypoints[parentIndex];
+        const canTranslateWithParent = Boolean(
+          currentParent
+          && previousParent
+          && !currentParent.held
+          && (currentParent.score ?? 0) >= MIN_SCORE_BODY
+          && Number.isFinite(currentParent.x)
+          && Number.isFinite(currentParent.y)
+          && Number.isFinite(previousParent.x)
+          && Number.isFinite(previousParent.y),
+        );
+        const screenDelta = canTranslateWithParent
+          ? {
+              x: currentParent!.x - previousParent!.x,
+              y: currentParent!.y - previousParent!.y,
+            }
+          : { x: 0, y: 0 };
+        const previousWorldParent = parentIndex === undefined
+          ? undefined
+          : previousWorldLandmarks[parentIndex]?.world;
+        const currentWorldParent = parentIndex === undefined
+          ? undefined
+          : pose.worldLandmarks[parentIndex]?.world;
+        const canTranslateWorld = Boolean(
+          canTranslateWithParent
+          && currentWorldParent
+          && previousWorldParent
+          && Number.isFinite(currentWorldParent.x)
+          && Number.isFinite(currentWorldParent.y)
+          && Number.isFinite(currentWorldParent.z)
+          && Number.isFinite(previousWorldParent.x)
+          && Number.isFinite(previousWorldParent.y)
+          && Number.isFinite(previousWorldParent.z),
+        );
+        const nextHeldFrames = this.persistentHold
+          ? Math.min(MAX_HELD_FRAMES, state.heldFrames + 1)
+          : state.heldFrames + 1;
+        state.heldFrames = nextHeldFrames;
         const stalePoint = {
           ...state.lastPoint,
+          x: state.lastPoint.x + screenDelta.x,
+          y: state.lastPoint.y + screenDelta.y,
+          ...(canTranslateWorld
+            ? {
+                world: {
+                  x: state.lastPoint.world!.x
+                    + currentWorldParent!.x - previousWorldParent!.x,
+                  y: state.lastPoint.world!.y
+                    + currentWorldParent!.y - previousWorldParent!.y,
+                  z: state.lastPoint.world!.z
+                    + currentWorldParent!.z - previousWorldParent!.z,
+                },
+              }
+            : {}),
           held: true,
-          heldFrames: state.heldFrames,
+          heldFrames: nextHeldFrames,
           heldReason: this.persistentHold
             ? 'persistent' as const
             : point?.heldReason ?? 'low-score',
@@ -285,8 +357,73 @@ export class PoseOneEuroFilter {
       }
     }
 
-    return {
+    const filteredPose = {
       ...pose,
+      keypoints,
+      worldLandmarks,
+    };
+    this.lastPose = filteredPose;
+    return filteredPose;
+  }
+
+  getPersistentPose(videoWidth: number, videoHeight: number): Pose | undefined {
+    if (!this.persistentHold || !this.lastPose || videoWidth <= 0 || videoHeight <= 0) {
+      return undefined;
+    }
+
+    const bodyIsAnchored = PERSISTENT_POSE_ANCHOR_INDICES.every((index) => {
+      const point = this.lastPose?.keypoints[index];
+      return Boolean(
+        point
+        && point.x >= 0
+        && point.x <= videoWidth
+        && point.y >= 0
+        && point.y <= videoHeight,
+      );
+    });
+    if (!bodyIsAnchored) return undefined;
+
+    const keypoints = this.lastPose.keypoints.map((point) => {
+      if (!point) {
+        return { x: 0, y: 0, score: 0 };
+      }
+      if (point.x < 0 || point.x > videoWidth || point.y < 0 || point.y > videoHeight) {
+        return {
+          ...point,
+          score: 0,
+          held: false,
+          heldFrames: 0,
+          heldReason: undefined,
+        };
+      }
+      return {
+        ...point,
+        held: true,
+        heldFrames: 1,
+        heldReason: 'persistent' as const,
+      };
+    });
+    const worldLandmarks = this.lastPose.worldLandmarks.map((point) => (
+      !point
+        ? { x: 0, y: 0, score: 0 }
+        : point.x < 0 || point.x > videoWidth || point.y < 0 || point.y > videoHeight
+          ? {
+              ...point,
+              score: 0,
+              held: false,
+              heldFrames: 0,
+              heldReason: undefined,
+            }
+          : {
+              ...point,
+              held: true,
+              heldFrames: 1,
+              heldReason: 'persistent' as const,
+            }
+    ));
+
+    return {
+      ...this.lastPose,
       keypoints,
       worldLandmarks,
     };
@@ -319,6 +456,7 @@ export class PoseOneEuroFilter {
       state.lastWorld = undefined;
       state.heldFrames = 0;
     });
+    this.lastPose = undefined;
     this.missingPoseFrames = 0;
   }
 }

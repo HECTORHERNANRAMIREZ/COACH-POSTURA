@@ -7822,7 +7822,9 @@ function Home() {
         : undefined;
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
-        : undefined;
+        : pullupSessionActive
+          ? poseFilterRef.current.getPersistentPose(video.videoWidth, video.videoHeight)
+          : undefined;
       const recommendedView = activeExerciseDefinition?.recommendedView ?? 'any';
       const viewToleranceDeg = activeExerciseDefinition?.viewToleranceDeg
         ?? VIEW_TOLERANCE_DEFAULT_DEG;
