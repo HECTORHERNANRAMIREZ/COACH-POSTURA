@@ -3172,17 +3172,16 @@ function advancePullupTracker(
       nextTracker.currentRepCorrect = true;
     }
   } else if (nextTracker.phase === 'abajo') {
-    if (!hasStartedPull && isAtBottomByAngle && !isAtBottom) {
-      nextTracker.phase = 'esperando abajo';
-      nextTracker.currentRepCorrect = false;
-    } else {
-      if (isAtBottom) {
-        nextTracker.currentRepCorrect = true;
-      }
-      if (hasStartedPull && isRising) {
-        nextTracker.phase = 'subiendo';
-        nextTracker.minimumAngle = smoothedAngle;
-      }
+    // Una articulación retenida durante una pérdida breve no debe desarmar
+    // una repetición que ya estaba en la fase inferior. El ángulo promedio
+    // todavía permite identificar el inicio de la subida; si vuelve al fondo
+    // sin completar la parte superior, la rama de `subiendo` emitirá `no-top`.
+    if (isAtBottom) {
+      nextTracker.currentRepCorrect = true;
+    }
+    if (hasStartedPull && isRising) {
+      nextTracker.phase = 'subiendo';
+      nextTracker.minimumAngle = smoothedAngle;
     }
   } else if (nextTracker.phase === 'subiendo') {
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
