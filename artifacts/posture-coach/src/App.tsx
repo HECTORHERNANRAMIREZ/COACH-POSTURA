@@ -3718,6 +3718,29 @@ function isHeldPoint(point: PosePoint | undefined) {
   );
 }
 
+function isFreshPullupMeasurementPoint(point: PosePoint | undefined) {
+  return Boolean(
+    point
+    && !isHeldPoint(point)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+  );
+}
+
+function hasFreshPullupMeasurement(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return false;
+
+  const armPoints = (['left', 'right'] as PoseSide[]).flatMap((side) => {
+    const indexes = sideKeypoints[side];
+    return [indexes.shoulder, indexes.elbow, indexes.wrist];
+  });
+  const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
+    isFreshPullupMeasurementPoint(keypoints[index])
+  )).length;
+
+  return armPoints.every((index) => isFreshPullupMeasurementPoint(keypoints[index]))
+    && freshHeadPoints >= 2;
+}
+
 function isVisibleCameraPoint(point: PosePoint | undefined, minimumScore: number) {
   if (!point) return false;
   if (isHeldPoint(point)) return true;
@@ -7956,6 +7979,9 @@ function Home() {
         && stableLateralSide
         ? stableLateralSide
         : nextDominantSide;
+      const isPullupExercise = selectedExerciseForFrame === 'dominadas'
+        || selectedExerciseForFrame === 'dominadas-supinas'
+        || selectedExerciseForFrame === 'dominadas-comando';
       const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current;
@@ -7970,7 +7996,11 @@ function Home() {
       const effectiveViewBlocksFrame = pullupTrackingIsAnchored
         ? false
         : viewBlocksFrame;
-      const frameMeasurementBlocked = frameLowConfidence || effectiveViewBlocksFrame;
+      const pullupMeasurementBlocked = isPullupExercise
+        && !hasFreshPullupMeasurement(pose?.keypoints);
+      const frameMeasurementBlocked = frameLowConfidence
+        || effectiveViewBlocksFrame
+        || pullupMeasurementBlocked;
       const visiblePoints = pose?.keypoints?.filter((point) => (
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
@@ -7983,9 +8013,6 @@ function Home() {
         video.videoHeight,
         stableLateralSide,
       );
-      const isPullupExercise = selectedExerciseForFrame === 'dominadas'
-        || selectedExerciseForFrame === 'dominadas-supinas'
-        || selectedExerciseForFrame === 'dominadas-comando';
       const pullupCalibrationLocked = selectedExerciseForFrame === 'dominadas'
         && pullupCalibrationSuccessfulRef.current;
       const currentPullupPreparationStage = pullupPreparationStageRef.current;
@@ -7993,8 +8020,10 @@ function Home() {
       const nextCameraGuidance = pullupCalibrationLocked || pullupTrackingIsAnchored
         ? {
             tone: 'ready' as const,
-            message: pullupTrackingIsAnchored
-              ? 'Sesión activa · seguimiento anclado'
+            message: pullupMeasurementBlocked
+              ? 'Seguimiento pausado · recuperando extremidades'
+              : pullupTrackingIsAnchored
+                ? 'Sesión activa · seguimiento anclado'
               : currentPullupPreparationStage === 'bar-preparation'
                 ? `Cuerpo registrado ✓ · cuélgate en la barra${
                   currentPullupPreparationCountdown === null
@@ -8002,8 +8031,10 @@ function Home() {
                     : ` · ${currentPullupPreparationCountdown}`
                 }`
                 : 'Calibración exitosa',
-            detail: pullupTrackingIsAnchored
-              ? 'Los puntos confirmados permanecen anclados. Los ángulos siguen actualizándose con tu movimiento real.'
+            detail: pullupMeasurementBlocked
+              ? 'Hay una muñeca, codo, hombro o punto de la cabeza retenido. No se contará ni evaluará este instante.'
+              : pullupTrackingIsAnchored
+                ? 'Los puntos confirmados permanecen anclados. Los ángulos siguen actualizándose con tu movimiento real.'
               : currentPullupPreparationStage === 'bar-preparation'
                 ? 'Organízate en la barra. El análisis comenzará automáticamente al terminar la cuenta regresiva.'
                 : 'La detección inicial terminó. Prepárate para continuar.',
@@ -8011,6 +8042,7 @@ function Home() {
         : rawCameraGuidance;
       const frameCameraReady = rawCameraGuidance.tone === 'ready';
       const pullupElbowAnglesForFrame = isPullupExercise
+        && !pullupMeasurementBlocked
         ? calculatePullupElbowAngles(pose?.keypoints)
         : { left: null, right: null, averagedRawAngle: null };
       const pullupAngleForFrame = pullupElbowAnglesForFrame.averagedRawAngle;
@@ -8023,6 +8055,7 @@ function Home() {
             measurementSide,
           );
       const pullupHeadOverWrists = isPullupExercise
+        && !pullupMeasurementBlocked
         ? isHeadOverBothWrists(pose?.keypoints)
         : null;
       if (previousFootExerciseRef.current !== selectedExerciseForFrame) {
@@ -8231,6 +8264,7 @@ function Home() {
       setMuscleUpAngles(displayMuscleUpAngles);
       let nextAngle = frameMeasurementBlocked ? null : rawAngle;
       const pullupExtremityReadings = isPullupExercise
+        && !pullupMeasurementBlocked
         ? getPullupExtremityReadings(pose?.keypoints)
         : {
             left: { shoulder: null, elbow: null },
