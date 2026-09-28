@@ -8200,6 +8200,10 @@ function Home() {
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current
         && pullupTrackerRef.current.isArmed
+        // Antes de agarrar la barra, la postura de pie también deja las
+        // muñecas debajo de la cabeza. Solo podemos interpretar esa postura
+        // como desmontaje después de haber contado al menos una repetición.
+        && pullupTrackerRef.current.repetitions > 0
         && !pullupSessionFinishedRef.current
         && isPullupBarDetached(pose?.keypoints)
       );
