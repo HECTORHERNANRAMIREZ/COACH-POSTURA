@@ -181,6 +181,7 @@ const pullupScrollFrames = [
 // Para reactivar login y pagos, cambiar este valor a true.
 const AUTH_AND_BILLING_ENABLED = false;
 const PULLUP_DIAGNOSTIC_BUFFER_LIMIT = 200;
+const DIAGNOSTIC_BUFFER_LIMIT = 200;
 const PULLUP_DIAGNOSTIC_EXPORT_ENABLED = import.meta.env.DEV;
 
 type ViewDiagnosticSnapshot = {
@@ -199,6 +200,52 @@ type ViewDiagnosticSnapshot = {
   status: ViewAlignmentState['status'];
   atBottom: boolean;
   atTop: boolean;
+};
+
+type FrameDiagnosticSnapshot = {
+  timestamp: number;
+  exercise: ExerciseId;
+  exerciseStarted: boolean;
+  cameraReady: boolean;
+  poseDetected: boolean;
+  frameStable: boolean;
+  measurementBlocked: boolean;
+  visiblePoints: number;
+  dominantSide: PoseSide | null;
+  sideConfidence: number | null;
+  modelInfo: {
+    model: string | null;
+    delegate: string | null;
+  };
+  measurements: {
+    rawAngle: number | null;
+    repetitionAngle: number | null;
+    displayAngle: number | null;
+    pullupAngle: number | null;
+    repetitions: number;
+    goodRepetitions: number;
+    phase: string;
+    minimumAngle: number | null;
+    event: string | null;
+  };
+  pushup: {
+    elbowTorsoAngle: number | null;
+    bodyLineAngle: number | null;
+    techniqueReady: boolean;
+  } | null;
+  view: {
+    shoulderYawDeg: number | null;
+    hipYawDeg: number | null;
+    yawDeg: number | null;
+    cameraFacingMode: CameraFacingMode;
+    estimatedView: ViewAlignmentState['estimatedView'];
+    recommendedView: ViewAlignmentState['recommendedView'];
+    status: ViewAlignmentState['status'];
+  };
+  pose: {
+    keypoints: PosePoint[];
+    worldLandmarks: PosePoint[];
+  } | null;
 };
 
 const clerkPubKey = AUTH_AND_BILLING_ENABLED
@@ -3739,6 +3786,22 @@ function hasFreshPullupMeasurement(keypoints: PosePoint[] | undefined) {
 
   return armPoints.every((index) => isFreshPullupMeasurementPoint(keypoints[index]))
     && freshHeadPoints >= 2;
+}
+
+function hasFreshPushupMeasurement(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  return [
+    indexes.shoulder,
+    indexes.elbow,
+    indexes.wrist,
+    indexes.hip,
+    indexes.ankle,
+  ].every((index) => isFreshPullupMeasurementPoint(keypoints[index]));
 }
 
 function isVisibleCameraPoint(point: PosePoint | undefined, minimumScore: number) {
@@ -7519,6 +7582,7 @@ function Home() {
   const backViewStableSinceRef = useRef<number | null>(null);
   const reinforceBackToFrontRef = useRef(false);
   const lastViewUiUpdateRef = useRef(0);
+  const diagnosticBufferRef = useRef<FrameDiagnosticSnapshot[]>([]);
   const lastPullupDiagnosticLogAtRef = useRef(0);
   const pullupDiagnosticBufferRef = useRef<ExerciseDiagnosticSnapshot[]>([]);
   const viewDiagnosticBufferRef = useRef<ViewDiagnosticSnapshot[]>([]);
@@ -7605,7 +7669,18 @@ function Home() {
         throw new Error('Clipboard API no disponible');
       }
       await navigator.clipboard.writeText(
-        JSON.stringify(pullupDiagnosticBufferRef.current, null, 2),
+        JSON.stringify(
+          {
+            format: 'netposture-diagnostic-v2',
+            buffers: {
+              frames: diagnosticBufferRef.current,
+              pullup: pullupDiagnosticBufferRef.current,
+              view: viewDiagnosticBufferRef.current,
+            },
+          },
+          null,
+          2,
+        ),
       );
       setDiagnosticCopyMessage('Copiado');
     } catch {
@@ -7982,6 +8057,9 @@ function Home() {
       const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
         || selectedExerciseForFrame === 'dominadas-comando';
+      const isPushupExercise = selectedExerciseForFrame === 'flexiones'
+        || selectedExerciseForFrame === 'flexiones-declinadas'
+        || selectedExerciseForFrame === 'flexiones-pica';
       const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current;
@@ -7998,9 +8076,12 @@ function Home() {
         : viewBlocksFrame;
       const pullupMeasurementBlocked = isPullupExercise
         && !hasFreshPullupMeasurement(pose?.keypoints);
+      const pushupMeasurementBlocked = isPushupExercise
+        && !hasFreshPushupMeasurement(pose?.keypoints, measurementSide);
       const frameMeasurementBlocked = frameLowConfidence
         || effectiveViewBlocksFrame
-        || pullupMeasurementBlocked;
+        || pullupMeasurementBlocked
+        || pushupMeasurementBlocked;
       const visiblePoints = pose?.keypoints?.filter((point) => (
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
@@ -8214,7 +8295,9 @@ function Home() {
       const pushupTechniqueAnglesForFrame = (
         selectedExerciseForFrame === 'flexiones'
         || selectedExerciseForFrame === 'flexiones-declinadas'
+        || selectedExerciseForFrame === 'flexiones-pica'
       )
+        && !pushupMeasurementBlocked
         ? calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide)
         : { elbowTorsoAngle: null, bodyLineAngle: null };
       const muscleUpAnglesForFrame = selectedExerciseForFrame === 'muscle-up'
@@ -8606,8 +8689,10 @@ function Home() {
         || isLatPulldownTechniqueValid(pose?.keypoints, nextDominantSide);
       const pushupTechniqueReady = selectedExerciseForFrame !== 'flexiones'
         && selectedExerciseForFrame !== 'flexiones-declinadas'
+        && selectedExerciseForFrame !== 'flexiones-pica'
         ? true
-        : isPushupTechniqueValid(
+        : !pushupMeasurementBlocked
+          && isPushupTechniqueValid(
           pose?.keypoints,
           nextDominantSide,
           selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
@@ -8782,7 +8867,7 @@ function Home() {
         measurementSide,
       ));
       setTechniqueFeedback(
-        frameLowConfidence
+        frameLowConfidence || pushupMeasurementBlocked
           ? lowConfidenceFeedback
           : effectiveViewBlocksFrame
             ? {
@@ -8896,6 +8981,67 @@ function Home() {
         );
       }
       previousSideRef.current = measurementSide;
+      const genericTracker = isPullupExercise
+        ? pullupTrackerRef.current
+        : exerciseRepTrackerRef.current;
+      const frameDiagnosticSnapshot: FrameDiagnosticSnapshot = {
+        timestamp: frameTimestamp,
+        exercise: selectedExerciseForFrame,
+        exerciseStarted: exerciseStartedRef.current,
+        cameraReady: frameCameraReady,
+        poseDetected: visiblePoints >= 5,
+        frameStable: frameDetectionStable,
+        measurementBlocked: frameMeasurementBlocked,
+        visiblePoints,
+        dominantSide: measurementSide,
+        sideConfidence: nextDominantSideResult?.average ?? null,
+        modelInfo: {
+          model: detector.activeModel ?? null,
+          delegate: detector.activeDelegate ?? null,
+        },
+        measurements: {
+          rawAngle: frameMeasurementBlocked ? null : rawAngle,
+          repetitionAngle: frameMeasurementBlocked ? null : repetitionAngle,
+          displayAngle,
+          pullupAngle: frameMeasurementBlocked ? null : pullupAngleForFrame,
+          repetitions: genericTracker.repetitions,
+          goodRepetitions: genericTracker.goodRepetitions,
+          phase: genericTracker.phase,
+          minimumAngle: isPullupExercise
+            ? pullupTrackerRef.current.minimumAngle
+            : exerciseRepTrackerRef.current.endpointAngle,
+          event: genericTracker.event,
+        },
+        pushup: isPushupExercise
+          ? {
+              elbowTorsoAngle: pushupTechniqueAnglesForFrame.elbowTorsoAngle,
+              bodyLineAngle: pushupTechniqueAnglesForFrame.bodyLineAngle,
+              techniqueReady: pushupTechniqueReady,
+            }
+          : null,
+        view: {
+          shoulderYawDeg: viewEstimate.shoulderYawDeg,
+          hipYawDeg: viewEstimate.hipYawDeg,
+          yawDeg: nextViewAlignment.yawDeg,
+          cameraFacingMode: cameraFacingModeRef.current,
+          estimatedView: nextViewAlignment.estimatedView,
+          recommendedView,
+          status: nextViewAlignment.status,
+        },
+        pose: pose
+          ? {
+              keypoints: pose.keypoints.map((point) => point ? { ...point } : { x: 0, y: 0, score: 0 }),
+              worldLandmarks: pose.worldLandmarks.map((point) => point ? { ...point } : { x: 0, y: 0, score: 0 }),
+            }
+          : null,
+      };
+      diagnosticBufferRef.current.push(frameDiagnosticSnapshot);
+      if (diagnosticBufferRef.current.length > DIAGNOSTIC_BUFFER_LIMIT) {
+        diagnosticBufferRef.current.splice(
+          0,
+          diagnosticBufferRef.current.length - DIAGNOSTIC_BUFFER_LIMIT,
+        );
+      }
       setConfidencePoints([
         selectMostConfident(pose?.keypoints, 'Hombro', 11, 12),
         selectMostConfident(pose?.keypoints, 'Cadera', 23, 24),
@@ -9109,6 +9255,7 @@ function Home() {
     setExerciseGoodRepetitions(0);
     setExerciseRepPhase('esperando inicio');
     setExerciseMinimumAngle(null);
+    diagnosticBufferRef.current = [];
     pullupDiagnosticBufferRef.current = [];
     viewDiagnosticBufferRef.current = [];
     setDiagnosticCopyMessage(null);
@@ -9303,8 +9450,8 @@ function Home() {
   const isPullupExerciseSelected = selectedExercise === 'dominadas'
     || selectedExercise === 'dominadas-supinas'
     || selectedExercise === 'dominadas-comando';
-  const canExportPullupDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED
-    && isPullupExerciseSelected;
+  const canExportDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED && phase === 'tracking';
+  const canExportPullupDiagnostics = canExportDiagnostics && isPullupExerciseSelected;
   const isStandardPullupSelected = selectedExercise === 'dominadas';
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
@@ -10610,26 +10757,30 @@ function Home() {
                 ) : null}
               </div>
               <div className="diagnostic-dock">
-                {canExportPullupDiagnostics && (
+                {canExportDiagnostics && (
                   <div className="diagnostic-copy-control">
-                    <button
-                      type="button"
-                      className="diagnostic-copy-button"
-                      data-testid="button-copy-view-diagnostics"
-                      onClick={() => void copyViewDiagnostics()}
-                    >
-                      <Copy size={13} strokeWidth={2} aria-hidden="true" />
-                      <span>Copiar vista</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="diagnostic-copy-button"
-                      data-testid="button-copy-pullup-diagnostics"
-                      onClick={() => void copyPullupDiagnostics()}
-                    >
-                      <Copy size={13} strokeWidth={2} aria-hidden="true" />
-                      <span>Copiar diagnóstico</span>
-                    </button>
+                    {canExportPullupDiagnostics && (
+                      <>
+                        <button
+                          type="button"
+                          className="diagnostic-copy-button"
+                          data-testid="button-copy-view-diagnostics"
+                          onClick={() => void copyViewDiagnostics()}
+                        >
+                          <Copy size={13} strokeWidth={2} aria-hidden="true" />
+                          <span>Copiar vista</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="diagnostic-copy-button"
+                          data-testid="button-copy-pullup-diagnostics"
+                          onClick={() => void copyPullupDiagnostics()}
+                        >
+                          <Copy size={13} strokeWidth={2} aria-hidden="true" />
+                          <span>Copiar diagnóstico</span>
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="diagnostic-copy-button"
