@@ -7,4 +7,4 @@ La evaluación de dominadas debe combinar la cabeza sobre las muñecas con los r
 
 **Why:** En la ejecución de referencia, el modelo comprimió los ángulos 3D de la extensión y de la parte alta respecto a los rangos iniciales, aunque el recorrido visual era correcto.
 
-**How to apply:** Cuando un video correcto produzca falsos errores, revisar primero los rangos medidos en la parte inferior y superior y mantener una confirmación secundaria para pérdidas breves de confianza en la cabeza o una extremidad.
+**How to apply:** Cuando un video correcto produzca falsos errores, revisar primero los rangos medidos en la parte inferior y superior y mantener una confirmación secundaria para pérdidas breves de confianza en la cabeza o una extremidad. Durante una sesión ya calibrada, los puntos persistentes anclados deben actualizar el movimiento y no bloquear el tracker; esa tolerancia no debe aplicarse durante la preparación inicial.

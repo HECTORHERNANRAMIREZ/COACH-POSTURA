@@ -6673,6 +6673,7 @@ function getPullupDiagnosticBlockingReasons(
   viewBlocksFrame: boolean,
   visiblePoints: number,
   averagedRawAngle: number | null,
+  allowPersistentAnchoredPoints = false,
 ) {
   const reasons: string[] = [];
   const trackedPoints = [
@@ -6720,6 +6721,7 @@ function getPullupDiagnosticBlockingReasons(
       return;
     }
     if (isHeldPoint(point)) {
+      if (allowPersistentAnchoredPoints && point.heldReason === 'persistent') return;
       const heldReason = point.heldReason ? ` (${point.heldReason})` : '';
       reasons.push(
         `punto retenido por filtro: ${label}${heldReason}`,
@@ -8090,6 +8092,7 @@ function Home() {
         ? false
         : viewBlocksFrame;
       const pullupMeasurementBlocked = isPullupExercise
+        && !pullupTrackingIsAnchored
         && !hasFreshPullupMeasurement(pose?.keypoints);
       const pushupMeasurementBlocked = isPushupExercise
         && !hasFreshPushupMeasurement(pose?.keypoints, measurementSide);
@@ -8669,6 +8672,7 @@ function Home() {
             viewBlocksFrame,
             visiblePoints,
             pullupAngleForFrame,
+            pullupTrackingIsAnchored,
           ),
           view: unifiedView,
         };
