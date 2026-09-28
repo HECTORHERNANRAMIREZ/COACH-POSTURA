@@ -1802,16 +1802,23 @@ const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const POSE_MODEL_LOAD_TIMEOUT_MS = 30000;
 // Calibración de dominadas basada en las lecturas de la ejecución de referencia:
 // abajo: codo extendido; arriba: codo flexionado.
-const PULLUP_BOTTOM_MIN_ANGLE = 145;
+// En la vista trasera del video, la extensión real se midió entre 130–180°.
+// Se amplía el inicio válido para no convertir una lectura 3D comprimida en
+// un falso "sin bloqueo".
+const PULLUP_BOTTOM_MIN_ANGLE = 125;
 const PULLUP_BOTTOM_MAX_ANGLE = 180;
-const PULLUP_PULL_ACTIVATION_ANGLE = 135;
+const PULLUP_PULL_ACTIVATION_ANGLE = 120;
 const PULLUP_NO_LOCKOUT_ANGLE = 155;
-// Solo se muestran en diagnóstico; no bloquean ni validan repeticiones.
+// La cabeza sobre las muñecas es la señal principal; el rango bilateral de
+// codos aporta una confirmación secundaria cuando la cabeza pierde confianza.
 const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 125;
 const PULLUP_TOP_SHOULDER_MIN_ANGLE = 70;
 const PULLUP_TOP_SHOULDER_MAX_ANGLE = 125;
-const PULLUP_TOP_ELBOW_MIN_ANGLE = 70;
-const PULLUP_TOP_ELBOW_MAX_ANGLE = 135;
+// En la ejecución de referencia, la parte alta llegó aproximadamente a
+// 57–135° por lado. El rango acepta esa variación 3D sin exigir una postura
+// idéntica en ambos brazos.
+const PULLUP_TOP_ELBOW_MIN_ANGLE = 45;
+const PULLUP_TOP_ELBOW_MAX_ANGLE = 145;
 const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const PULLUP_BOTTOM_STABLE_FRAMES = 3;
@@ -3098,6 +3105,7 @@ type PullupTrackerUpdate = {
 
 type PullupExtremityValidation = {
   atBottom: boolean;
+  atTop: boolean;
 };
 
 type PullupExtremityReadings = {
@@ -3154,13 +3162,14 @@ function getPullupExtremityValidation(
 
   return {
     atBottom: allElbowsInRange(PULLUP_BOTTOM_MIN_ANGLE, PULLUP_BOTTOM_MAX_ANGLE),
+    atTop: allElbowsInRange(PULLUP_TOP_ELBOW_MIN_ANGLE, PULLUP_TOP_ELBOW_MAX_ANGLE),
   };
 }
 
 function advancePullupTracker(
   tracker: PullupTracker,
   rawAngle: number,
-  headOverWrists: boolean,
+  topReached: boolean,
   extremities: PullupExtremityValidation,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-PULLUP_SMOOTHING_SAMPLES);
@@ -3189,7 +3198,7 @@ function advancePullupTracker(
     PULLUP_BOTTOM_MAX_ANGLE,
   );
   const hasStartedPull = smoothedAngle <= PULLUP_PULL_ACTIVATION_ANGLE;
-  const hasReachedTop = headOverWrists;
+  const hasReachedTop = topReached;
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
 
@@ -3241,7 +3250,7 @@ function advancePullupTracker(
       nextTracker.topFrames = 0;
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
-        && headOverWrists;
+        && topReached;
       nextTracker.repetitions += 1;
       nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
       if (nextTracker.currentRepCorrect) {
@@ -3261,7 +3270,7 @@ function advancePullupTracker(
       nextTracker.phase = 'abajo';
       nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
-    } else if (!headOverWrists) {
+    } else if (!topReached) {
       nextTracker.phase = 'bajando';
     }
   } else if (nextTracker.phase === 'bajando') {
@@ -5268,7 +5277,10 @@ function getPullupTechniqueFeedback(
       detail: `Codo a ${elbowAngle}°. Desde ${PULLUP_BOTTOM_MIN_ANGLE - PULLUP_TOLERANCE_DEG}° inicia la subida.`,
     };
   }
-  if (isHeadOverBothWrists(keypoints) !== true) {
+  if (
+    isHeadOverBothWrists(keypoints) !== true
+    && !getPullupExtremityValidation(keypoints).atTop
+  ) {
     return {
       tone: 'warning',
       message: 'Sube hasta pasar la cabeza',
@@ -5305,7 +5317,10 @@ function getSupinePullupTechniqueFeedback(
       detail: `Codo a ${elbowAngle}°. Desde ${PULLUP_BOTTOM_MIN_ANGLE - PULLUP_TOLERANCE_DEG}° inicia la subida con agarre supino.`,
     };
   }
-  if (isHeadOverBothWrists(keypoints) !== true) {
+  if (
+    isHeadOverBothWrists(keypoints) !== true
+    && !getPullupExtremityValidation(keypoints).atTop
+  ) {
     return {
       tone: 'warning',
       message: 'Sube hasta pasar la cabeza',
@@ -8355,7 +8370,13 @@ function Home() {
           };
       const pullupExtremityValidation = isPullupExercise
         ? getPullupExtremityValidation(pose?.keypoints, pullupExtremityReadings)
-        : { atBottom: false };
+        : { atBottom: false, atTop: false };
+      const pullupTopReached = isPullupExercise
+        && !pullupMeasurementBlocked
+        && (
+          pullupHeadOverWrists === true
+          || pullupExtremityValidation.atTop
+        );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
         exerciseStartedRef.current
@@ -8414,7 +8435,7 @@ function Home() {
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
-          pullupHeadOverWrists === true,
+          pullupTopReached,
           pullupExtremityValidation,
         );
         pullupDiagnosticUpdate = pullupUpdate;
@@ -8630,7 +8651,7 @@ function Home() {
           },
           conditions: {
             atBottom: pullupExtremityValidation.atBottom,
-            atTop: pullupHeadOverWrists === true,
+            atTop: pullupTopReached,
             isAtBottom: pullupDiagnosticUpdate?.isAtBottom ?? false,
             hasReachedTop: pullupDiagnosticUpdate?.hasReachedTop ?? false,
           },
@@ -8657,7 +8678,7 @@ function Home() {
           ...unifiedView,
           recommendedView,
           atBottom: pullupExtremityValidation.atBottom,
-          atTop: pullupHeadOverWrists === true,
+          atTop: pullupTopReached,
         };
         viewDiagnosticBufferRef.current.push(viewDiagnosticSnapshot);
         if (viewDiagnosticBufferRef.current.length > PULLUP_DIAGNOSTIC_BUFFER_LIMIT) {
