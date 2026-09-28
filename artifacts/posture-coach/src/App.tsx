@@ -8425,6 +8425,7 @@ function Home() {
           pullupHeadOverWrists === true
           || pullupExtremityValidation.atTop
         );
+      const pullupBarDetached = isPullupBarDetached(pose?.keypoints);
       const pullupDetachCandidate = (
         (selectedExerciseForFrame === 'dominadas'
           || selectedExerciseForFrame === 'dominadas-supinas')
@@ -8441,8 +8442,7 @@ function Home() {
         // Exigir el bloqueo inferior evita congelar el conteo a mitad de la
         // serie por una falsa detección de desmontaje.
         && pullupExtremityValidation.atBottom
-        && pullupHeadOverWrists !== true
-        && isPullupBarDetached(pose?.keypoints)
+        && pullupBarDetached
       );
       if (pullupDetachCandidate) {
         pullupDetachFramesRef.current = Math.min(
@@ -8466,6 +8466,14 @@ function Home() {
       }
       const pullupCountingBlockedByDetach = (
         pullupDetachCandidate || pullupDetachConfirmed
+        // Si el tracker está subiendo y ambas muñecas ya cayeron claramente
+        // debajo de los hombros, es una salida de la barra, no una nueva
+        // repetición. La fase inferior se deja pasar para conservar el cierre
+        // automático normal cuando la persona termina de forma controlada.
+        || (
+          pullupBarDetached
+          && pullupTrackerRef.current.phase !== 'abajo'
+        )
       );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
