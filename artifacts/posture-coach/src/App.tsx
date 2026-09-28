@@ -8202,42 +8202,6 @@ function Home() {
         && !pullupMeasurementBlocked
         ? isHeadOverBothWrists(pose?.keypoints)
         : null;
-      const pullupDetachCandidate = (
-        (selectedExerciseForFrame === 'dominadas'
-          || selectedExerciseForFrame === 'dominadas-supinas')
-        && exerciseStartedRef.current
-        && pullupCalibrationSuccessfulRef.current
-        && pullupTrackerRef.current.isArmed
-        // Antes de agarrar la barra, la postura de pie también deja las
-        // muñecas debajo de la cabeza. Solo podemos interpretar esa postura
-        // como desmontaje después de haber contado al menos una repetición.
-        && pullupTrackerRef.current.repetitions > 0
-        && !pullupSessionFinishedRef.current
-        && isPullupBarDetached(pose?.keypoints)
-      );
-      if (pullupDetachCandidate) {
-        pullupDetachFramesRef.current = Math.min(
-          PULLUP_BAR_DETACH_STABLE_FRAMES,
-          pullupDetachFramesRef.current + 1,
-        );
-      } else if (!pullupSessionFinishedRef.current) {
-        pullupDetachFramesRef.current = 0;
-      }
-      const pullupDetachConfirmed = (
-        pullupDetachFramesRef.current >= PULLUP_BAR_DETACH_STABLE_FRAMES
-      );
-      if (pullupDetachConfirmed && !pullupSessionFinishedRef.current) {
-        pullupSessionFinishedRef.current = true;
-        setPullupSessionFinished(true);
-        setPullupFeedback({
-          tone: 'success',
-          message: 'Ejercicio finalizado',
-          detail: `Conteo congelado en ${pullupTrackerRef.current.repetitions} repeticiones. Se detectó que soltaste la barra.`,
-        });
-      }
-      const pullupCountingBlockedByDetach = (
-        pullupDetachCandidate || pullupDetachConfirmed
-      );
       if (previousFootExerciseRef.current !== selectedExerciseForFrame) {
         previousFootExerciseRef.current = selectedExerciseForFrame;
         previousFootRatioRef.current = null;
@@ -8461,6 +8425,48 @@ function Home() {
           pullupHeadOverWrists === true
           || pullupExtremityValidation.atTop
         );
+      const pullupDetachCandidate = (
+        (selectedExerciseForFrame === 'dominadas'
+          || selectedExerciseForFrame === 'dominadas-supinas')
+        && exerciseStartedRef.current
+        && pullupCalibrationSuccessfulRef.current
+        && pullupTrackerRef.current.isArmed
+        // Antes de agarrar la barra, la postura de pie también deja las
+        // muñecas debajo de la cabeza. Solo podemos interpretar esa postura
+        // como desmontaje después de haber contado al menos una repetición.
+        && pullupTrackerRef.current.repetitions > 0
+        && !pullupSessionFinishedRef.current
+        // En la parte alta de una dominada los codos flexionados pueden dejar
+        // las muñecas debajo de los hombros aunque la persona siga agarrada.
+        // Exigir el bloqueo inferior evita congelar el conteo a mitad de la
+        // serie por una falsa detección de desmontaje.
+        && pullupExtremityValidation.atBottom
+        && pullupHeadOverWrists !== true
+        && isPullupBarDetached(pose?.keypoints)
+      );
+      if (pullupDetachCandidate) {
+        pullupDetachFramesRef.current = Math.min(
+          PULLUP_BAR_DETACH_STABLE_FRAMES,
+          pullupDetachFramesRef.current + 1,
+        );
+      } else if (!pullupSessionFinishedRef.current) {
+        pullupDetachFramesRef.current = 0;
+      }
+      const pullupDetachConfirmed = (
+        pullupDetachFramesRef.current >= PULLUP_BAR_DETACH_STABLE_FRAMES
+      );
+      if (pullupDetachConfirmed && !pullupSessionFinishedRef.current) {
+        pullupSessionFinishedRef.current = true;
+        setPullupSessionFinished(true);
+        setPullupFeedback({
+          tone: 'success',
+          message: 'Ejercicio finalizado',
+          detail: `Conteo congelado en ${pullupTrackerRef.current.repetitions} repeticiones. Se detectó que soltaste la barra.`,
+        });
+      }
+      const pullupCountingBlockedByDetach = (
+        pullupDetachCandidate || pullupDetachConfirmed
+      );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       if (
         exerciseStartedRef.current
