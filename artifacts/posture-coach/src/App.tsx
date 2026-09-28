@@ -1822,6 +1822,7 @@ const PULLUP_TOP_ELBOW_MAX_ANGLE = 145;
 const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const PULLUP_BOTTOM_STABLE_FRAMES = 3;
+const PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
 const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
@@ -6574,6 +6575,32 @@ function isHeadOverBothWrists(
   return headCenterY < averageWristY;
 }
 
+function isPullupBarDetached(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return false;
+
+  const nose = keypoints[0];
+  const leftWrist = keypoints[sideKeypoints.left.wrist];
+  const rightWrist = keypoints[sideKeypoints.right.wrist];
+  const leftShoulder = keypoints[sideKeypoints.left.shoulder];
+  const rightShoulder = keypoints[sideKeypoints.right.shoulder];
+  const requiredPoints = [nose, leftWrist, rightWrist, leftShoulder, rightShoulder];
+
+  if (requiredPoints.some((point) => (point?.score ?? 0) < 0.2)) {
+    return false;
+  }
+
+  // Mientras el usuario está suspendido, ambas muñecas deben permanecer
+  // por encima de los hombros. Al soltar la barra, los brazos caen y las
+  // dos muñecas pasan debajo de los hombros y de la cabeza.
+  const bothWristsBelowShoulders = (
+    leftWrist.y > leftShoulder.y
+    && rightWrist.y > rightShoulder.y
+  );
+  const bothWristsBelowHead = leftWrist.y > nose.y && rightWrist.y > nose.y;
+
+  return bothWristsBelowShoulders && bothWristsBelowHead;
+}
+
 function calculatePullupJointReadings(
   keypoints: PosePoint[] | undefined,
 ): DipJointReading[] {
@@ -7565,6 +7592,7 @@ function Home() {
   const [pullupPhase, setPullupPhase] = useState<PullupPhase>('esperando abajo');
   const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
   const [pullupFeedback, setPullupFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
+  const [pullupSessionFinished, setPullupSessionFinished] = useState(false);
   const [exerciseRepetitions, setExerciseRepetitions] = useState(0);
   const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
@@ -7623,6 +7651,8 @@ function Home() {
   });
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const pullupSessionFinishedRef = useRef(false);
+  const pullupDetachFramesRef = useRef(0);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
   const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pullupCalibrationReadySinceRef = useRef<number | null>(null);
@@ -8079,7 +8109,8 @@ function Home() {
         || selectedExerciseForFrame === 'flexiones-pica';
       const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
         && exerciseStartedRef.current
-        && pullupCalibrationSuccessfulRef.current;
+        && pullupCalibrationSuccessfulRef.current
+        && !pullupSessionFinishedRef.current;
       const detectedFrameLowConfidence = hasHeldPointForExercise(
         selectedExerciseForFrame,
         pose?.keypoints,
@@ -8116,7 +8147,13 @@ function Home() {
         && pullupCalibrationSuccessfulRef.current;
       const currentPullupPreparationStage = pullupPreparationStageRef.current;
       const currentPullupPreparationCountdown = pullupPreparationCountdownRef.current;
-      const nextCameraGuidance = pullupCalibrationLocked || pullupTrackingIsAnchored
+      const nextCameraGuidance = pullupSessionFinishedRef.current
+        ? {
+            tone: 'ready' as const,
+            message: 'Ejercicio finalizado · conteo congelado',
+            detail: `Se detectó que soltaste la barra. El resultado queda en ${pullupTrackerRef.current.repetitions} repeticiones.`,
+          }
+        : pullupCalibrationLocked || pullupTrackingIsAnchored
         ? {
             tone: 'ready' as const,
             message: pullupMeasurementBlocked
@@ -8157,6 +8194,38 @@ function Home() {
         && !pullupMeasurementBlocked
         ? isHeadOverBothWrists(pose?.keypoints)
         : null;
+      const pullupDetachCandidate = (
+        (selectedExerciseForFrame === 'dominadas'
+          || selectedExerciseForFrame === 'dominadas-supinas')
+        && exerciseStartedRef.current
+        && pullupCalibrationSuccessfulRef.current
+        && pullupTrackerRef.current.isArmed
+        && !pullupSessionFinishedRef.current
+        && isPullupBarDetached(pose?.keypoints)
+      );
+      if (pullupDetachCandidate) {
+        pullupDetachFramesRef.current = Math.min(
+          PULLUP_BAR_DETACH_STABLE_FRAMES,
+          pullupDetachFramesRef.current + 1,
+        );
+      } else if (!pullupSessionFinishedRef.current) {
+        pullupDetachFramesRef.current = 0;
+      }
+      const pullupDetachConfirmed = (
+        pullupDetachFramesRef.current >= PULLUP_BAR_DETACH_STABLE_FRAMES
+      );
+      if (pullupDetachConfirmed && !pullupSessionFinishedRef.current) {
+        pullupSessionFinishedRef.current = true;
+        setPullupSessionFinished(true);
+        setPullupFeedback({
+          tone: 'success',
+          message: 'Ejercicio finalizado',
+          detail: `Conteo congelado en ${pullupTrackerRef.current.repetitions} repeticiones. Se detectó que soltaste la barra.`,
+        });
+      }
+      const pullupCountingBlockedByDetach = (
+        pullupDetachCandidate || pullupDetachConfirmed
+      );
       if (previousFootExerciseRef.current !== selectedExerciseForFrame) {
         previousFootExerciseRef.current = selectedExerciseForFrame;
         previousFootRatioRef.current = null;
@@ -8433,6 +8502,8 @@ function Home() {
         && effectiveFrameDetectionStable
         && rawAngle !== null
         && !frameMeasurementBlocked
+        && !pullupSessionFinishedRef.current
+        && !pullupCountingBlockedByDetach
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
         const pullupUpdate = advancePullupTracker(
@@ -8665,6 +8736,8 @@ function Home() {
           repetitions: pullupTrackerRef.current.repetitions,
           goodRepetitions: pullupTrackerRef.current.goodRepetitions,
           event: pullupTrackerRef.current.event,
+          barDetached: pullupSessionFinishedRef.current,
+          detachmentFrames: pullupDetachFramesRef.current,
           blockingReasons: getPullupDiagnosticBlockingReasons(
             pose?.keypoints,
             exerciseStartedRef.current,
@@ -9194,6 +9267,9 @@ function Home() {
     setSelectedExercise(activeExercise);
     exerciseStartedRef.current = preserveExerciseStarted;
     setExerciseStarted(preserveExerciseStarted);
+    pullupSessionFinishedRef.current = false;
+    pullupDetachFramesRef.current = 0;
+    setPullupSessionFinished(false);
     if (!(activeExercise === 'dominadas' && preserveExerciseStarted)) {
       pullupCalibrationSuccessfulRef.current = false;
       pullupCalibrationReadySinceRef.current = null;
@@ -9270,6 +9346,9 @@ function Home() {
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
     pullupTrackerRef.current = createPullupTracker();
+    pullupSessionFinishedRef.current = false;
+    pullupDetachFramesRef.current = 0;
+    setPullupSessionFinished(false);
     setPullupRepetitions(0);
     setPullupGoodRepetitions(0);
     setPullupPhase('esperando abajo');
@@ -9356,6 +9435,9 @@ function Home() {
     if (exerciseStartedRef.current) {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
+      pullupSessionFinishedRef.current = false;
+      pullupDetachFramesRef.current = 0;
+      setPullupSessionFinished(false);
       poseFilterRef.current.setPersistentHold(false);
       if (selectedExerciseRef.current === 'dominadas') {
         poseFilterRef.current.reset();
@@ -9390,6 +9472,9 @@ function Home() {
     setSelectedExercise(null);
     exerciseStartedRef.current = false;
     setExerciseStarted(false);
+    pullupSessionFinishedRef.current = false;
+    pullupDetachFramesRef.current = 0;
+    setPullupSessionFinished(false);
     pullupCalibrationSuccessfulRef.current = false;
     pullupCalibrationReadySinceRef.current = null;
     updatePullupCalibrationStatus('pending');
@@ -9481,6 +9566,8 @@ function Home() {
   const personDetected = poseDetected || faceDetected;
   const statusMessage = phase !== 'tracking'
     ? 'Preparando el análisis...'
+    : pullupSessionFinished
+      ? 'Ejercicio finalizado · conteo congelado'
     : !exerciseStarted
       ? isStandardPullupSelected && pullupPreparationStage === 'body-detection'
         ? pullupPreparationCountdown !== null

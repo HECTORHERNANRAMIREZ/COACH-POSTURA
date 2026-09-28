@@ -92,6 +92,8 @@ export type ExerciseDiagnosticSnapshot = {
   repetitions: number;
   goodRepetitions: number;
   event: string | null;
+  barDetached: boolean;
+  detachmentFrames: number;
   blockingReasons: string[];
   view: {
     shoulderYawDeg: number | null;
