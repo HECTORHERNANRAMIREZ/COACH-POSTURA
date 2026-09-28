@@ -1823,6 +1823,8 @@ const PULLUP_TOLERANCE_DEG = 5;
 const PULLUP_SMOOTHING_SAMPLES = 5;
 const PULLUP_BOTTOM_STABLE_FRAMES = 3;
 const PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
+const PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
+const PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
 const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
@@ -6589,12 +6591,18 @@ function isPullupBarDetached(keypoints: PosePoint[] | undefined) {
     return false;
   }
 
+  const shoulderSpan = Math.abs(leftShoulder.x - rightShoulder.x);
+  const shoulderDropMargin = Math.max(
+    PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX,
+    shoulderSpan * PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO,
+  );
+
   // Mientras el usuario está suspendido, ambas muñecas deben permanecer
-  // por encima de los hombros. Al soltar la barra, los brazos caen y las
-  // dos muñecas pasan debajo de los hombros y de la cabeza.
+  // cerca o por encima de los hombros. Al soltar la barra, los brazos caen
+  // y las dos muñecas pasan claramente debajo de los hombros y de la cabeza.
   const bothWristsBelowShoulders = (
-    leftWrist.y > leftShoulder.y
-    && rightWrist.y > rightShoulder.y
+    leftWrist.y > leftShoulder.y + shoulderDropMargin
+    && rightWrist.y > rightShoulder.y + shoulderDropMargin
   );
   const bothWristsBelowHead = leftWrist.y > nose.y && rightWrist.y > nose.y;
 
