@@ -497,6 +497,7 @@ type ExerciseRepConfig = {
   endMaxAngle: number;
   endLabel: string;
   countOnReturn?: boolean;
+  countOnlyWhenCorrect?: boolean;
 };
 type ExerciseRepTracker = {
   phase: ExerciseRepPhase;
@@ -811,7 +812,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'wrist', label: 'muñeca' },
       { joint: 'ankle', label: 'tobillo' },
     ],
-    trackedAngleLabels: ['Codo respecto al torso: 45–100°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
+    trackedAngleLabels: ['Codo respecto al torso: 0–55°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
   },
   {
     id: 'flexiones-declinadas',
@@ -1903,8 +1904,11 @@ const PULLDOWN_TORSO_MIN_ANGLE = 10;
 const PULLDOWN_TORSO_MAX_ANGLE = 25;
 const PULLDOWN_ELBOW_MIN_ANGLE = 85;
 const PULLDOWN_ELBOW_MAX_ANGLE = 110;
-const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 45;
-const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 90;
+// Este ángulo se calcula en el hombro (cadera–hombro–codo). En la ejecución
+// correcta de referencia los codos permanecen cerca del torso y producen
+// lecturas de 6–16°, no de 45–90°.
+const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 0;
+const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 45;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
@@ -2240,6 +2244,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+    countOnlyWhenCorrect: true,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2249,6 +2254,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+    countOnlyWhenCorrect: true,
   },
   'flexiones-pica': {
     direction: 'decrease',
@@ -2258,6 +2264,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: 70,
     endMaxAngle: 110,
     endLabel: 'codo entre 70–110°',
+    countOnlyWhenCorrect: true,
   },
   'press-militar': {
     direction: 'increase',
@@ -2574,10 +2581,12 @@ function advanceExerciseRepTracker(
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
       completedEndpointAngle = nextTracker.endpointAngle;
       if (!config.countOnReturn) {
-        nextTracker.event = 'valid';
-        nextTracker.repetitions += 1;
-        if (nextTracker.currentRepCorrect) {
-          nextTracker.goodRepetitions += 1;
+        if (!config.countOnlyWhenCorrect || nextTracker.currentRepCorrect) {
+          nextTracker.event = 'valid';
+          nextTracker.repetitions += 1;
+          if (nextTracker.currentRepCorrect) {
+            nextTracker.goodRepetitions += 1;
+          }
         }
       }
     } else if (isAtStart) {
@@ -2592,15 +2601,21 @@ function advanceExerciseRepTracker(
         : smoothedAngle < config.endMinAngle;
 
       if (hasReturnedFromEnd && isAtStart) {
-        nextTracker.phase = 'inicio';
-        nextTracker.event = 'valid';
-        nextTracker.repetitions += 1;
         const repetitionWasCorrect = nextTracker.currentRepCorrect && techniqueValid;
-        if (repetitionWasCorrect) {
-          nextTracker.goodRepetitions += 1;
+        nextTracker.phase = 'inicio';
+        if (config.countOnlyWhenCorrect && !repetitionWasCorrect) {
+          nextTracker.currentRepCorrect = techniqueValid;
+          nextTracker.endpointAngle = null;
+          completedEndpointAngle = null;
+        } else {
+          nextTracker.event = 'valid';
+          nextTracker.repetitions += 1;
+          if (repetitionWasCorrect) {
+            nextTracker.goodRepetitions += 1;
+          }
+          nextTracker.currentRepCorrect = techniqueValid;
+          completedEndpointAngle = nextTracker.endpointAngle;
         }
-        nextTracker.currentRepCorrect = techniqueValid;
-        completedEndpointAngle = nextTracker.endpointAngle;
       }
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
@@ -7085,7 +7100,12 @@ function calculateLiveAngleReadings(
       case 'flexiones':
       case 'flexiones-declinadas':
         return [
-          empty('Codo / torso', exercise === 'flexiones' ? '45–100°' : '30–60°'),
+          empty(
+            'Codo / torso',
+            exercise === 'flexiones'
+              ? `${PUSHUP_ELBOW_TORSO_MIN_ANGLE}–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}°`
+              : '30–60°',
+          ),
           empty('Alineación', '162–180°'),
           empty(
             'Flexión',
@@ -9043,9 +9063,6 @@ function Home() {
         && (isPushupExercise ? effectiveFrameDetectionStable : frameDetectionStable)
         && repetitionConfig
         && repetitionAngle !== null
-        // Las flexiones deben seguir avanzando aunque la técnica no sea
-        // perfecta: así se cuenta la repetición y se conserva en
-        // `goodRepetitions` la evaluación de calidad por separado.
         && (isPushupExercise || repetitionTechniqueReady)
         && !frameMeasurementBlocked
       ) {
