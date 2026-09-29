@@ -1910,10 +1910,10 @@ const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
 // Calibración del recorrido de flexiones a partir de la ejecución de referencia:
 // se acepta el inicio observado con el codo parcialmente extendido, se activa
-// al pasar de 105° y se considera fondo dentro de 70–105°.
+// al pasar de 120° y se considera fondo dentro de 70–105°.
 const PUSHUP_REP_START_MIN_ANGLE = 110;
 const PUSHUP_REP_START_MAX_ANGLE = 180;
-const PUSHUP_REP_ACTIVATION_ANGLE = 105;
+const PUSHUP_REP_ACTIVATION_ANGLE = 120;
 const PUSHUP_REP_END_MIN_ANGLE = 70;
 const PUSHUP_REP_END_MAX_ANGLE = 105;
 const ROW_TORSO_MIN_ANGLE = 30;
@@ -9039,8 +9039,8 @@ function Home() {
       if (
         exerciseStartedRef.current
         && hasFreshPose
-        && frameCameraReady
-        && frameDetectionStable
+        && (isPushupExercise ? effectiveFrameCameraReady : frameCameraReady)
+        && (isPushupExercise ? effectiveFrameDetectionStable : frameDetectionStable)
         && repetitionConfig
         && repetitionAngle !== null
         // Las flexiones deben seguir avanzando aunque la técnica no sea
