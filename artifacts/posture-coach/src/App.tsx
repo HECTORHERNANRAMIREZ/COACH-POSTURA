@@ -498,6 +498,7 @@ type ExerciseRepConfig = {
   endLabel: string;
   countOnReturn?: boolean;
   countOnlyWhenCorrect?: boolean;
+  techniqueStartsOnActivation?: boolean;
 };
 type ExerciseRepTracker = {
   phase: ExerciseRepPhase;
@@ -2245,6 +2246,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
     countOnlyWhenCorrect: false,
+    techniqueStartsOnActivation: true,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2559,13 +2561,17 @@ function advanceExerciseRepTracker(
     if (isAtStart) {
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
-      nextTracker.currentRepCorrect = techniqueValid;
+      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+        ? true
+        : techniqueValid;
     }
   } else if (nextTracker.phase === 'inicio') {
     if (hasActivated) {
       nextTracker.phase = 'en movimiento';
       nextTracker.endpointAngle = smoothedAngle;
-      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
+      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+        ? techniqueValid
+        : nextTracker.currentRepCorrect && techniqueValid;
     } else if (!isAtStart) {
       nextTracker.phase = 'esperando inicio';
       nextTracker.currentRepCorrect = false;
@@ -2592,7 +2598,9 @@ function advanceExerciseRepTracker(
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
-      nextTracker.currentRepCorrect = techniqueValid;
+      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+        ? true
+        : techniqueValid;
     }
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
@@ -2619,6 +2627,9 @@ function advanceExerciseRepTracker(
       }
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
+      if (config.techniqueStartsOnActivation) {
+        nextTracker.currentRepCorrect = true;
+      }
     }
   }
 
