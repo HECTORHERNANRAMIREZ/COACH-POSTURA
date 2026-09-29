@@ -1906,11 +1906,12 @@ const PULLDOWN_TORSO_MIN_ANGLE = 10;
 const PULLDOWN_TORSO_MAX_ANGLE = 25;
 const PULLDOWN_ELBOW_MIN_ANGLE = 85;
 const PULLDOWN_ELBOW_MAX_ANGLE = 110;
-// Este ángulo se calcula en el hombro (cadera–hombro–codo). En la ejecución
-// correcta de referencia los codos permanecen cerca del torso y producen
-// lecturas de 6–16°, no de 45–90°.
+// Este ángulo se calcula en el hombro (cadera–hombro–codo). En las sesiones
+// laterales correctas observadas, la lectura puede quedar entre 68–77° aunque
+// la línea corporal sea válida; mantenemos margen hasta 80° para no marcar
+// como incorrecta una flexión bien ejecutada por la perspectiva 3D.
 const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 0;
-const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 45;
+const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 70;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
@@ -4516,14 +4517,14 @@ function getPushupTechniqueFeedback(
     return {
       tone: 'warning',
       message: 'Acerca los codos al torso',
-       detail: `Están a ${elbowTorsoAngle}°. Busca ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE}° y desciende con control.`,
+      detail: `Están a ${elbowTorsoAngle}°. Busca ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y desciende con control.`,
     };
   }
   if (elbowTorsoAngle < elbowMinAngle) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado los codos',
-       detail: `Están a ${elbowTorsoAngle}°. Sepáralos suavemente hasta formar ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE}° con el torso.`,
+      detail: `Están a ${elbowTorsoAngle}°. Sepáralos suavemente hasta formar ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° con el torso.`,
     };
   }
   if (wristOffset > 0.38) {
