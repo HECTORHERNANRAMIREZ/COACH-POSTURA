@@ -2245,6 +2245,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+    countOnReturn: true,
     countOnlyWhenCorrect: false,
     techniqueStartsOnActivation: true,
   },
@@ -2604,6 +2605,9 @@ function advanceExerciseRepTracker(
     }
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
+      if (config.techniqueStartsOnActivation) {
+        nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
+      }
       const hasReturnedFromEnd = config.direction === 'decrease'
         ? smoothedAngle > config.endMaxAngle
         : smoothedAngle < config.endMinAngle;
@@ -2621,7 +2625,9 @@ function advanceExerciseRepTracker(
           if (repetitionWasCorrect) {
             nextTracker.goodRepetitions += 1;
           }
-          nextTracker.currentRepCorrect = techniqueValid;
+            nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+              ? true
+              : techniqueValid;
           completedEndpointAngle = nextTracker.endpointAngle;
         }
       }
