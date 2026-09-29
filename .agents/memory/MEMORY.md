@@ -1,1 +1,2 @@
 - [Push-up tracking locks](pushup-tracking-locks.md) — lock anatomical assignments after initial detection, while keeping landmark coordinates live.
+- [Pose continuity safety](pose-continuity.md) — anchored overlays must not become measurements; require fresh, camera-ready, stable frames after gaps or bilateral crossings.

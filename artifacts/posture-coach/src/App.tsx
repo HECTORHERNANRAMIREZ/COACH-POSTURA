@@ -8285,26 +8285,12 @@ function Home() {
         pose?.keypoints,
         measurementSide,
       );
-      const frameLowConfidence = pullupTrackingIsAnchored || pushupTrackingIsAnchored
+      const frameLowConfidence = pullupTrackingIsAnchored
         ? false
         : detectedFrameLowConfidence;
       const effectiveViewBlocksFrame = pullupTrackingIsAnchored || pushupTrackingIsAnchored
         ? false
         : viewBlocksFrame;
-      const pullupMeasurementBlocked = isPullupExercise
-        && !pullupTrackingIsAnchored
-        && !hasFreshPullupMeasurement(pose?.keypoints);
-      const pushupMeasurementBlocked = isPushupExercise
-        && !pushupTrackingIsAnchored
-        && !hasFreshPushupMeasurement(pose?.keypoints, measurementSide);
-      const frameMeasurementBlocked = frameLowConfidence
-        || effectiveViewBlocksFrame
-        || pullupMeasurementBlocked
-        || pushupMeasurementBlocked;
-      const visiblePoints = pose?.keypoints?.filter((point) => (
-        isVisibleCameraPoint(point, 0.3)
-      )).length ?? 0;
-      const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const rawCameraGuidance = getCameraGuidance(
         selectedExerciseForFrame,
         pose?.keypoints,
@@ -8313,6 +8299,26 @@ function Home() {
         video.videoHeight,
         stableLateralSide,
       );
+      const frameCameraReady = rawCameraGuidance.tone === 'ready';
+      const pullupMeasurementBlocked = isPullupExercise
+        && !pullupTrackingIsAnchored
+        && !hasFreshPullupMeasurement(pose?.keypoints);
+      // El anclaje conserva la última pose para que el overlay no desaparezca
+      // ante un frame perdido, pero nunca convierte esos puntos retenidos en
+      // una lectura válida para contar o evaluar una flexión.
+      const pushupMeasurementBlocked = isPushupExercise
+        && (
+          !hasFreshPushupMeasurement(pose?.keypoints, measurementSide)
+          || !frameCameraReady
+        );
+      const frameMeasurementBlocked = frameLowConfidence
+        || effectiveViewBlocksFrame
+        || pullupMeasurementBlocked
+        || pushupMeasurementBlocked;
+      const visiblePoints = pose?.keypoints?.filter((point) => (
+        isVisibleCameraPoint(point, 0.3)
+      )).length ?? 0;
+      const nextFaceDetected = hasFaceDetected(pose?.keypoints);
       const pullupCalibrationLocked = selectedExerciseForFrame === 'dominadas'
         && pullupCalibrationSuccessfulRef.current;
       const pushupCalibrationLocked = selectedExerciseForFrame === 'flexiones'
@@ -8372,7 +8378,6 @@ function Home() {
                   : 'La detección inicial terminó. Prepárate para continuar.',
           }
         : rawCameraGuidance;
-      const frameCameraReady = rawCameraGuidance.tone === 'ready';
       const pullupElbowAnglesForFrame = isPullupExercise
         && !pullupMeasurementBlocked
         ? calculatePullupElbowAngles(pose?.keypoints)
@@ -8433,11 +8438,9 @@ function Home() {
       const frameDetectionStable = stabilityFramesRef.current >= 4;
       setDetectionStable(frameDetectionStable || pullupTrackingIsAnchored || pushupTrackingIsAnchored);
       const effectiveFrameDetectionStable = frameDetectionStable
-        || pullupTrackingIsAnchored
-        || pushupTrackingIsAnchored;
+        || pullupTrackingIsAnchored;
       const effectiveFrameCameraReady = frameCameraReady
-        || pullupTrackingIsAnchored
-        || pushupTrackingIsAnchored;
+        || pullupTrackingIsAnchored;
       if (
         selectedExerciseForFrame === 'dominadas'
         && !pullupCalibrationSuccessfulRef.current
@@ -9403,7 +9406,13 @@ function Home() {
           minimumAngle: isPullupExercise
             ? pullupTrackerRef.current.minimumAngle
             : exerciseRepTrackerRef.current.endpointAngle,
-          event: genericTracker.event,
+          // Un evento pertenece al frame que lo generó. No lo repitas durante
+          // frames retenidos, poses ausentes o después de detener la sesión.
+          event: exerciseStartedRef.current
+            && hasFreshPose
+            && !frameMeasurementBlocked
+            ? genericTracker.event
+            : null,
         },
         pushup: isPushupExercise
           ? {

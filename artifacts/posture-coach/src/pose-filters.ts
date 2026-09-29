@@ -43,6 +43,19 @@ const LIMB_PARENT_INDEX: Record<number, number> = {
 const TEMPORAL_JUMP_MIN_DISTANCE_PX = 48;
 const TEMPORAL_JUMP_BONE_RATIO = 1.8;
 const TEMPORAL_JUMP_CONFIRM_FRAMES = 3;
+const TEMPORAL_CROSS_MIN_SEPARATION_PX = 36;
+const TEMPORAL_CROSS_MIN_GAIN_PX = 40;
+const TEMPORAL_CROSS_COST_RATIO = 0.65;
+const TEMPORAL_CROSS_CONFIRM_FRAMES = 3;
+const TEMPORAL_CROSS_CANDIDATE_DISTANCE_PX = 48;
+const TEMPORAL_CROSS_PAIRS: readonly [number, number][] = [
+  [11, 12],
+  [13, 14],
+  [15, 16],
+  [23, 24],
+  [25, 26],
+  [27, 28],
+];
 
 export type OneEuroParameters = {
   // Frecuencia mínima de corte: más baja significa más suavizado en reposo.
@@ -79,6 +92,12 @@ type LandmarkFilterState = {
   heldFrames: number;
   jumpCandidate?: { x: number; y: number };
   jumpCandidateFrames: number;
+};
+
+type TemporalCrossCandidate = {
+  left: { x: number; y: number };
+  right: { x: number; y: number };
+  frames: number;
 };
 
 function smoothingAlpha(cutoff: number, dtSeconds: number) {
@@ -225,6 +244,8 @@ export class PoseOneEuroFilter {
 
   private lastPose?: Pose;
 
+  private readonly temporalCrossCandidates = new Map<number, TemporalCrossCandidate>();
+
   setPersistentHold(enabled: boolean) {
     this.persistentHold = enabled;
   }
@@ -236,6 +257,7 @@ export class PoseOneEuroFilter {
         state.jumpCandidate = undefined;
         state.jumpCandidateFrames = 0;
       });
+      this.temporalCrossCandidates.clear();
     }
   }
 
@@ -246,6 +268,10 @@ export class PoseOneEuroFilter {
     const worldLandmarks: PosePoint[] = [];
     const previousKeypoints = this.lastPose?.keypoints ?? [];
     const previousWorldLandmarks = this.lastPose?.worldLandmarks ?? [];
+    const temporalCrossingIndexes = this.getTemporalCrossingIndexes(
+      pose.keypoints,
+      previousKeypoints,
+    );
 
     for (let index = 0; index < POSE_LANDMARK_COUNT; index += 1) {
       const state = this.states[index];
@@ -254,6 +280,15 @@ export class PoseOneEuroFilter {
       const worldPoint = worldLandmark?.world
         ?? asWorldCoordinate(worldLandmark)
         ?? point?.world;
+
+      if (temporalCrossingIndexes.has(index) && point && !point.held) {
+        point = {
+          ...point,
+          held: true,
+          heldFrames: state.heldFrames + 1,
+          heldReason: 'temporal-jump',
+        };
+      }
 
       const parentIndex = this.temporalJumpGuard
         ? LIMB_PARENT_INDEX[index]
@@ -532,6 +567,7 @@ export class PoseOneEuroFilter {
 
   markPoseMissing() {
     this.missingPoseFrames += 1;
+    this.temporalCrossCandidates.clear();
     if (this.missingPoseFrames > POSE_MISSING_RESET_FRAMES && !this.persistentHold) {
       this.reset();
     }
@@ -559,9 +595,114 @@ export class PoseOneEuroFilter {
       state.jumpCandidate = undefined;
       state.jumpCandidateFrames = 0;
     });
+    this.temporalCrossCandidates.clear();
     this.lastPose = undefined;
     this.missingPoseFrames = 0;
   }
+
+  private getTemporalCrossingIndexes(
+    currentKeypoints: PosePoint[],
+    previousKeypoints: PosePoint[],
+  ) {
+    const crossingIndexes = new Set<number>();
+    if (!this.temporalJumpGuard) {
+      this.temporalCrossCandidates.clear();
+      return crossingIndexes;
+    }
+
+    TEMPORAL_CROSS_PAIRS.forEach(([leftIndex, rightIndex]) => {
+      const previousLeft = previousKeypoints[leftIndex];
+      const previousRight = previousKeypoints[rightIndex];
+      const currentLeft = currentKeypoints[leftIndex];
+      const currentRight = currentKeypoints[rightIndex];
+      const previousSeparation = previousLeft && previousRight
+        ? screenDistance(previousLeft, previousRight)
+        : 0;
+      const currentSeparation = currentLeft && currentRight
+        ? screenDistance(currentLeft, currentRight)
+        : 0;
+      const reliablePoints = (
+        isReliableForTemporalGuard(currentLeft, leftIndex)
+        && isReliableForTemporalGuard(currentRight, rightIndex)
+        && previousLeft
+        && previousRight
+        && previousSeparation >= TEMPORAL_CROSS_MIN_SEPARATION_PX
+        && currentSeparation >= TEMPORAL_CROSS_MIN_SEPARATION_PX
+      );
+      const pairKey = leftIndex;
+      const candidate = this.temporalCrossCandidates.get(pairKey);
+
+      if (
+        !reliablePoints
+        || !currentLeft
+        || !currentRight
+        || !previousLeft
+        || !previousRight
+      ) {
+        this.temporalCrossCandidates.delete(pairKey);
+        return;
+      }
+
+      const sameCost = screenDistance(currentLeft, previousLeft)
+        + screenDistance(currentRight, previousRight);
+      const crossedCost = screenDistance(currentRight, previousLeft)
+        + screenDistance(currentLeft, previousRight);
+      const isCrossingCandidate = crossedCost < sameCost * TEMPORAL_CROSS_COST_RATIO
+        && sameCost - crossedCost > TEMPORAL_CROSS_MIN_GAIN_PX;
+
+      if (!isCrossingCandidate) {
+        this.temporalCrossCandidates.delete(pairKey);
+        return;
+      }
+
+      const candidateIsConsistent = candidate
+        ? screenDistance(currentLeft, candidate.left)
+          <= TEMPORAL_CROSS_CANDIDATE_DISTANCE_PX
+          && screenDistance(currentRight, candidate.right)
+            <= TEMPORAL_CROSS_CANDIDATE_DISTANCE_PX
+        : false;
+      const nextFrames = candidateIsConsistent && candidate
+        ? candidate.frames + 1
+        : 1;
+      this.temporalCrossCandidates.set(pairKey, {
+        left: { x: currentLeft.x, y: currentLeft.y },
+        right: { x: currentRight.x, y: currentRight.y },
+        frames: nextFrames,
+      });
+
+      if (nextFrames < TEMPORAL_CROSS_CONFIRM_FRAMES) {
+        crossingIndexes.add(leftIndex);
+        crossingIndexes.add(rightIndex);
+      } else {
+        this.temporalCrossCandidates.delete(pairKey);
+      }
+    });
+
+    return crossingIndexes;
+  }
+}
+
+function isReliableForTemporalGuard(
+  point: PosePoint | undefined,
+  index: number,
+) {
+  const minimumScore = LIMB_LANDMARKS.has(index)
+    ? MIN_SCORE_LIMB
+    : MIN_SCORE_BODY;
+  return Boolean(
+    point
+    && !point.held
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && (point.score ?? 0) >= minimumScore,
+  );
+}
+
+function screenDistance(
+  first: PosePoint,
+  second: PosePoint,
+) {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
 export function createPoseFilter() {
