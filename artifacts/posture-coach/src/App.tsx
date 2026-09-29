@@ -499,6 +499,7 @@ type ExerciseRepConfig = {
   countOnReturn?: boolean;
   countOnlyWhenCorrect?: boolean;
   techniqueStartsOnActivation?: boolean;
+  countReturnWithoutEndAsIncorrect?: boolean;
 };
 type ExerciseRepTracker = {
   phase: ExerciseRepPhase;
@@ -2248,6 +2249,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     countOnReturn: true,
     countOnlyWhenCorrect: false,
     techniqueStartsOnActivation: true,
+    countReturnWithoutEndAsIncorrect: true,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2597,11 +2599,17 @@ function advanceExerciseRepTracker(
         }
       }
     } else if (isAtStart) {
+      const lastObservedEndpointAngle = nextTracker.endpointAngle;
       nextTracker.phase = 'inicio';
       nextTracker.endpointAngle = null;
       nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
         ? true
         : techniqueValid;
+      if (config.countReturnWithoutEndAsIncorrect) {
+        nextTracker.event = 'valid';
+        nextTracker.repetitions += 1;
+        completedEndpointAngle = lastObservedEndpointAngle;
+      }
     }
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
