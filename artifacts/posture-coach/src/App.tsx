@@ -2244,7 +2244,6 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
-    countOnlyWhenCorrect: true,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2254,6 +2253,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+    countOnlyWhenCorrect: true,
   },
   'flexiones-pica': {
     direction: 'decrease',
