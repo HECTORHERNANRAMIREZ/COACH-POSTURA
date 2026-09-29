@@ -1,0 +1,1 @@
+- [Push-up tracking locks](pushup-tracking-locks.md) — lock anatomical assignments after initial detection, while keeping landmark coordinates live.

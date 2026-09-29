@@ -154,6 +154,8 @@ export class SideConsistencyFilter {
 
   private lastConfirmedSwaps: ConfirmedSideSwap[] = [];
 
+  private assignmentsLocked = false;
+
   filter(
     pose: Pose,
     confirmFrames = SWAP_CONFIRM_FRAMES,
@@ -163,6 +165,8 @@ export class SideConsistencyFilter {
     const candidatePairs = new Set<SidePairId>();
 
     SIDE_PAIRS.forEach((pair) => {
+      if (this.assignmentsLocked) return;
+
       const state = this.states.get(pair.id);
       if (!state) return;
 
@@ -336,8 +340,25 @@ export class SideConsistencyFilter {
   markPoseMissing() {
     this.missingPoseFrames += 1;
     if (this.missingPoseFrames > POSE_MISSING_RESET_FRAMES) {
-      this.reset();
+      if (!this.assignmentsLocked) {
+        this.reset();
+        return;
+      }
+      this.previousAcceptedWorld.clear();
+      this.states.forEach((state) => {
+        state.candidateFrames = 0;
+      });
+      this.lastConfirmedSwaps = [];
+      this.missingPoseFrames = 0;
     }
+  }
+
+  lockAssignments() {
+    this.assignmentsLocked = true;
+    this.states.forEach((state) => {
+      state.candidateFrames = 0;
+    });
+    this.lastConfirmedSwaps = [];
   }
 
   reset() {
@@ -348,6 +369,7 @@ export class SideConsistencyFilter {
     this.previousAcceptedWorld.clear();
     this.lastConfirmedSwaps = [];
     this.missingPoseFrames = 0;
+    this.assignmentsLocked = false;
   }
 
   private updatePreviousAcceptedWorld(

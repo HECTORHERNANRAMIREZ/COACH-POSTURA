@@ -19,15 +19,30 @@ const POSE_MISSING_RESET_FRAMES = 10;
 const LIMB_LANDMARKS = new Set([15, 16, 27, 28, 29, 30, 31, 32]);
 const PERSISTENT_POSE_ANCHOR_INDICES = [11, 12, 23, 24];
 const LIMB_PARENT_INDEX: Record<number, number> = {
+  11: 23,
+  12: 24,
   13: 11,
   14: 12,
   15: 13,
   16: 14,
+  17: 15,
+  18: 16,
+  19: 15,
+  20: 16,
+  21: 15,
+  22: 16,
   25: 23,
   26: 24,
   27: 25,
   28: 26,
+  29: 27,
+  30: 28,
+  31: 27,
+  32: 28,
 };
+const TEMPORAL_JUMP_MIN_DISTANCE_PX = 48;
+const TEMPORAL_JUMP_BONE_RATIO = 1.8;
+const TEMPORAL_JUMP_CONFIRM_FRAMES = 3;
 
 export type OneEuroParameters = {
   // Frecuencia mínima de corte: más baja significa más suavizado en reposo.
@@ -62,6 +77,8 @@ type LandmarkFilterState = {
   lastPoint?: PosePoint;
   lastWorld?: WorldCoordinate;
   heldFrames: number;
+  jumpCandidate?: { x: number; y: number };
+  jumpCandidateFrames: number;
 };
 
 function smoothingAlpha(cutoff: number, dtSeconds: number) {
@@ -195,6 +212,7 @@ export class PoseOneEuroFilter {
         screen: createAxisFilterSet(parameters),
         world: createAxisFilterSet(parameters),
         heldFrames: 0,
+        jumpCandidateFrames: 0,
       };
     },
   );
@@ -203,10 +221,22 @@ export class PoseOneEuroFilter {
 
   private persistentHold = false;
 
+  private temporalJumpGuard = false;
+
   private lastPose?: Pose;
 
   setPersistentHold(enabled: boolean) {
     this.persistentHold = enabled;
+  }
+
+  setTemporalJumpGuard(enabled: boolean) {
+    this.temporalJumpGuard = enabled;
+    if (!enabled) {
+      this.states.forEach((state) => {
+        state.jumpCandidate = undefined;
+        state.jumpCandidateFrames = 0;
+      });
+    }
   }
 
   filter(pose: Pose, timestamp: number): Pose {
@@ -219,11 +249,80 @@ export class PoseOneEuroFilter {
 
     for (let index = 0; index < POSE_LANDMARK_COUNT; index += 1) {
       const state = this.states[index];
-      const point = pose.keypoints[index];
+      let point = pose.keypoints[index];
       const worldLandmark = pose.worldLandmarks[index];
       const worldPoint = worldLandmark?.world
         ?? asWorldCoordinate(worldLandmark)
         ?? point?.world;
+
+      const parentIndex = this.temporalJumpGuard
+        ? LIMB_PARENT_INDEX[index]
+        : undefined;
+      const currentParent = parentIndex === undefined
+        ? undefined
+        : keypoints[parentIndex] ?? pose.keypoints[parentIndex];
+      const previousParent = parentIndex === undefined
+        ? undefined
+        : previousKeypoints[parentIndex];
+      if (
+        point
+        && !point.held
+        && state.lastPoint
+        && currentParent
+        && previousParent
+        && Number.isFinite(currentParent.x)
+        && Number.isFinite(currentParent.y)
+        && Number.isFinite(previousParent.x)
+        && Number.isFinite(previousParent.y)
+      ) {
+        const previousVector = {
+          x: state.lastPoint.x - previousParent.x,
+          y: state.lastPoint.y - previousParent.y,
+        };
+        const currentVector = {
+          x: point.x - currentParent.x,
+          y: point.y - currentParent.y,
+        };
+        const previousBoneLength = Math.hypot(previousVector.x, previousVector.y);
+        const relativeJump = Math.hypot(
+          currentVector.x - previousVector.x,
+          currentVector.y - previousVector.y,
+        );
+        const jumpThreshold = Math.max(
+          TEMPORAL_JUMP_MIN_DISTANCE_PX,
+          previousBoneLength * TEMPORAL_JUMP_BONE_RATIO,
+        );
+
+        if (previousBoneLength > 0 && relativeJump > jumpThreshold) {
+          const priorCandidate = state.jumpCandidate;
+          const candidateDistance = priorCandidate
+            ? Math.hypot(point.x - priorCandidate.x, point.y - priorCandidate.y)
+            : Number.POSITIVE_INFINITY;
+          const candidateIsConsistent = candidateDistance <= jumpThreshold;
+          state.jumpCandidateFrames = candidateIsConsistent
+            ? state.jumpCandidateFrames + 1
+            : 1;
+          state.jumpCandidate = { x: point.x, y: point.y };
+
+          if (state.jumpCandidateFrames < TEMPORAL_JUMP_CONFIRM_FRAMES) {
+            point = {
+              ...point,
+              held: true,
+              heldFrames: state.heldFrames + 1,
+              heldReason: 'temporal-jump',
+            };
+          } else {
+            state.jumpCandidate = undefined;
+            state.jumpCandidateFrames = 0;
+          }
+        } else {
+          state.jumpCandidate = undefined;
+          state.jumpCandidateFrames = 0;
+        }
+      } else {
+        state.jumpCandidate = undefined;
+        state.jumpCandidateFrames = 0;
+      }
 
       const minimumScore = LIMB_LANDMARKS.has(index)
         ? MIN_SCORE_LIMB
@@ -235,6 +334,8 @@ export class PoseOneEuroFilter {
       );
 
       if (isReliable && point) {
+        state.jumpCandidate = undefined;
+        state.jumpCandidateFrames = 0;
         const filteredWorld = worldPoint
           ? filterWorldPoint(state.world, worldPoint, timestamp, state.lastWorld)
           : state.lastWorld;
@@ -455,6 +556,8 @@ export class PoseOneEuroFilter {
       state.lastPoint = undefined;
       state.lastWorld = undefined;
       state.heldFrames = 0;
+      state.jumpCandidate = undefined;
+      state.jumpCandidateFrames = 0;
     });
     this.lastPose = undefined;
     this.missingPoseFrames = 0;

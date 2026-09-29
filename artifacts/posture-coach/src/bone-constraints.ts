@@ -152,6 +152,8 @@ export class BoneConstraintFilter {
 
   private missingPoseFrames = 0;
 
+  private referencesLocked = false;
+
   filter(pose: Pose): Pose {
     this.missingPoseFrames = 0;
     const rejectedDistalIndexes = new Set<number>();
@@ -212,14 +214,19 @@ export class BoneConstraintFilter {
             { currentLength, referenceLength, rejectedFrames: state.rejectedFrames },
           );
         }
-        if (state.rejectedFrames > BONE_REJECT_MAX_FRAMES) {
+        if (
+          !this.referencesLocked
+          && state.rejectedFrames > BONE_REJECT_MAX_FRAMES
+        ) {
           clearCalibration(state);
         }
         return;
       }
 
       state.rejectedFrames = 0;
-      addValidSample(state, currentLength);
+      if (!this.referencesLocked) {
+        addValidSample(state, currentLength);
+      }
     });
 
     if (!rejectedDistalIndexes.size) return pose;
@@ -255,8 +262,16 @@ export class BoneConstraintFilter {
   markPoseMissing() {
     this.missingPoseFrames += 1;
     if (this.missingPoseFrames > POSE_MISSING_RESET_FRAMES) {
-      this.reset();
+      if (this.referencesLocked) {
+        this.missingPoseFrames = 0;
+      } else {
+        this.reset();
+      }
     }
+  }
+
+  lockReferences() {
+    this.referencesLocked = true;
   }
 
   reassignForSideSwaps(swaps: readonly { pairId: string }[]) {
@@ -301,6 +316,7 @@ export class BoneConstraintFilter {
       state.totalRejectedFrames = 0;
     });
     this.missingPoseFrames = 0;
+    this.referencesLocked = false;
   }
 }
 

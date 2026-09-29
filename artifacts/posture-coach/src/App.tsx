@@ -7780,6 +7780,7 @@ function Home() {
   const pushupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pushupCalibrationReadySinceRef = useRef<number | null>(null);
   const pushupCalibrationSuccessfulRef = useRef(false);
+  const pushupLockedMeasurementSideRef = useRef<PoseSide | null>(null);
   const pushupPreparationStageRef = useRef<PushupPreparationStage>('body-detection');
   const pushupPreparationStartedAtRef = useRef<number | null>(null);
   const pushupPreparationCountdownRef = useRef<number | null>(null);
@@ -7974,6 +7975,7 @@ function Home() {
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
     poseFilterRef.current.setPersistentHold(false);
+    poseFilterRef.current.setTemporalJumpGuard(false);
     viewEstimatorRef.current.reset();
     viewAlignmentGuardRef.current.reset();
     viewAlignmentRef.current = createInitialViewAlignment();
@@ -8051,17 +8053,17 @@ function Home() {
       const pullupSessionActive = selectedExerciseForFrame === 'dominadas'
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current;
-      const pushupSessionActive = selectedExerciseForFrame === 'flexiones'
-        && exerciseStartedRef.current
+      const pushupTrackingLocked = selectedExerciseForFrame === 'flexiones'
         && pushupCalibrationSuccessfulRef.current;
-      poseFilterRef.current.setPersistentHold(pullupSessionActive || pushupSessionActive);
+      poseFilterRef.current.setPersistentHold(pullupSessionActive || pushupTrackingLocked);
+      poseFilterRef.current.setTemporalJumpGuard(pushupTrackingLocked);
       const previousPoseTrack = primaryPoseTrackRef.current;
       const primaryPose = selectPrimaryPose(
         poses,
         video.videoWidth,
         video.videoHeight,
         primaryPoseTrackRef.current,
-        exerciseStartedRef.current,
+        exerciseStartedRef.current || pushupTrackingLocked,
       );
       const detectedPose = primaryPose?.pose;
       if (DEBUG_LIMB_TRACKING_ACTIVE) {
@@ -8071,6 +8073,7 @@ function Home() {
         if (
           previousPoseTrack
           && !exerciseStartedRef.current
+          && !pushupTrackingLocked
           && !isPoseTrackContinuous(primaryPose.track, previousPoseTrack)
         ) {
           sideConsistencyRef.current.reset();
@@ -8080,7 +8083,9 @@ function Home() {
         primaryPoseTrackRef.current = primaryPose.track;
       } else if (primaryPoseTrackRef.current) {
         const nextLostFrames = primaryPoseTrackRef.current.lostFrames + 1;
-        primaryPoseTrackRef.current = nextLostFrames >= 8 && !exerciseStartedRef.current
+        primaryPoseTrackRef.current = nextLostFrames >= 8
+          && !exerciseStartedRef.current
+          && !pushupTrackingLocked
           ? null
           : { ...primaryPoseTrackRef.current, lostFrames: nextLostFrames };
       }
@@ -8110,7 +8115,7 @@ function Home() {
         : undefined;
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
-        : pullupSessionActive
+        : pullupSessionActive || pushupTrackingLocked
           ? poseFilterRef.current.getPersistentPose(video.videoWidth, video.videoHeight)
           : undefined;
       const recommendedView = activeExerciseDefinition?.recommendedView ?? 'any';
@@ -8217,11 +8222,28 @@ function Home() {
         poseFilterRef.current.markPoseMissing();
       }
       const hasFreshPose = Boolean(detectedPose);
-      const nextDominantSideResult = selectedExerciseForFrame === 'remo-barra'
+      const detectedDominantSideResult = selectedExerciseForFrame === 'remo-barra'
         ? getBarbellRowDominantSide(pose?.keypoints, previousSideRef.current)
         : selectedExerciseForFrame === 'remos-australianos-elevados'
           ? getElevatedAustralianRowDominantSide(pose?.keypoints, previousSideRef.current)
         : getDominantSide(pose?.keypoints, previousSideRef.current);
+      const lockedPushupSide = selectedExerciseForFrame === 'flexiones'
+        ? pushupLockedMeasurementSideRef.current
+        : null;
+      const lockedPushupSideScores = lockedPushupSide && pose?.keypoints
+        ? Object.values(sideKeypoints[lockedPushupSide]).map(
+            (index) => pose.keypoints[index]?.score ?? 0,
+          )
+        : [];
+      const nextDominantSideResult = lockedPushupSide
+        ? {
+            side: lockedPushupSide,
+            average: lockedPushupSideScores.length
+              ? lockedPushupSideScores.reduce((sum, score) => sum + score, 0)
+                / lockedPushupSideScores.length
+              : 0,
+          }
+        : detectedDominantSideResult;
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const nextSideViewCandidate = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
         ? getSideViewCandidate(pose?.keypoints)
@@ -8344,9 +8366,9 @@ function Home() {
             detail: pushupMeasurementBlocked
               ? 'Mantén hombro, codo, muñeca, cadera y tobillo visibles. No se contará ni evaluará este instante.'
               : pushupTrackingIsAnchored
-                ? 'Los puntos confirmados permanecen fijados. La evaluación sigue el movimiento real de la flexión.'
+                ? 'La identificación de cada extremidad permanece fijada; las coordenadas y los ángulos siguen tu movimiento real.'
                 : currentPushupPreparationStage === 'pushup-preparation'
-                  ? 'Acomódate en la posición inicial. La evaluación comenzará automáticamente al terminar la cuenta regresiva.'
+                  ? 'Las extremidades ya están identificadas. Acomódate en la posición inicial; sus coordenadas seguirán tu movimiento.'
                   : 'La detección inicial terminó. Prepárate para continuar.',
           }
         : rawCameraGuidance;
@@ -8482,6 +8504,11 @@ function Home() {
           if (calibrationElapsed >= PUSHUP_BODY_DETECTION_HOLD_MS) {
             pushupCalibrationSuccessfulRef.current = true;
             pushupCalibrationReadySinceRef.current = null;
+            pushupLockedMeasurementSideRef.current = measurementSide;
+            sideConsistencyRef.current.lockAssignments();
+            boneConstraintRef.current.lockReferences();
+            poseFilterRef.current.setPersistentHold(true);
+            poseFilterRef.current.setTemporalJumpGuard(true);
             updatePushupCalibrationStatus('ready');
             pushupPreparationStartedAtRef.current = now;
             updatePushupPreparationStage('pushup-preparation');
@@ -9549,6 +9576,7 @@ function Home() {
     if (!(activeExercise === 'flexiones' && preserveExerciseStarted)) {
       pushupCalibrationSuccessfulRef.current = false;
       pushupCalibrationReadySinceRef.current = null;
+      pushupLockedMeasurementSideRef.current = null;
       updatePushupCalibrationStatus('pending');
     }
     pullupPreparationStageRef.current = 'body-detection';
@@ -9617,6 +9645,14 @@ function Home() {
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
     poseFilterRef.current.reset();
+    if (
+      activeExercise === 'flexiones'
+      && preserveExerciseStarted
+      && pushupCalibrationSuccessfulRef.current
+    ) {
+      sideConsistencyRef.current.lockAssignments();
+      boneConstraintRef.current.lockReferences();
+    }
     setAnglePoints([]);
     setAngleHistory([]);
     setTechniqueFeedback(defaultTechniqueFeedback);
@@ -9732,8 +9768,12 @@ function Home() {
         setPullupPreparationCountdown(null);
       } else if (selectedExerciseRef.current === 'flexiones') {
         poseFilterRef.current.reset();
+        sideConsistencyRef.current.reset();
+        boneConstraintRef.current.reset();
+        poseFilterRef.current.setTemporalJumpGuard(false);
         pushupCalibrationSuccessfulRef.current = false;
         pushupCalibrationReadySinceRef.current = null;
+        pushupLockedMeasurementSideRef.current = null;
         updatePushupCalibrationStatus('pending');
         pushupPreparationStageRef.current = 'body-detection';
         pushupPreparationStartedAtRef.current = null;
@@ -9785,6 +9825,7 @@ function Home() {
     setPullupPreparationCountdown(null);
     pushupCalibrationSuccessfulRef.current = false;
     pushupCalibrationReadySinceRef.current = null;
+    pushupLockedMeasurementSideRef.current = null;
     updatePushupCalibrationStatus('pending');
     pushupPreparationStageRef.current = 'body-detection';
     pushupPreparationStartedAtRef.current = null;
