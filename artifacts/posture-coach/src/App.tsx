@@ -2244,6 +2244,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
     endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+    countOnlyWhenCorrect: false,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2580,7 +2581,7 @@ function advanceExerciseRepTracker(
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
       completedEndpointAngle = nextTracker.endpointAngle;
       if (!config.countOnReturn) {
-        if (!config.countOnlyWhenCorrect || nextTracker.currentRepCorrect) {
+        if (config.countOnlyWhenCorrect !== true || nextTracker.currentRepCorrect) {
           nextTracker.event = 'valid';
           nextTracker.repetitions += 1;
           if (nextTracker.currentRepCorrect) {
@@ -2602,7 +2603,7 @@ function advanceExerciseRepTracker(
       if (hasReturnedFromEnd && isAtStart) {
         const repetitionWasCorrect = nextTracker.currentRepCorrect && techniqueValid;
         nextTracker.phase = 'inicio';
-        if (config.countOnlyWhenCorrect && !repetitionWasCorrect) {
+        if (config.countOnlyWhenCorrect === true && !repetitionWasCorrect) {
           nextTracker.currentRepCorrect = techniqueValid;
           nextTracker.endpointAngle = null;
           completedEndpointAngle = null;
@@ -10478,7 +10479,7 @@ function Home() {
                       : selectedExercise === 'curl-femoral'
                         ? `Solo cuenta si partes con la rodilla entre ${HAMSTRING_CURL_START_MIN_ANGLE}° y ${HAMSTRING_CURL_START_MAX_ANGLE}° y flexionas hasta ${HAMSTRING_CURL_END_MIN_ANGLE}–${HAMSTRING_CURL_END_MAX_ANGLE}°, manteniendo ambos lados visibles.`
                       : selectedExercise === 'flexiones'
-                         ? `La repetición entra al total al completar el recorrido. Es correcta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°; si no, queda como incorrecta.`
+                          ? `Toda repetición que complete el recorrido suma al total. Luego se evalúa la técnica: es correcta si mantienes el codo respecto al torso entre ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}° y ${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y el cuerpo alineado entre ${PUSHUP_BODY_LINE_MIN_ANGLE}° y ${PUSHUP_BODY_LINE_MAX_ANGLE}°; si no, queda como incorrecta.`
                       : selectedExercise === 'press-pallof-polea-banda'
                         ? `Solo cuenta si extiendes ambos codos entre ${PALLOF_END_MIN_ANGLE}° y ${PALLOF_END_MAX_ANGLE}° y mantienes hombros, codos y muñecas alineados; la repetición se cierra al regresar al pecho.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
@@ -11325,6 +11326,10 @@ function Home() {
                       <div className="diagnostic-row">
                         <dt>Total evaluadas</dt>
                         <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
+                      </div>
+                      <div className="diagnostic-row">
+                        <dt>Incorrectas</dt>
+                        <dd className="diagnostic-value diagnostic-value--warning">{incorrectRepetitions}</dd>
                       </div>
                     </>
                   )}
