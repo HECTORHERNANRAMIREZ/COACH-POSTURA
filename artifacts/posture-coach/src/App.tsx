@@ -1908,6 +1908,14 @@ const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 90;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
+// Calibración del recorrido de flexiones a partir de la ejecución de referencia:
+// se acepta el inicio observado con el codo parcialmente extendido, se activa
+// al pasar de 105° y se considera fondo dentro de 70–105°.
+const PUSHUP_REP_START_MIN_ANGLE = 110;
+const PUSHUP_REP_START_MAX_ANGLE = 180;
+const PUSHUP_REP_ACTIVATION_ANGLE = 105;
+const PUSHUP_REP_END_MIN_ANGLE = 70;
+const PUSHUP_REP_END_MAX_ANGLE = 105;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -2226,21 +2234,21 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   },
   flexiones: {
     direction: 'decrease',
-    startMinAngle: 150,
-    startMaxAngle: 180,
-    activationAngle: 135,
-    endMinAngle: 70,
-    endMaxAngle: 105,
-    endLabel: 'codo entre 70–105°',
+    startMinAngle: PUSHUP_REP_START_MIN_ANGLE,
+    startMaxAngle: PUSHUP_REP_START_MAX_ANGLE,
+    activationAngle: PUSHUP_REP_ACTIVATION_ANGLE,
+    endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
+    endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
+    endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
-    startMinAngle: 150,
-    startMaxAngle: 180,
-    activationAngle: 135,
-    endMinAngle: 70,
-    endMaxAngle: 105,
-    endLabel: 'codo entre 70–105°',
+    startMinAngle: PUSHUP_REP_START_MIN_ANGLE,
+    startMaxAngle: PUSHUP_REP_START_MAX_ANGLE,
+    activationAngle: PUSHUP_REP_ACTIVATION_ANGLE,
+    endMinAngle: PUSHUP_REP_END_MIN_ANGLE,
+    endMaxAngle: PUSHUP_REP_END_MAX_ANGLE,
+    endLabel: `codo entre ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
   },
   'flexiones-pica': {
     direction: 'decrease',
@@ -2725,14 +2733,14 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       ];
     case 'flexiones':
       return [
-        'Inicio / regreso: codo 150–180°',
-        'Final: codo 70–105°',
+        `Inicio / regreso: codo ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}°`,
+        `Final: codo ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
         `Codo / torso ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° · cuerpo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
       ];
     case 'flexiones-declinadas':
       return [
-        'Inicio / regreso: codo 150–180°',
-        'Final: codo 70–105°',
+        `Inicio / regreso: codo ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}°`,
+        `Final: codo ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
         `Codo / torso 30–60° · cuerpo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
       ];
     case 'flexiones-pica':
@@ -5990,11 +5998,16 @@ function calculateExerciseAngle(
     || exercise === 'zancadas'
     || exercise === 'zancada-banco'
   ) {
-    if (exercise === 'flexiones' || exercise === 'flexiones-declinadas') {
-      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
-    }
-    if (exercise === 'flexiones-pica') {
-      return calculateAngle(keypoints[indexes.hip], keypoints[indexes.shoulder], keypoints[indexes.elbow]);
+    if (
+      exercise === 'flexiones'
+      || exercise === 'flexiones-declinadas'
+      || exercise === 'flexiones-pica'
+    ) {
+      return calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      );
     }
     if (exercise === 'press-militar') {
       return calculateAngle(
@@ -6131,6 +6144,18 @@ function calculateRepetitionAngle(
       keypoints[indexes.hip],
       keypoints[indexes.shoulder],
       keypoints[indexes.elbow],
+    );
+  }
+
+  if (
+    exercise === 'flexiones'
+    || exercise === 'flexiones-declinadas'
+    || exercise === 'flexiones-pica'
+  ) {
+    return calculateAngle(
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+      keypoints[indexes.wrist],
     );
   }
 
@@ -7062,7 +7087,10 @@ function calculateLiveAngleReadings(
         return [
           empty('Codo / torso', exercise === 'flexiones' ? '45–100°' : '30–60°'),
           empty('Alineación', '162–180°'),
-          empty('Flexión', 'Inicio 150–180° · activa <135° · final 70–105°'),
+          empty(
+            'Flexión',
+            `Inicio ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}° · activa <${PUSHUP_REP_ACTIVATION_ANGLE}° · final ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+          ),
         ];
       case 'flexiones-pica':
         return [
@@ -7366,7 +7394,13 @@ function calculateLiveAngleReadings(
       return [
         createLiveAngleReading('Codo / torso', pushupAngles.elbowTorsoAngle, `${elbowMin}–${elbowMax}°`, elbowMin, elbowMax),
         createLiveAngleReading('Alineación', pushupAngles.bodyLineAngle, '162–180°', PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE),
-        value(elbow, 'Flexión', 'Inicio 150–180° · activa <135° · final 70–105°', 70, 105),
+        value(
+          elbow,
+          'Flexión',
+          `Inicio ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}° · activa <${PUSHUP_REP_ACTIVATION_ANGLE}° · final ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+          PUSHUP_REP_END_MIN_ANGLE,
+          PUSHUP_REP_END_MAX_ANGLE,
+        ),
       ];
     }
     case 'flexiones-pica':
@@ -9009,14 +9043,19 @@ function Home() {
         && frameDetectionStable
         && repetitionConfig
         && repetitionAngle !== null
-        && repetitionTechniqueReady
+        // Las flexiones deben seguir avanzando aunque la técnica no sea
+        // perfecta: así se cuenta la repetición y se conserva en
+        // `goodRepetitions` la evaluación de calidad por separado.
+        && (isPushupExercise || repetitionTechniqueReady)
         && !frameMeasurementBlocked
       ) {
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
           repetitionConfig,
-          selectedExerciseForFrame === 'jalon'
+          isPushupExercise
+            ? pushupTechniqueReady
+            : selectedExerciseForFrame === 'jalon'
             ? pulldownTechniqueReady
             : selectedExerciseForFrame === 'press-pallof-polea-banda'
               ? pallofTechniqueReady
