@@ -12474,7 +12474,13 @@ function Home() {
                   ref={videoRef}
                   muted
                   autoPlay={inputMode !== 'video'}
-                  controls={inputMode === 'video'}
+                  controls={
+                    inputMode === 'video'
+                    && (
+                      selectedExercise !== 'flexiones'
+                      || pushupCalibrationStatus === 'ready'
+                    )
+                  }
                   playsInline
                   style={{
                     transform: inputMode === 'camera' && cameraFacingMode === 'user'
@@ -12629,6 +12635,11 @@ function Home() {
                     disabled={
                       phase !== 'tracking'
                       || (inputMode !== 'video' && !exerciseStarted && !personDetected)
+                      || (
+                        inputMode === 'video'
+                        && selectedExercise === 'flexiones'
+                        && pushupCalibrationStatus !== 'ready'
+                      )
                     }
                     aria-pressed={exerciseStarted}
                     onClick={toggleExercise}
