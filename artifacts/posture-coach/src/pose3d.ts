@@ -243,6 +243,7 @@ export async function createPoseDetector(
   let landmarker: PoseLandmarker | null = null;
   let activeCandidate: DetectorCandidate | null = null;
   let firstGpuFailure: unknown = null;
+  const candidateErrors: string[] = [];
 
   for (const candidate of candidates) {
     if (
@@ -264,6 +265,9 @@ export async function createPoseDetector(
       if (candidate.model === 'heavy' && candidate.delegate === 'GPU') {
         firstGpuFailure = error;
       }
+      candidateErrors.push(
+        `${candidate.model}/${candidate.delegate}: ${describeError(error).slice(0, 160)}`,
+      );
       console.warn(
         `[pose3d] No se pudo cargar ${candidate.model} con ${candidate.delegate}:`,
         describeError(error),
@@ -272,7 +276,9 @@ export async function createPoseDetector(
   }
 
   if (!landmarker || !activeCandidate) {
-    throw new Error('No se pudo cargar ningún modelo de pose.');
+    throw new Error(
+      `No se pudo cargar ningún modelo de pose. ${candidateErrors.join(' | ')}`,
+    );
   }
 
   let lastTimestamp = Number.NEGATIVE_INFINITY;

@@ -10390,6 +10390,14 @@ function Home() {
     try {
       const detectorPromise = preferFastVideoModel
         ? createPoseWorkerDetector({ model: 'full', delegate: 'GPU' })
+          .catch((workerError) => {
+            console.warn(
+              '[pose3d] No se pudo iniciar el análisis en segundo plano; '
+              + 'se intentará cargar el modelo en el hilo principal.',
+              workerError,
+            );
+            return createPoseDetector({ model: 'full', delegate: 'GPU' });
+          })
         : createPoseDetector({ model: 'heavy', delegate: 'GPU' });
       return await Promise.race([
         detectorPromise,
