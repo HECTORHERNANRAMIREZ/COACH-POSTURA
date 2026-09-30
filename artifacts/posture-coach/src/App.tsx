@@ -842,6 +842,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'shoulder', label: 'hombro' },
       { joint: 'elbow', label: 'codo' },
       { joint: 'wrist', label: 'muñeca' },
+      { joint: 'knee', label: 'rodilla' },
       { joint: 'ankle', label: 'tobillo' },
     ],
     trackedAngleLabels: ['Codo respecto al torso: 0–55°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
@@ -8389,12 +8390,14 @@ function Home() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     if (recordedCanvasRef.current) {
-      const recordedSize = getContainedVideoSize(
-        video.videoWidth,
-        video.videoHeight,
-        RECORDED_VIDEO_MAX_WIDTH,
-        RECORDED_VIDEO_MAX_HEIGHT,
-      );
+      const recordedSize = selectedExerciseRef.current === 'flexiones'
+        ? { width: video.videoWidth, height: video.videoHeight }
+        : getContainedVideoSize(
+            video.videoWidth,
+            video.videoHeight,
+            RECORDED_VIDEO_MAX_WIDTH,
+            RECORDED_VIDEO_MAX_HEIGHT,
+          );
       recordedCanvasRef.current.width = recordedSize.width;
       recordedCanvasRef.current.height = recordedSize.height;
     }
@@ -8478,9 +8481,23 @@ function Home() {
     sourceStream?.getAudioTracks().forEach((track) => recordedStream.addTrack(track));
 
     try {
+      const preservesPushupSourceQuality = selectedExerciseRef.current === 'flexiones';
+      const pixelCount = canvas.width * canvas.height;
+      const recorderOptions: MediaRecorderOptions | undefined = preservesPushupSourceQuality
+        ? {
+            ...(mimeType ? { mimeType } : {}),
+            videoBitsPerSecond: Math.max(
+              4_000_000,
+              Math.min(50_000_000, Math.round(pixelCount * 6.5)),
+            ),
+            audioBitsPerSecond: 192_000,
+          }
+        : mimeType
+          ? { mimeType }
+          : undefined;
       const recorder = new MediaRecorder(
         recordedStream,
-        mimeType ? { mimeType } : undefined,
+        recorderOptions,
       );
       const generation = ++recorderGenerationRef.current;
       recorderRef.current = recorder;
@@ -8514,7 +8531,11 @@ function Home() {
         setProcessedVideoUrl(nextUrl);
         const diagnostics = videoPipelineDiagnosticsRef.current;
         setVideoExportStatus(
-          `Video procesado y listo para descargar. ${diagnostics.sourceFrames} cuadros fuente, `
+          `${preservesPushupSourceQuality
+            ? `Video listo para descargar en ${canvas.width} × ${canvas.height} px. `
+              + 'La compresión final depende del navegador. '
+            : 'Video procesado y listo para descargar. '}`
+          + `${diagnostics.sourceFrames} cuadros fuente, `
           + `${diagnostics.canvasFrames} repintados y ${chunks.length} fragmentos grabados.`,
         );
       };
