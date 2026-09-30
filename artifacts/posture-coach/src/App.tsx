@@ -10719,6 +10719,36 @@ function Home() {
       return;
     }
 
+    if (inputModeRef.current === 'video') {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // En flexiones subidas, el evento play conserva la calibración pausada
+      // y solo inicia el análisis cuando el cuerpo ya quedó fijado.
+      if (
+        selectedExerciseRef.current === 'flexiones'
+        && uploadedPushupPreflightRef.current
+      ) {
+        void video.play().catch(() => {
+          setVideoExportStatus('Pulsa Reproducir video para iniciar el análisis.');
+        });
+        return;
+      }
+
+      if (!faceDetected && !poseDetected) return;
+      exerciseStartedRef.current = true;
+      setExerciseStarted(true);
+      void video.play().catch(() => {
+        setVideoExportStatus('Pulsa Reproducir video para iniciar el análisis.');
+      });
+      activeRef.current = true;
+      scheduleNextFrame();
+      setSquatFeedback(defaultSquatFeedback);
+      setPullupFeedback(defaultTechniqueFeedback);
+      setTechniqueFeedback(defaultTechniqueFeedback);
+      return;
+    }
+
     if (
       selectedExerciseRef.current === 'dominadas'
       || selectedExerciseRef.current === 'flexiones'
@@ -10727,16 +10757,6 @@ function Home() {
     if (!faceDetected && !poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
-    if (inputModeRef.current === 'video') {
-      const video = videoRef.current;
-      if (video) {
-        void video.play().catch(() => {
-          setVideoExportStatus('Pulsa reproducir en el video para iniciar el análisis.');
-        });
-      }
-      activeRef.current = true;
-      scheduleNextFrame();
-    }
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
@@ -12153,9 +12173,11 @@ function Home() {
                   >
                     {exerciseStarted
                       ? 'Terminar ejercicio'
-                      : personDetected
-                        ? 'Iniciar ejercicio'
-                        : 'Buscando cuerpo'}
+                      : inputMode === 'video'
+                        ? 'Reproducir video'
+                        : personDetected
+                          ? 'Iniciar ejercicio'
+                          : 'Buscando cuerpo'}
                   </button>
                 )}
                 {hasEvaluationCounter && (
