@@ -10937,21 +10937,29 @@ function Home() {
       ? 'Ejercicio finalizado · conteo congelado'
     : !exerciseStarted
       ? isStandardPullupSelected && pullupPreparationStage === 'body-detection'
-        ? pullupPreparationCountdown !== null
-          ? `Registrando tu cuerpo · ${pullupPreparationCountdown}`
-          : pullupCalibrationStatus === 'calibrating'
+        ? inputMode === 'video'
+          ? pullupCalibrationStatus === 'calibrating'
             ? 'Mantén todo tu cuerpo visible'
             : 'Buscando y registrando tu cuerpo...'
-        : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
-          ? pullupPreparationCountdown !== null
-            ? `Prepárate en la barra · ${pullupPreparationCountdown}`
-            : 'Cuerpo registrado ✓ · cuélgate en la barra'
-        : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
-          ? pushupPreparationCountdown !== null
-            ? `Registrando tu cuerpo · ${pushupPreparationCountdown}`
-            : pushupCalibrationStatus === 'calibrating'
-              ? 'Mantén hombro, codo, muñeca, cadera y tobillo visibles'
+          : pullupPreparationCountdown !== null
+            ? `Registrando tu cuerpo · ${pullupPreparationCountdown}`
+            : pullupCalibrationStatus === 'calibrating'
+              ? 'Mantén todo tu cuerpo visible'
               : 'Buscando y registrando tu cuerpo...'
+        : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
+          ? inputMode === 'video'
+            ? 'Cuerpo registrado ✓ · cuélgate en la barra'
+            : pullupPreparationCountdown !== null
+              ? `Prepárate en la barra · ${pullupPreparationCountdown}`
+              : 'Cuerpo registrado ✓ · cuélgate en la barra'
+        : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
+          ? inputMode === 'video'
+            ? 'Detectando el cuerpo en el video...'
+            : pushupPreparationCountdown !== null
+              ? `Registrando tu cuerpo · ${pushupPreparationCountdown}`
+              : pushupCalibrationStatus === 'calibrating'
+                ? 'Mantén hombro, codo, muñeca, cadera y tobillo visibles'
+                : 'Buscando y registrando tu cuerpo...'
         : isStandardPushupSelected && pushupPreparationStage === 'pushup-preparation'
                         ? inputMode === 'video'
                           ? 'Cuerpo detectado ✓ · pulsa reproducir'
@@ -11464,21 +11472,29 @@ function Home() {
                           ? 'Mejorando detección'
                           : 'Ejercicio iniciado'
                       : isStandardPullupSelected && pullupPreparationStage === 'body-detection'
-                        ? pullupPreparationCountdown !== null
-                          ? `Registrando cuerpo · ${pullupPreparationCountdown}`
-                          : 'Buscando tu cuerpo...'
+                        ? inputMode === 'video'
+                          ? 'Detectando el cuerpo en el video...'
+                          : pullupPreparationCountdown !== null
+                            ? `Registrando cuerpo · ${pullupPreparationCountdown}`
+                            : 'Buscando tu cuerpo...'
                       : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
-                        ? pullupPreparationCountdown !== null
-                          ? `Cuélgate en la barra · ${pullupPreparationCountdown}`
-                          : 'Prepárate en la barra'
+                        ? inputMode === 'video'
+                          ? 'Prepárate en la barra'
+                          : pullupPreparationCountdown !== null
+                            ? `Cuélgate en la barra · ${pullupPreparationCountdown}`
+                            : 'Prepárate en la barra'
                       : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
-                        ? pushupPreparationCountdown !== null
-                          ? `Registrando cuerpo · ${pushupPreparationCountdown}`
-                          : 'Buscando tu cuerpo...'
+                        ? inputMode === 'video'
+                          ? 'Detectando el cuerpo en el video...'
+                          : pushupPreparationCountdown !== null
+                            ? `Registrando cuerpo · ${pushupPreparationCountdown}`
+                            : 'Buscando tu cuerpo...'
                       : isStandardPushupSelected && pushupPreparationStage === 'pushup-preparation'
-                        ? pushupPreparationCountdown !== null
-                          ? `Acomódate para empezar · ${pushupPreparationCountdown}`
-                          : 'Prepárate para la flexión'
+                        ? inputMode === 'video'
+                          ? 'Video listo para reproducir'
+                          : pushupPreparationCountdown !== null
+                            ? `Acomódate para empezar · ${pushupPreparationCountdown}`
+                            : 'Prepárate para la flexión'
                        : isStandardPullupSelected && pullupCalibrationStatus === 'calibrating'
                           ? `Registrando durante ${PULLUP_BODY_DETECTION_HOLD_MS / 1000} segundos`
                         : personDetected
@@ -12103,6 +12119,7 @@ function Home() {
                 />
                 {(isStandardPullupSelected || isStandardPushupSelected)
                   && !exerciseStarted
+                  && inputMode === 'camera'
                   && (
                     isStandardPullupSelected
                       ? pullupPreparationCountdown !== null
