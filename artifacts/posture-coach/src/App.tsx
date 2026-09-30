@@ -157,6 +157,12 @@ const queryClient = new QueryClient();
 const TOTAL_FRAMES = 11;
 const REPETICIONES = 4;
 const SCROLL_LERP = 0.15;
+// El detector no debe intentar procesar cada cuadro del video subido: una
+// inferencia síncrona por cuadro bloquea el hilo principal y ralentiza el
+// elemento <video>. Este ritmo conserva suficientes lecturas para contar
+// repeticiones normales sin convertir la reproducción en cámara lenta.
+const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
+const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
 // Número de frames usados para calcular la media móvil del FPS real del detector.
 const FPS_WINDOW_FRAMES = 45;
 // FPS medio mínimo que debe mantener el modelo heavy antes de degradar.
@@ -509,6 +515,8 @@ type ExerciseRepConfig = {
   countOnlyWhenCorrect?: boolean;
   techniqueStartsOnActivation?: boolean;
   countReturnWithoutEndAsIncorrect?: boolean;
+  smoothingSamples?: number;
+  techniqueMustHoldThroughout?: boolean;
 };
 type ExerciseRepTracker = {
   phase: ExerciseRepPhase;
@@ -1934,6 +1942,7 @@ const PUSHUP_REP_START_MAX_ANGLE = 180;
 const PUSHUP_REP_ACTIVATION_ANGLE = 120;
 const PUSHUP_REP_END_MIN_ANGLE = 70;
 const PUSHUP_REP_END_MAX_ANGLE = 105;
+const PUSHUP_SMOOTHING_SAMPLES = 3;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -2262,6 +2271,8 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     countOnlyWhenCorrect: false,
     techniqueStartsOnActivation: true,
     countReturnWithoutEndAsIncorrect: true,
+    smoothingSamples: PUSHUP_SMOOTHING_SAMPLES,
+    techniqueMustHoldThroughout: false,
   },
   'flexiones-declinadas': {
     direction: 'decrease',
@@ -2550,7 +2561,9 @@ function advanceExerciseRepTracker(
   config: ExerciseRepConfig,
   techniqueValid = true,
 ): ExerciseRepTrackerUpdate {
-  const samples = [...tracker.samples, rawAngle].slice(-SQUAT_SMOOTHING_SAMPLES);
+  const samples = [...tracker.samples, rawAngle].slice(
+    -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
+  );
   const smoothedAngle = median(samples) ?? rawAngle;
   const nextTracker: ExerciseRepTracker = {
     ...tracker,
@@ -2592,14 +2605,21 @@ function advanceExerciseRepTracker(
       nextTracker.currentRepCorrect = false;
     }
   } else if (nextTracker.phase === 'en movimiento') {
-    nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
+    if (config.techniqueMustHoldThroughout !== false) {
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
+    }
     nextTracker.endpointAngle = config.direction === 'decrease'
       ? Math.min(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle)
       : Math.max(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle);
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
-      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
+      // Una lectura intermedia aislada puede perder un punto mientras el
+      // cuerpo sigue visible. Para flexiones de video se evalúa la técnica en
+      // el fondo y al regresar, no se invalida toda la repetición por ese
+      // único frame.
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
+        && (config.techniqueMustHoldThroughout === false || techniqueValid);
       completedEndpointAngle = nextTracker.endpointAngle;
       if (!config.countOnReturn) {
         if (config.countOnlyWhenCorrect !== true || nextTracker.currentRepCorrect) {
@@ -7954,6 +7974,7 @@ function Home() {
   const lowFpsSinceRef = useRef<number | null>(null);
   const modelDegradedRef = useRef(false);
   const lastDetectorTimestampRef = useRef(Number.NEGATIVE_INFINITY);
+  const lastVideoAnalysisSourceTimeRef = useRef(Number.NEGATIVE_INFINITY);
   const videoSizeRef = useRef({ width: 0, height: 0 });
   const stabilityFramesRef = useRef(0);
   const previousSideRef = useRef<PoseSide | null>(null);
@@ -8273,6 +8294,7 @@ function Home() {
     lowFpsSinceRef.current = null;
     modelDegradedRef.current = false;
     lastDetectorTimestampRef.current = Number.NEGATIVE_INFINITY;
+    lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
     videoSizeRef.current = { width: 0, height: 0 };
     stabilityFramesRef.current = 0;
     lastVideoTimeUiUpdateRef.current = 0;
@@ -10166,36 +10188,16 @@ function Home() {
       const diagnostics = videoPipelineDiagnosticsRef.current;
       diagnostics.sourceFrames += 1;
       diagnostics.lastSourceTime = sourceTime;
-      if (inputModeRef.current === 'video' && recordedCanvasRef.current) {
-        const recordedCanvas = recordedCanvasRef.current;
-        if (
-          recordedCanvas.width !== video.videoWidth
-          || recordedCanvas.height !== video.videoHeight
-        ) {
-          recordedCanvas.width = video.videoWidth;
-          recordedCanvas.height = video.videoHeight;
-        }
-        const recordedContext = recordedCanvas.getContext('2d');
-        if (recordedContext && video.videoWidth && video.videoHeight) {
-          recordedContext.clearRect(0, 0, recordedCanvas.width, recordedCanvas.height);
-          recordedContext.drawImage(video, 0, 0, recordedCanvas.width, recordedCanvas.height);
-          if (canvasRef.current) {
-            recordedContext.drawImage(
-              canvasRef.current,
-              0,
-              0,
-              recordedCanvas.width,
-              recordedCanvas.height,
-            );
-          }
-          diagnostics.canvasFrames += 1;
-          diagnostics.lastCanvasTime = video.currentTime;
-          const captureTrack = recorderCanvasTrackRef.current;
-          if (captureTrack?.requestFrame) {
-            captureTrack.requestFrame();
-            diagnostics.captureRequests += 1;
-          }
-        }
+      const shouldAnalyzeVideoFrame = inputModeRef.current !== 'video'
+        || sourceTime - lastVideoAnalysisSourceTimeRef.current
+          >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
+        || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
+      if (!shouldAnalyzeVideoFrame) {
+        if (activeRef.current) scheduleNextFrame();
+        return;
+      }
+      if (inputModeRef.current === 'video') {
+        lastVideoAnalysisSourceTimeRef.current = sourceTime;
       }
       if (!processingFrameRef.current) {
         processingFrameRef.current = true;
@@ -10295,11 +10297,14 @@ function Home() {
     scheduleNextFrame();
   }, [scheduleNextFrame, startUploadedPushupPlayback]);
 
-  const loadDetector = useCallback(async () => {
+  const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
     try {
       return await Promise.race([
-        createPoseDetector({ model: 'heavy', delegate: 'GPU' }),
+        createPoseDetector({
+          model: preferFastVideoModel ? 'full' : 'heavy',
+          delegate: 'GPU',
+        }),
         new Promise<never>((_, reject) => {
           timeoutId = window.setTimeout(() => {
             reject(new Error('El modelo de análisis tardó demasiado en cargar. Comprueba tu conexión e inténtalo de nuevo.'));
@@ -10527,7 +10532,7 @@ function Home() {
       }
       syncVideoSize();
       setPhase('loading-model');
-      const detector = await loadDetector();
+      const detector = await loadDetector(Boolean(videoFile));
       detectorRef.current = detector;
       setModelStatus(`${POSE_MODEL_NAME} cargado ✓`);
       if (videoFile) {

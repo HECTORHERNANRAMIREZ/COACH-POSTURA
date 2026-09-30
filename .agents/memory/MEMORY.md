@@ -2,3 +2,4 @@
 - [Pose continuity safety](pose-continuity.md) — anchored overlays must not become measurements; require fresh, camera-ready, stable frames after gaps or bilateral crossings.
 - [Push-up technique calibration](pushup-technique-calibration.md) — judge the 3D elbow–torso reading with the empirically validated side-view range, not the old narrow screen-angle assumption.
 - [Paused push-up video calibration](paused-pushup-video-calibration.md) — calibrate uploaded clips before playback, then analyze from the beginning.
+- [Uploaded video playback](uploaded-video-playback.md) — throttle synchronous pose inference on uploaded clips so analysis does not turn normal playback into slow motion.
