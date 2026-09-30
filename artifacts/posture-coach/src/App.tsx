@@ -7913,6 +7913,8 @@ function Home() {
   const [inputMode, setInputMode] = useState<'camera' | 'video'>('camera');
   const inputModeRef = useRef<'camera' | 'video'>('camera');
   const uploadedPushupPreflightRef = useRef(false);
+  const uploadedPushupPlaybackRequestedRef = useRef(false);
+  const startUploadedPushupPlaybackRef = useRef<(() => Promise<void>) | null>(null);
   const [uploadedVideoName, setUploadedVideoName] = useState('');
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
   const processedVideoUrlRef = useRef<string | null>(null);
@@ -8243,6 +8245,7 @@ function Home() {
   const stopResources = useCallback(() => {
     activeRef.current = false;
     uploadedPushupPreflightRef.current = false;
+    uploadedPushupPlaybackRequestedRef.current = false;
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -9101,8 +9104,12 @@ function Home() {
             if (uploadedPushupPreflightRef.current) {
               updatePushupPreparationCountdown(null);
               setVideoExportStatus(
-                'Cuerpo detectado y fijado. Pulsa reproducir para analizar el video desde el inicio.',
+                'Cuerpo detectado y fijado. Pulsa Reproducir video para analizar desde el inicio.',
               );
+              if (uploadedPushupPlaybackRequestedRef.current) {
+                uploadedPushupPlaybackRequestedRef.current = false;
+                void startUploadedPushupPlaybackRef.current?.();
+              }
             } else {
               updatePushupPreparationCountdown(
                 Math.ceil(PUSHUP_PREPARATION_COUNTDOWN_MS / 1000),
@@ -10276,6 +10283,7 @@ function Home() {
       return;
     }
 
+    uploadedPushupPlaybackRequestedRef.current = false;
     video.pause();
     // El diagnóstico de reproducción no debe incluir los frames de calibración
     // que se analizaron mientras el video estaba pausado.
@@ -10330,6 +10338,7 @@ function Home() {
     updatePushupPreparationCountdown,
     updatePushupPreparationStage,
   ]);
+  startUploadedPushupPlaybackRef.current = startUploadedPushupPlayback;
 
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video' || !activeRef.current) return;
@@ -10341,7 +10350,10 @@ function Home() {
     ) {
       video?.pause();
       if (!pushupCalibrationSuccessfulRef.current) {
-        setVideoExportStatus('Espera a que detectemos el cuerpo antes de reproducir el video.');
+        uploadedPushupPlaybackRequestedRef.current = true;
+        setVideoExportStatus(
+          'Preparando el cuerpo. El video comenzará desde el inicio cuando esté listo.',
+        );
         return;
       }
       void startUploadedPushupPlayback();
@@ -10729,13 +10741,17 @@ function Home() {
         selectedExerciseRef.current === 'flexiones'
         && uploadedPushupPreflightRef.current
       ) {
-        void video.play().catch(() => {
-          setVideoExportStatus('Pulsa Reproducir video para iniciar el análisis.');
-        });
+        if (!pushupCalibrationSuccessfulRef.current) {
+          uploadedPushupPlaybackRequestedRef.current = true;
+          setVideoExportStatus(
+            'Preparando el cuerpo. El video comenzará desde el inicio cuando esté listo.',
+          );
+          return;
+        }
+        void startUploadedPushupPlayback();
         return;
       }
 
-      if (!faceDetected && !poseDetected) return;
       exerciseStartedRef.current = true;
       setExerciseStarted(true);
       void video.play().catch(() => {
@@ -10765,6 +10781,7 @@ function Home() {
     phase,
     poseDetected,
     scheduleNextFrame,
+    startUploadedPushupPlayback,
     updatePullupCalibrationStatus,
     updatePushupCalibrationStatus,
   ]);
@@ -12167,7 +12184,10 @@ function Home() {
                   <button
                     type="button"
                     className="exercise-start-button camera-start-button"
-                    disabled={phase !== 'tracking' || (!exerciseStarted && !personDetected)}
+                    disabled={
+                      phase !== 'tracking'
+                      || (inputMode !== 'video' && !exerciseStarted && !personDetected)
+                    }
                     aria-pressed={exerciseStarted}
                     onClick={toggleExercise}
                   >
