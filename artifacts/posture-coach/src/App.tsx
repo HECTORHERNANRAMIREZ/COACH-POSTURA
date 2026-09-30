@@ -212,8 +212,13 @@ type FrameDiagnosticSnapshot = {
   cameraReady: boolean;
   poseDetected: boolean;
   frameStable: boolean;
+  stabilityFrames: number;
+  requiredStabilityFrames: number;
   measurementBlocked: boolean;
   measurementBlockingReasons: string[];
+  repetitionFrameReady: boolean;
+  repetitionBlockingReasons: string[];
+  heldMeasurementPoints: string[];
   visiblePoints: number;
   dominantSide: PoseSide | null;
   sideConfidence: number | null;
@@ -7068,6 +7073,24 @@ function getPushupDiagnosticBlockingReasons(
   return [...new Set(reasons)];
 }
 
+function getPushupHeldMeasurementPoints(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return [];
+
+  const indexes = sideKeypoints[side];
+  return [
+    { label: 'hombro', point: keypoints[indexes.shoulder] },
+    { label: 'codo', point: keypoints[indexes.elbow] },
+    { label: 'muñeca', point: keypoints[indexes.wrist] },
+    { label: 'cadera', point: keypoints[indexes.hip] },
+    { label: 'tobillo', point: keypoints[indexes.ankle] },
+  ]
+    .filter(({ point }) => isHeldPoint(point))
+    .map(({ label }) => label);
+}
+
 function calculateExtremityAngleReadings(
   exercise: ExerciseId | null,
   keypoints: PosePoint[] | undefined,
@@ -7866,6 +7889,9 @@ function Home() {
   const [videoTimeSeconds, setVideoTimeSeconds] = useState(0);
   const [videoDurationSeconds, setVideoDurationSeconds] = useState(0);
   const [pushupBlockingReasons, setPushupBlockingReasons] = useState<string[]>([]);
+  const [pushupRepetitionFrameReady, setPushupRepetitionFrameReady] = useState(false);
+  const [pushupStabilityFrames, setPushupStabilityFrames] = useState(0);
+  const [pushupHeldMeasurementPoints, setPushupHeldMeasurementPoints] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [videoRatio, setVideoRatio] = useState('3 / 4');
   const [modelStatus, setModelStatus] = useState('Modelo sin iniciar');
@@ -8257,6 +8283,9 @@ function Home() {
     setVideoTimeSeconds(0);
     setVideoDurationSeconds(0);
     setPushupBlockingReasons([]);
+    setPushupRepetitionFrameReady(false);
+    setPushupStabilityFrames(0);
+    setPushupHeldMeasurementPoints([]);
     setDetectionStable(false);
   }, []);
 
@@ -9057,6 +9086,30 @@ function Home() {
           measurementSide,
         )
         : null;
+      const heldPushupMeasurementPoints = selectedExerciseForFrame === 'flexiones'
+        ? getPushupHeldMeasurementPoints(
+            pose?.keypoints,
+            pushupLockedMeasurementSideRef.current ?? measurementSide,
+          )
+        : [];
+      const pushupCountBlockingReasonsForFrame = selectedExerciseForFrame === 'flexiones'
+        ? [
+            ...pushupBlockingReasonsForFrame,
+            ...(exerciseStartedRef.current && repetitionAngle === null
+              ? ['ángulo de repetición no calculable']
+              : []),
+            ...(exerciseStartedRef.current && !repetitionConfig
+              ? ['configuración de repetición ausente']
+              : []),
+          ].filter((reason, index, reasons) => reasons.indexOf(reason) === index)
+        : [];
+      const repetitionFrameReady = Boolean(
+        exerciseStartedRef.current
+        && countFrameReady
+        && repetitionConfig
+        && repetitionAngle !== null
+        && !frameMeasurementBlocked,
+      );
       const dipTorsoAngleForFrame = selectedExerciseForFrame === 'fondos' && nextDominantSide
         ? calculateForwardLeanAngle(
             pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
@@ -9692,7 +9745,10 @@ function Home() {
 
       fpsFramesRef.current += 1;
       if (selectedExerciseForFrame === 'flexiones') {
-        setPushupBlockingReasons(pushupBlockingReasonsForFrame);
+        setPushupBlockingReasons(pushupCountBlockingReasonsForFrame);
+        setPushupRepetitionFrameReady(repetitionFrameReady);
+        setPushupStabilityFrames(stabilityFramesRef.current);
+        setPushupHeldMeasurementPoints(heldPushupMeasurementPoints);
       }
       if (
         inputModeRef.current === 'video'
@@ -9861,8 +9917,15 @@ function Home() {
         cameraReady: frameCameraReady,
         poseDetected: visiblePoints >= 5,
         frameStable: frameDetectionStable,
+        stabilityFrames: stabilityFramesRef.current,
+        requiredStabilityFrames: selectedExerciseForFrame === 'flexiones'
+          ? PUSHUP_COUNT_STABLE_FRAMES
+          : 4,
         measurementBlocked: frameMeasurementBlocked,
         measurementBlockingReasons: pushupBlockingReasonsForFrame,
+        repetitionFrameReady,
+        repetitionBlockingReasons: pushupCountBlockingReasonsForFrame,
+        heldMeasurementPoints: heldPushupMeasurementPoints,
         visiblePoints,
         dominantSide: measurementSide,
         sideConfidence: nextDominantSideResult?.average ?? null,
@@ -12348,9 +12411,29 @@ function Home() {
                          </dd>
                        </div>
                        <div className="diagnostic-row">
-                         <dt>Bloqueo del cuadro</dt>
+                         <dt>Bloqueo del conteo</dt>
                          <dd className={`diagnostic-value ${pushupBlockingReasons.length ? 'diagnostic-value--warning' : 'diagnostic-value--success'}`}>
                            {pushupBlockingReasonLabel}
+                         </dd>
+                       </div>
+                       <div className="diagnostic-row">
+                         <dt>Cuadro cuenta</dt>
+                         <dd className={`diagnostic-value ${pushupRepetitionFrameReady ? 'diagnostic-value--success' : 'diagnostic-value--warning'}`}>
+                           {pushupRepetitionFrameReady ? 'Sí' : 'No'}
+                         </dd>
+                       </div>
+                       <div className="diagnostic-row">
+                         <dt>Estabilidad conteo</dt>
+                         <dd className="diagnostic-value">
+                           {pushupStabilityFrames} / {PUSHUP_COUNT_STABLE_FRAMES}
+                         </dd>
+                       </div>
+                       <div className="diagnostic-row">
+                         <dt>Puntos retenidos</dt>
+                         <dd className={`diagnostic-value ${pushupHeldMeasurementPoints.length ? 'diagnostic-value--warning' : 'diagnostic-value--success'}`}>
+                           {pushupHeldMeasurementPoints.length
+                             ? pushupHeldMeasurementPoints.join(' · ')
+                             : 'Ninguno'}
                          </dd>
                        </div>
                      </>
