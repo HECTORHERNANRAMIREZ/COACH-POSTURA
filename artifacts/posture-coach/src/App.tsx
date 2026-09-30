@@ -170,6 +170,7 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
+const UPLOADED_PUSHUP_ANALYSIS_FPS = 20;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 const RECORDED_VIDEO_MAX_WIDTH = 1920;
@@ -574,6 +575,12 @@ type LiveAngleReading = {
   min?: number;
   max?: number;
   unit?: '°' | '';
+};
+type UploadedPushupExportSample = {
+  timeSeconds: number;
+  pose: Pick<Pose, 'keypoints'> | null;
+  hud: VideoRecordingHudState;
+  qualityReady: boolean;
 };
 type DipJointReading = {
   label: string;
@@ -3440,10 +3447,11 @@ const HAND_DETAIL_LANDMARKS = new Set([17, 18, 19, 20, 21, 22]);
 function drawSkeleton(
   canvas: HTMLCanvasElement,
   video: HTMLVideoElement,
-  pose?: Pose,
+  pose?: Pick<Pose, 'keypoints'>,
   mirror = true,
   showFoot = false,
   debugVisuals = false,
+  clearCanvas = true,
 ) {
   const width = video.videoWidth;
   const height = video.videoHeight;
@@ -3454,7 +3462,7 @@ function drawSkeleton(
   const context = canvas.getContext('2d');
   const keypoints = pose?.keypoints ?? [];
   if (!context) return;
-  context.clearRect(0, 0, width, height);
+  if (clearCanvas) context.clearRect(0, 0, width, height);
   context.lineCap = 'round';
   context.lineJoin = 'round';
   context.strokeStyle = GREEN;
@@ -7918,6 +7926,10 @@ function Home() {
   const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
+  const uploadedPushupExportSamplesRef = useRef<UploadedPushupExportSample[]>([]);
+  const uploadedPushupOfflineAnalysisRef = useRef(false);
+  const uploadedPushupExportPlaybackRef = useRef(false);
+  const uploadedPushupAnalysisGenerationRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const recorderCanvasTrackRef = useRef<{
@@ -8275,6 +8287,10 @@ function Home() {
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
+    uploadedPushupAnalysisGenerationRef.current += 1;
+    uploadedPushupOfflineAnalysisRef.current = false;
+    uploadedPushupExportPlaybackRef.current = false;
+    uploadedPushupExportSamplesRef.current = [];
     uploadedPushupPreflightRef.current = false;
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -8545,7 +8561,7 @@ function Home() {
         }
       };
       recorder.start(250);
-      setVideoExportStatus('Analizando y preparando la descarga…');
+      setVideoExportStatus('Grabando el video ya analizado a su velocidad original…');
     } catch {
       recordedStream.getTracks().forEach((track) => track.stop());
       setVideoExportStatus('No se pudo iniciar la descarga del video en este navegador.');
@@ -8569,21 +8585,60 @@ function Home() {
     if (!recordedContext) return;
     recordedContext.clearRect(0, 0, recordedCanvas.width, recordedCanvas.height);
     recordedContext.drawImage(video, 0, 0, recordedCanvas.width, recordedCanvas.height);
-    if (canvasRef.current) {
-      recordedContext.drawImage(
-        canvasRef.current,
-        0,
-        0,
+    if (
+      selectedExerciseRef.current === 'flexiones'
+      && uploadedPushupExportPlaybackRef.current
+    ) {
+      const samples = uploadedPushupExportSamplesRef.current;
+      let low = 0;
+      let high = samples.length - 1;
+      let sampleIndex = -1;
+      while (low <= high) {
+        const middle = Math.floor((low + high) / 2);
+        if (samples[middle].timeSeconds <= video.currentTime) {
+          sampleIndex = middle;
+          low = middle + 1;
+        } else {
+          high = middle - 1;
+        }
+      }
+      const sample = sampleIndex >= 0 ? samples[sampleIndex] : null;
+      const sampleIsRecent = sample
+        && video.currentTime - sample.timeSeconds <= 2 / UPLOADED_PUSHUP_ANALYSIS_FPS;
+      if (sampleIsRecent && sample.pose) {
+        drawSkeleton(
+          recordedCanvas,
+          video,
+          sample.pose,
+          false,
+          false,
+          false,
+          false,
+        );
+      }
+      drawVideoRecordingHud(
+        recordedContext,
         recordedCanvas.width,
         recordedCanvas.height,
+        sampleIsRecent ? sample.hud : EMPTY_VIDEO_RECORDING_HUD,
+      );
+    } else {
+      if (canvasRef.current) {
+        recordedContext.drawImage(
+          canvasRef.current,
+          0,
+          0,
+          recordedCanvas.width,
+          recordedCanvas.height,
+        );
+      }
+      drawVideoRecordingHud(
+        recordedContext,
+        recordedCanvas.width,
+        recordedCanvas.height,
+        recordingHudStateRef.current,
       );
     }
-    drawVideoRecordingHud(
-      recordedContext,
-      recordedCanvas.width,
-      recordedCanvas.height,
-      recordingHudStateRef.current,
-    );
     const diagnostics = videoPipelineDiagnosticsRef.current;
     diagnostics.canvasFrames += 1;
     diagnostics.lastCanvasTime = video.currentTime;
@@ -8614,6 +8669,7 @@ function Home() {
       && video.paused
       && !video.ended
       && !canInspectPausedPushupVideo
+      && !uploadedPushupOfflineAnalysisRef.current
     ) {
       return;
     }
@@ -10165,12 +10221,50 @@ function Home() {
           diagnosticBufferRef.current.length - DIAGNOSTIC_BUFFER_LIMIT,
         );
       }
+      if (uploadedPushupOfflineAnalysisRef.current) {
+        const tracker = exerciseRepTrackerRef.current;
+        const exportPose = hasFreshPose && pose
+          ? {
+              keypoints: pose.keypoints.map((point) => ({
+                ...point,
+                ...(point.world ? { world: { ...point.world } } : {}),
+              })),
+            }
+          : null;
+        const exportReadings = exportPose
+          ? nextLiveAngleReadings.map(({ label, value, target, unit }) => ({
+              label,
+              value,
+              target,
+              unit,
+            }))
+          : [];
+        uploadedPushupExportSamplesRef.current.push({
+          timeSeconds: video.currentTime,
+          pose: exportPose,
+          qualityReady: hasFreshPose
+            && repetitionFrameReady
+            && !frameMeasurementBlocked,
+          hud: {
+            exercise: 'flexiones',
+            hasEvaluationCounter: true,
+            correctRepetitions: tracker.goodRepetitions,
+            incorrectRepetitions: Math.max(
+              0,
+              tracker.repetitions - tracker.goodRepetitions,
+            ),
+            liveAngleReadings: exportReadings,
+            dipJointReadings: [],
+            pullupJointReadings: [],
+          },
+        });
+      }
       setConfidencePoints([
         selectMostConfident(pose?.keypoints, 'Hombro', 11, 12),
         selectMostConfident(pose?.keypoints, 'Cadera', 23, 24),
         selectMostConfident(pose?.keypoints, 'Rodilla', 25, 26),
       ]);
-      if (canvasRef.current) {
+      if (canvasRef.current && !uploadedPushupOfflineAnalysisRef.current) {
         drawSkeleton(
           canvasRef.current,
           video,
@@ -10189,7 +10283,11 @@ function Home() {
           );
         }
       }
-      if (inputModeRef.current === 'video' && video.paused) {
+      if (
+        inputModeRef.current === 'video'
+        && video.paused
+        && !uploadedPushupOfflineAnalysisRef.current
+      ) {
         // En la calibración pausada no hay cuadros de reproducción que capturen
         // el overlay; durante la reproducción, scheduleNextFrame ya captura
         // cada cuadro fuente y evita repetir el costoso repintado a 1080p aquí.
@@ -10297,23 +10395,28 @@ function Home() {
       if (inputModeRef.current === 'video' && !video.paused && !video.ended) {
         captureUploadedVideoFrame();
       }
-      const shouldAnalyzeVideoFrame = inputModeRef.current !== 'video'
-        || sourceTime - lastVideoAnalysisSourceTimeRef.current
-          >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
-        || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
+      const shouldAnalyzeVideoFrame = !uploadedPushupExportPlaybackRef.current
+        && (
+          inputModeRef.current !== 'video'
+          || sourceTime - lastVideoAnalysisSourceTimeRef.current
+            >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
+          || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY
+        );
       if (!shouldAnalyzeVideoFrame) {
+        if (activeRef.current) scheduleNextFrame();
+        return;
+      }
+      if (processingFrameRef.current) {
         if (activeRef.current) scheduleNextFrame();
         return;
       }
       if (inputModeRef.current === 'video') {
         lastVideoAnalysisSourceTimeRef.current = sourceTime;
       }
-      if (!processingFrameRef.current) {
-        processingFrameRef.current = true;
-        void processFrame(timestamp).finally(() => {
-          processingFrameRef.current = false;
-        });
-      }
+      processingFrameRef.current = true;
+      void processFrame(timestamp).finally(() => {
+        processingFrameRef.current = false;
+      });
       if (activeRef.current) scheduleNextFrame();
     };
 
@@ -10346,58 +10449,204 @@ function Home() {
     }
 
     video.pause();
-    // El diagnóstico de reproducción no debe incluir los frames de calibración
-    // que se analizaron mientras el video estaba pausado.
-    diagnosticBufferRef.current = [];
-    lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
-    const initialTracker = createExerciseRepTracker();
-    // Este clip empieza en el fondo de la primera flexión. Conservamos ese
-    // estado para contar el primer regreso a la posición alta.
-    if (uploadedPushupStartsAtBottomRef.current) {
-      initialTracker.phase = 'final';
-      initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
-      initialTracker.currentRepCorrect = true;
-    }
-    exerciseRepTrackerRef.current = initialTracker;
-    setExerciseRepetitions(0);
-    setExerciseGoodRepetitions(0);
-    setExerciseRepPhase('esperando inicio');
-    setExerciseMinimumAngle(null);
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
-    uploadedPushupPreflightRef.current = false;
-    updatePushupPreparationStage('active');
-    updatePushupPreparationCountdown(null);
-    setTechniqueFeedback(defaultTechniqueFeedback);
-    setVideoExportStatus('Iniciando el análisis desde el comienzo del video…');
+    const generation = ++uploadedPushupAnalysisGenerationRef.current;
+    activeRef.current = false;
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (videoFrameCallbackRef.current !== null && video.cancelVideoFrameCallback) {
+      video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+      videoFrameCallbackRef.current = null;
+    }
 
-    await new Promise<void>((resolve) => {
-      let timeoutId = 0;
-      const finishSeeking = () => {
-        window.clearTimeout(timeoutId);
-        video.removeEventListener('seeked', finishSeeking);
-        resolve();
-      };
-      video.addEventListener('seeked', finishSeeking, { once: true });
-      timeoutId = window.setTimeout(finishSeeking, 1500);
-      video.currentTime = Math.min(
-        0.001,
-        Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
-      );
-    });
-
-    beginVideoRecording(video);
     try {
+      while (processingFrameRef.current) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+      }
+
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (duration <= 0) {
+        throw new Error('El video no tiene una duración válida para analizar.');
+      }
+
+      // El diagnóstico empieza desde el primer cuadro, después de la calibración
+      // pausada. El video no se graba mientras el detector evalúa las muestras.
+      diagnosticBufferRef.current = [];
+      lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+      const initialTracker = createExerciseRepTracker();
+      if (uploadedPushupStartsAtBottomRef.current) {
+        initialTracker.phase = 'final';
+        initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
+        initialTracker.currentRepCorrect = true;
+      }
+      exerciseRepTrackerRef.current = initialTracker;
+      setExerciseRepetitions(0);
+      setExerciseGoodRepetitions(0);
+      setExerciseRepPhase('esperando inicio');
+      setExerciseMinimumAngle(null);
+      uploadedPushupPreflightRef.current = false;
+      uploadedPushupOfflineAnalysisRef.current = true;
+      uploadedPushupExportPlaybackRef.current = false;
+      uploadedPushupExportSamplesRef.current = [];
+      updatePushupPreparationStage('active');
+      updatePushupPreparationCountdown(null);
+      setTechniqueFeedback(defaultTechniqueFeedback);
+      setVideoExportStatus('Analizando el video pausado para no alterar su velocidad: 0%…');
+      const overlayCanvas = canvasRef.current;
+      overlayCanvas?.getContext('2d')?.clearRect(
+        0,
+        0,
+        overlayCanvas.width,
+        overlayCanvas.height,
+      );
+      activeRef.current = true;
+      video.playbackRate = 1;
+
+      const seekAndWait = async (timeSeconds: number) => {
+        if (Math.abs(video.currentTime - timeSeconds) > 0.01) {
+          await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const cleanup = () => {
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finish);
+            };
+            const finish = () => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              resolve();
+            };
+            const timeoutId = window.setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              reject(new Error('No se pudo leer un cuadro del video durante el análisis.'));
+            }, 8000);
+            video.addEventListener('seeked', finish, { once: true });
+            try {
+              video.currentTime = timeSeconds;
+              if (!video.seeking && Math.abs(video.currentTime - timeSeconds) <= 0.01) {
+                finish();
+              }
+            } catch (error) {
+              cleanup();
+              reject(error instanceof Error ? error : new Error(String(error)));
+            }
+          });
+        }
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+      };
+
+      const sampleCount = Math.ceil(duration * UPLOADED_PUSHUP_ANALYSIS_FPS) + 1;
+      let lastProgress = -1;
+      for (let index = 0; index < sampleCount; index += 1) {
+        if (
+          generation !== uploadedPushupAnalysisGenerationRef.current
+          || !exerciseStartedRef.current
+        ) {
+          return;
+        }
+        const targetTime = Math.min(
+          duration,
+          index / UPLOADED_PUSHUP_ANALYSIS_FPS,
+        );
+        await seekAndWait(targetTime);
+        if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+        processingFrameRef.current = true;
+        try {
+          await processFrame(performance.now());
+        } finally {
+          processingFrameRef.current = false;
+        }
+        const progress = Math.min(100, Math.floor(((index + 1) / sampleCount) * 100));
+        if (progress !== lastProgress) {
+          lastProgress = progress;
+          setVideoExportStatus(
+            `Analizando el video pausado para no alterar su velocidad: ${progress}%…`,
+          );
+        }
+      }
+
+      if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+      uploadedPushupOfflineAnalysisRef.current = false;
+      const samples = uploadedPushupExportSamplesRef.current;
+      const validSamples = samples.filter((sample) => sample.qualityReady).length;
+      const requiredValidSamples = Math.max(3, Math.ceil(samples.length * 0.3));
+      if (samples.length < 3 || validSamples < requiredValidSamples) {
+        uploadedPushupPreflightRef.current = true;
+        activeRef.current = false;
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        updatePushupPreparationStage('pushup-preparation');
+        setVideoExportStatus(
+          'No se habilitó la descarga: no se detectaron suficientes articulaciones estables. '
+          + 'Usa una vista lateral, buena luz y deja el cuerpo completo visible.',
+        );
+        return;
+      }
+
+      setVideoExportStatus(
+        'Análisis completo. Preparando el video con sus lecturas a velocidad normal…',
+      );
+      await seekAndWait(Math.min(0.001, Math.max(0, duration - 0.001)));
+      if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+      setVideoTimeSeconds(video.currentTime);
+      uploadedPushupExportPlaybackRef.current = true;
+      activeRef.current = true;
+      captureUploadedVideoFrame();
+      beginVideoRecording(video);
+      if (!recorderRef.current) {
+        uploadedPushupExportPlaybackRef.current = false;
+        activeRef.current = false;
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        uploadedPushupPreflightRef.current = true;
+        return;
+      }
       await video.play();
     } catch {
-      setVideoExportStatus('Pulsa reproducir en el video para iniciar el análisis.');
+      if (generation === uploadedPushupAnalysisGenerationRef.current) {
+        const recorder = recorderRef.current;
+        if (recorder) {
+          recorder.ondataavailable = null;
+          recorder.onstop = null;
+          recorder.onerror = null;
+          recorderGenerationRef.current += 1;
+          if (recorder.state !== 'inactive') recorder.stop();
+          recorderRef.current = null;
+          recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+          recorderStreamRef.current = null;
+          recorderCanvasTrackRef.current = null;
+          recorderChunksRef.current = [];
+        }
+        uploadedPushupOfflineAnalysisRef.current = false;
+        uploadedPushupExportPlaybackRef.current = false;
+        activeRef.current = false;
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        uploadedPushupPreflightRef.current = true;
+        setVideoExportStatus('No se pudo completar el análisis del video. Revisa el archivo e inténtalo otra vez.');
+      }
     }
-    if (activeRef.current) scheduleNextFrame();
+    if (
+      generation === uploadedPushupAnalysisGenerationRef.current
+      && activeRef.current
+    ) {
+      scheduleNextFrame();
+    }
   }, [
     beginVideoRecording,
+    captureUploadedVideoFrame,
+    processFrame,
     scheduleNextFrame,
-    updatePushupPreparationCountdown,
     updatePushupPreparationStage,
+    updatePushupPreparationCountdown,
   ]);
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video' || !activeRef.current) return;
