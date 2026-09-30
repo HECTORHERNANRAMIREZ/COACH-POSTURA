@@ -171,6 +171,7 @@ const SCROLL_LERP = 0.15;
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 20;
+const UPLOADED_PUSHUP_OFFLINE_PREPASS = false;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 const RECORDED_VIDEO_MAX_WIDTH = 1920;
@@ -10511,7 +10512,7 @@ function Home() {
     }
 
     video.pause();
-    video.controls = false;
+    video.controls = UPLOADED_PUSHUP_OFFLINE_PREPASS ? false : true;
     uploadedPushupAnalysisStartingRef.current = true;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
@@ -10553,23 +10554,62 @@ function Home() {
       setExerciseRepPhase('esperando inicio');
       setExerciseMinimumAngle(null);
       uploadedPushupPreflightRef.current = false;
-      uploadedPushupOfflineAnalysisRef.current = true;
+      uploadedPushupOfflineAnalysisRef.current = UPLOADED_PUSHUP_OFFLINE_PREPASS;
       uploadedPushupAnalysisStartingRef.current = false;
       uploadedPushupExportPlaybackRef.current = false;
       uploadedPushupExportSamplesRef.current = [];
       updatePushupPreparationStage('active');
       updatePushupPreparationCountdown(null);
       setTechniqueFeedback(defaultTechniqueFeedback);
-      setVideoExportStatus('Analizando el video pausado para no alterar su velocidad: 0%…');
-      const overlayCanvas = canvasRef.current;
-      overlayCanvas?.getContext('2d')?.clearRect(
-        0,
-        0,
-        overlayCanvas.width,
-        overlayCanvas.height,
-      );
+      if (UPLOADED_PUSHUP_OFFLINE_PREPASS) {
+        setVideoExportStatus('Analizando el video pausado para no alterar su velocidad: 0%…');
+        const overlayCanvas = canvasRef.current;
+        overlayCanvas?.getContext('2d')?.clearRect(
+          0,
+          0,
+          overlayCanvas.width,
+          overlayCanvas.height,
+        );
+      }
       activeRef.current = true;
       video.playbackRate = 1;
+
+      if (!UPLOADED_PUSHUP_OFFLINE_PREPASS) {
+        uploadedPushupOfflineAnalysisRef.current = false;
+        uploadedPushupExportPlaybackRef.current = false;
+        uploadedPushupExportSamplesRef.current = [];
+        video.controls = true;
+        const playbackStartTime = Math.min(
+          0.001,
+          Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
+        );
+        if (video.seeking || Math.abs(video.currentTime - playbackStartTime) > 0.01) {
+          await new Promise<void>((resolve) => {
+            let timeoutId = 0;
+            const finishSeeking = () => {
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finishSeeking);
+              resolve();
+            };
+            video.addEventListener('seeked', finishSeeking, { once: true });
+            timeoutId = window.setTimeout(finishSeeking, 1500);
+            video.currentTime = playbackStartTime;
+          });
+        } else if (video.currentTime !== playbackStartTime) {
+          video.currentTime = playbackStartTime;
+        }
+        if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+        uploadedPushupAnalysisStartingRef.current = false;
+        beginVideoRecording(video);
+        await video.play();
+        if (
+          generation === uploadedPushupAnalysisGenerationRef.current
+          && activeRef.current
+        ) {
+          scheduleNextFrame();
+        }
+        return;
+      }
 
       const seekAndWait = async (timeSeconds: number) => {
         let seekMs = 0;
