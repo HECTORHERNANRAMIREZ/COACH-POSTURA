@@ -8051,6 +8051,7 @@ function Home() {
   const pushupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pushupCalibrationReadySinceRef = useRef<number | null>(null);
   const pushupCalibrationSuccessfulRef = useRef(false);
+  const uploadedPushupStartsAtBottomRef = useRef(false);
   const pushupLockedMeasurementSideRef = useRef<PoseSide | null>(null);
   const pushupPreparationStageRef = useRef<PushupPreparationStage>('body-detection');
   const pushupPreparationStartedAtRef = useRef<number | null>(null);
@@ -9057,6 +9058,20 @@ function Home() {
           if (calibrationElapsed >= PUSHUP_BODY_DETECTION_HOLD_MS) {
             pushupCalibrationSuccessfulRef.current = true;
             pushupCalibrationReadySinceRef.current = null;
+            const calibrationRepetitionAngle = calculateRepetitionAngle(
+              'flexiones',
+              pose?.keypoints,
+              measurementSide,
+            );
+            uploadedPushupStartsAtBottomRef.current = Boolean(
+              uploadedPushupPreflightRef.current
+              && calibrationRepetitionAngle !== null
+              && isWithinAngle(
+                calibrationRepetitionAngle,
+                PUSHUP_REP_END_MIN_ANGLE,
+                PUSHUP_REP_END_MAX_ANGLE,
+              ),
+            );
             pushupLockedMeasurementSideRef.current = measurementSide;
             sideConsistencyRef.current.lockAssignments();
             boneConstraintRef.current.lockReferences();
@@ -10231,7 +10246,15 @@ function Home() {
     }
 
     video.pause();
-    exerciseRepTrackerRef.current = createExerciseRepTracker();
+    const initialTracker = createExerciseRepTracker();
+    // Este clip empieza en el fondo de la primera flexión. Conservamos ese
+    // estado para contar el primer regreso a la posición alta.
+    if (uploadedPushupStartsAtBottomRef.current) {
+      initialTracker.phase = 'final';
+      initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
+      initialTracker.currentRepCorrect = true;
+    }
+    exerciseRepTrackerRef.current = initialTracker;
     setExerciseRepetitions(0);
     setExerciseGoodRepetitions(0);
     setExerciseRepPhase('esperando inicio');
@@ -10244,19 +10267,20 @@ function Home() {
     setTechniqueFeedback(defaultTechniqueFeedback);
     setVideoExportStatus('Iniciando el análisis desde el comienzo del video…');
 
-    if (video.currentTime > 0.001) {
-      await new Promise<void>((resolve) => {
-        let timeoutId = 0;
-        const finishSeeking = () => {
-          window.clearTimeout(timeoutId);
-          video.removeEventListener('seeked', finishSeeking);
-          resolve();
-        };
-        video.addEventListener('seeked', finishSeeking, { once: true });
-        timeoutId = window.setTimeout(finishSeeking, 1500);
-        video.currentTime = 0;
-      });
-    }
+    await new Promise<void>((resolve) => {
+      let timeoutId = 0;
+      const finishSeeking = () => {
+        window.clearTimeout(timeoutId);
+        video.removeEventListener('seeked', finishSeeking);
+        resolve();
+      };
+      video.addEventListener('seeked', finishSeeking, { once: true });
+      timeoutId = window.setTimeout(finishSeeking, 1500);
+      video.currentTime = Math.min(
+        0.001,
+        Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
+      );
+    });
 
     beginVideoRecording(video);
     try {
@@ -10348,6 +10372,7 @@ function Home() {
     if (!(activeExercise === 'flexiones' && preserveExerciseStarted)) {
       pushupCalibrationSuccessfulRef.current = false;
       pushupCalibrationReadySinceRef.current = null;
+      uploadedPushupStartsAtBottomRef.current = false;
       pushupLockedMeasurementSideRef.current = null;
       updatePushupCalibrationStatus('pending');
     }
@@ -10503,8 +10528,23 @@ function Home() {
         video.load();
         await metadataLoaded;
         setVideoDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
-        setVideoTimeSeconds(0);
-        video.currentTime = 0;
+        video.pause();
+        const firstMillisecond = Math.min(
+          0.001,
+          Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
+        );
+        await new Promise<void>((resolve) => {
+          let timeoutId = 0;
+          const finishSeeking = () => {
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finishSeeking);
+            resolve();
+          };
+          video.addEventListener('seeked', finishSeeking, { once: true });
+          timeoutId = window.setTimeout(finishSeeking, 1500);
+          video.currentTime = firstMillisecond;
+        });
+        setVideoTimeSeconds(firstMillisecond);
       } else {
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
           throw new Error('La cámara necesita una conexión segura y compatible con el navegador.');
@@ -10629,6 +10669,7 @@ function Home() {
         poseFilterRef.current.setTemporalJumpGuard(false);
         pushupCalibrationSuccessfulRef.current = false;
         pushupCalibrationReadySinceRef.current = null;
+        uploadedPushupStartsAtBottomRef.current = false;
         pushupLockedMeasurementSideRef.current = null;
         updatePushupCalibrationStatus('pending');
         pushupPreparationStageRef.current = 'body-detection';
