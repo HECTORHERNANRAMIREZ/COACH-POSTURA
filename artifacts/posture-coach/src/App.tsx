@@ -154,6 +154,11 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 import type { ExerciseDiagnosticSnapshot } from '@/pullup-diagnostics';
+import {
+  drawVideoRecordingHud,
+  EMPTY_VIDEO_RECORDING_HUD,
+  type VideoRecordingHudState,
+} from '@/video-recording-overlay';
 
 const queryClient = new QueryClient();
 const TOTAL_FRAMES = 11;
@@ -7905,6 +7910,9 @@ function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const recordedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const recordingHudStateRef = useRef<VideoRecordingHudState>(
+    EMPTY_VIDEO_RECORDING_HUD,
+  );
   const detectorFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -8549,6 +8557,12 @@ function Home() {
         recordedCanvas.height,
       );
     }
+    drawVideoRecordingHud(
+      recordedContext,
+      recordedCanvas.width,
+      recordedCanvas.height,
+      recordingHudStateRef.current,
+    );
     const diagnostics = videoPipelineDiagnosticsRef.current;
     diagnostics.canvasFrames += 1;
     diagnostics.lastCanvasTime = video.currentTime;
@@ -11194,6 +11208,15 @@ function Home() {
       : hasEvaluationCounter
         ? `${correctRepetitions} / ${evaluatedRepetitions}`
         : 'Pendiente';
+  recordingHudStateRef.current = {
+    exercise: selectedExercise,
+    hasEvaluationCounter,
+    correctRepetitions,
+    incorrectRepetitions,
+    liveAngleReadings,
+    dipJointReadings,
+    pullupJointReadings,
+  };
 
   return (
     <div className="posture-app">
