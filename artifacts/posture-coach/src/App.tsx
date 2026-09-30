@@ -1919,6 +1919,8 @@ const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 70;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
+const PUSHUP_PERSISTENT_HOLD_MAX_FRAMES = 2;
+const PUSHUP_COUNT_STABLE_FRAMES = 2;
 // Calibración del recorrido de flexiones a partir de la ejecución de referencia:
 // se acepta el inicio observado con el codo parcialmente extendido, se activa
 // al pasar de 120° y se considera fondo dentro de 70–105°.
@@ -8471,7 +8473,12 @@ function Home() {
         && pullupCalibrationSuccessfulRef.current;
       const pushupTrackingLocked = selectedExerciseForFrame === 'flexiones'
         && pushupCalibrationSuccessfulRef.current;
-      poseFilterRef.current.setPersistentHold(pullupSessionActive || pushupTrackingLocked);
+      poseFilterRef.current.setPersistentHold(
+        pullupSessionActive || pushupTrackingLocked,
+        selectedExerciseForFrame === 'flexiones'
+          ? PUSHUP_PERSISTENT_HOLD_MAX_FRAMES
+          : MAX_HELD_FRAMES,
+      );
       poseFilterRef.current.setTemporalJumpGuard(pushupTrackingLocked);
       const previousPoseTrack = primaryPoseTrackRef.current;
       const primaryPose = selectPrimaryPose(
@@ -8852,10 +8859,12 @@ function Home() {
         ? Math.min(8, stabilityFramesRef.current + 1)
         : 0;
       const frameDetectionStable = stabilityFramesRef.current >= 4;
+      const standardPushupFrameStable = selectedExerciseForFrame === 'flexiones'
+        && stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES;
       const standardPushupCountFrameReady = selectedExerciseForFrame === 'flexiones'
         && hasFreshPose
         && frameCameraReady
-        && frameDetectionStable
+        && standardPushupFrameStable
         && hasFreshPushupMeasurement(
           pose?.keypoints,
           pushupLockedMeasurementSideRef.current ?? measurementSide,
@@ -8867,7 +8876,7 @@ function Home() {
             pushupLockedMeasurementSideRef.current ?? measurementSide,
             exerciseStartedRef.current,
             hasFreshPose,
-            frameDetectionStable,
+            standardPushupFrameStable,
             frameCameraReady,
             visiblePoints,
             rawAngle,
@@ -8954,7 +8963,10 @@ function Home() {
             pushupLockedMeasurementSideRef.current = measurementSide;
             sideConsistencyRef.current.lockAssignments();
             boneConstraintRef.current.lockReferences();
-            poseFilterRef.current.setPersistentHold(true);
+            poseFilterRef.current.setPersistentHold(
+              true,
+              PUSHUP_PERSISTENT_HOLD_MAX_FRAMES,
+            );
             poseFilterRef.current.setTemporalJumpGuard(true);
             updatePushupCalibrationStatus('ready');
             pushupPreparationStartedAtRef.current = now;

@@ -240,14 +240,20 @@ export class PoseOneEuroFilter {
 
   private persistentHold = false;
 
+  private persistentHoldMaxFrames = MAX_HELD_FRAMES;
+
   private temporalJumpGuard = false;
 
   private lastPose?: Pose;
 
   private readonly temporalCrossCandidates = new Map<number, TemporalCrossCandidate>();
 
-  setPersistentHold(enabled: boolean) {
+  setPersistentHold(enabled: boolean, maxHeldFrames = MAX_HELD_FRAMES) {
     this.persistentHold = enabled;
+    this.persistentHoldMaxFrames = Math.max(
+      1,
+      Math.min(MAX_HELD_FRAMES, maxHeldFrames),
+    );
   }
 
   setTemporalJumpGuard(enabled: boolean) {
@@ -406,10 +412,10 @@ export class PoseOneEuroFilter {
         continue;
       }
 
-      if (
-        state.lastPoint
-        && (state.heldFrames < MAX_HELD_FRAMES || this.persistentHold)
-      ) {
+      const maxHeldFrames = this.persistentHold
+        ? this.persistentHoldMaxFrames
+        : MAX_HELD_FRAMES;
+      if (state.lastPoint && state.heldFrames < maxHeldFrames) {
         const parentIndex = this.persistentHold ? LIMB_PARENT_INDEX[index] : undefined;
         const currentParent = parentIndex === undefined
           ? undefined
@@ -450,9 +456,7 @@ export class PoseOneEuroFilter {
           && Number.isFinite(previousWorldParent.y)
           && Number.isFinite(previousWorldParent.z),
         );
-        const nextHeldFrames = this.persistentHold
-          ? Math.min(MAX_HELD_FRAMES, state.heldFrames + 1)
-          : state.heldFrames + 1;
+        const nextHeldFrames = Math.min(maxHeldFrames, state.heldFrames + 1);
         state.heldFrames = nextHeldFrames;
         const stalePoint = {
           ...state.lastPoint,
