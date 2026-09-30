@@ -49,8 +49,14 @@ export type Pose = {
   timestamp: number;
 };
 
+export type PoseVideoSource = HTMLVideoElement | HTMLCanvasElement;
+
 export type PoseDetector = {
-  detectForVideo: (video: HTMLVideoElement, timestamp: number) => Pose | null;
+  detectForVideo: (
+    source: PoseVideoSource,
+    timestamp: number,
+    outputSize?: { width: number; height: number },
+  ) => Pose | null;
   close: () => void;
   activeModel?: PoseModel;
   activeDelegate?: PoseDelegate;
@@ -245,14 +251,21 @@ export async function createPoseDetector(
   return {
     activeModel: activeCandidate.model,
     activeDelegate: activeCandidate.delegate,
-    detectForVideo(video, timestamp) {
-      if (!video.videoWidth || !video.videoHeight) return null;
+    detectForVideo(source, timestamp, outputSize) {
+      const sourceWidth = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
+      const sourceHeight = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
+      if (!sourceWidth || !sourceHeight) return null;
       if (closed) return null;
       const safeTimestamp = Math.max(timestamp, lastTimestamp + 0.001);
       lastTimestamp = safeTimestamp;
-      const result = landmarker?.detectForVideo(video, safeTimestamp);
+      const result = landmarker?.detectForVideo(source, safeTimestamp);
       return result
-        ? resultToPose(result, video.videoWidth, video.videoHeight, safeTimestamp)
+        ? resultToPose(
+            result,
+            outputSize?.width ?? sourceWidth,
+            outputSize?.height ?? sourceHeight,
+            safeTimestamp,
+          )
         : null;
     },
     close() {

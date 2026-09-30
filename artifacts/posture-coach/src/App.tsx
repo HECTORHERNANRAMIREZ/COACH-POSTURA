@@ -109,6 +109,7 @@ import {
   type Pose,
   type PoseDetector,
   type PosePoint,
+  type PoseVideoSource,
 } from '@/pose3d';
 import {
   createBoneConstraintFilter,
@@ -163,6 +164,10 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
+const DETECTOR_MAX_FRAME_WIDTH = 1280;
+const DETECTOR_MAX_FRAME_HEIGHT = 720;
+const RECORDED_VIDEO_MAX_WIDTH = 1920;
+const RECORDED_VIDEO_MAX_HEIGHT = 1080;
 // Número de frames usados para calcular la media móvil del FPS real del detector.
 const FPS_WINDOW_FRAMES = 45;
 // FPS medio mínimo que debe mantener el modelo heavy antes de degradar.
@@ -3483,6 +3488,19 @@ function drawSkeleton(
   context.globalAlpha = 1;
   context.strokeStyle = GREEN;
   context.shadowBlur = 0;
+}
+
+function getContainedVideoSize(
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number,
+) {
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 type RecordedAngle = {
@@ -7850,6 +7868,7 @@ function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const recordedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const detectorFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
@@ -8324,8 +8343,14 @@ function Home() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     if (recordedCanvasRef.current) {
-      recordedCanvasRef.current.width = video.videoWidth;
-      recordedCanvasRef.current.height = video.videoHeight;
+      const recordedSize = getContainedVideoSize(
+        video.videoWidth,
+        video.videoHeight,
+        RECORDED_VIDEO_MAX_WIDTH,
+        RECORDED_VIDEO_MAX_HEIGHT,
+      );
+      recordedCanvasRef.current.width = recordedSize.width;
+      recordedCanvasRef.current.height = recordedSize.height;
     }
     videoSizeRef.current = {
       width: video.videoWidth,
@@ -8333,6 +8358,29 @@ function Home() {
     };
     setVideoRatio(`${video.videoWidth} / ${video.videoHeight}`);
     setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
+  }, []);
+
+  const prepareDetectorFrame = useCallback((video: HTMLVideoElement): PoseVideoSource => {
+    const detectorCanvas = detectorFrameCanvasRef.current
+      ?? document.createElement('canvas');
+    detectorFrameCanvasRef.current = detectorCanvas;
+    const detectorSize = getContainedVideoSize(
+      video.videoWidth,
+      video.videoHeight,
+      DETECTOR_MAX_FRAME_WIDTH,
+      DETECTOR_MAX_FRAME_HEIGHT,
+    );
+    if (
+      detectorCanvas.width !== detectorSize.width
+      || detectorCanvas.height !== detectorSize.height
+    ) {
+      detectorCanvas.width = detectorSize.width;
+      detectorCanvas.height = detectorSize.height;
+    }
+    const context = detectorCanvas.getContext('2d');
+    if (!context) return video;
+    context.drawImage(video, 0, 0, detectorSize.width, detectorSize.height);
+    return detectorCanvas;
   }, []);
 
   const beginVideoRecording = useCallback((video: HTMLVideoElement) => {
@@ -8450,13 +8498,6 @@ function Home() {
       return;
     }
     syncVideoSize();
-    if (
-      recordedCanvas.width !== video.videoWidth
-      || recordedCanvas.height !== video.videoHeight
-    ) {
-      recordedCanvas.width = video.videoWidth;
-      recordedCanvas.height = video.videoHeight;
-    }
     const recordedContext = recordedCanvas.getContext('2d');
     if (!recordedContext) return;
     recordedContext.clearRect(0, 0, recordedCanvas.width, recordedCanvas.height);
@@ -8512,7 +8553,12 @@ function Home() {
         lastDetectorTimestampRef.current + 0.001,
       );
       lastDetectorTimestampRef.current = frameTimestamp;
-      const detectedResult = detector.detectForVideo(video, frameTimestamp);
+      const detectorSource = prepareDetectorFrame(video);
+      const detectedResult = detector.detectForVideo(
+        detectorSource,
+        frameTimestamp,
+        { width: video.videoWidth, height: video.videoHeight },
+      );
       detectionFrameTimesRef.current = [
         ...detectionFrameTimesRef.current,
         now,
@@ -10028,68 +10074,11 @@ function Home() {
           );
         }
       }
-      if (inputModeRef.current === 'video' && recordedCanvasRef.current) {
-        const recordedCanvas = recordedCanvasRef.current;
-        if (
-          recordedCanvas.width !== video.videoWidth
-          || recordedCanvas.height !== video.videoHeight
-        ) {
-          recordedCanvas.width = video.videoWidth;
-          recordedCanvas.height = video.videoHeight;
-        }
-        const recordedContext = recordedCanvas.getContext('2d');
-        if (recordedContext) {
-          recordedContext.clearRect(0, 0, recordedCanvas.width, recordedCanvas.height);
-          recordedContext.drawImage(video, 0, 0, recordedCanvas.width, recordedCanvas.height);
-          if (canvasRef.current) {
-            recordedContext.drawImage(
-              canvasRef.current,
-              0,
-              0,
-              recordedCanvas.width,
-              recordedCanvas.height,
-            );
-          }
-          const currentTracker = selectedExerciseForFrame === 'sentadillas'
-            ? squatTrackerRef.current
-            : isPullupExercise
-              ? pullupTrackerRef.current
-              : exerciseRepTrackerRef.current;
-          const showCounter = selectedExerciseForFrame === 'sentadillas'
-            || isPullupExercise
-            || Boolean(getRepetitionConfig(selectedExerciseForFrame));
-          const angleItems: RecordedAngle[] = nextLiveAngleReadings.length
-            ? nextLiveAngleReadings
-            : displayAngle === null
-              ? []
-              : [{
-                  label: activeExerciseDefinition?.angleLabel ?? 'Ángulo principal',
-                  value: displayAngle,
-                }];
-          drawRecordedVideoHud(
-            recordedContext,
-            recordedCanvas.width,
-            recordedCanvas.height,
-            {
-              exerciseName: activeExerciseDefinition?.name ?? 'NetPosture',
-              correctRepetitions: currentTracker.goodRepetitions,
-              incorrectRepetitions: Math.max(
-                0,
-                currentTracker.repetitions - currentTracker.goodRepetitions,
-              ),
-              showCounter,
-              angles: angleItems,
-            },
-          );
-          const diagnostics = videoPipelineDiagnosticsRef.current;
-          diagnostics.canvasFrames += 1;
-          diagnostics.lastCanvasTime = video.currentTime;
-          const captureTrack = recorderCanvasTrackRef.current;
-          if (captureTrack?.requestFrame) {
-            captureTrack.requestFrame();
-            diagnostics.captureRequests += 1;
-          }
-        }
+      if (inputModeRef.current === 'video') {
+        // El cuadro de salida se actualiza con la pose más reciente. La
+        // captura independiente de scheduleNextFrame mantiene el video a
+        // velocidad normal incluso si esta inferencia tarda más.
+        captureUploadedVideoFrame();
       }
 
       if (
@@ -10155,6 +10144,8 @@ function Home() {
 
   }, [
     incrementErrorCount,
+    captureUploadedVideoFrame,
+    prepareDetectorFrame,
     updatePullupPreparationCountdown,
     updatePullupCalibrationStatus,
     updatePullupPreparationStage,
@@ -10188,6 +10179,9 @@ function Home() {
       const diagnostics = videoPipelineDiagnosticsRef.current;
       diagnostics.sourceFrames += 1;
       diagnostics.lastSourceTime = sourceTime;
+      if (inputModeRef.current === 'video' && !video.paused && !video.ended) {
+        captureUploadedVideoFrame();
+      }
       const shouldAnalyzeVideoFrame = inputModeRef.current !== 'video'
         || sourceTime - lastVideoAnalysisSourceTimeRef.current
           >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
@@ -10222,7 +10216,7 @@ function Home() {
       animationFrameRef.current = null;
       runFrame(timestamp, video.currentTime);
     });
-  }, [processFrame]);
+  }, [captureUploadedVideoFrame, processFrame]);
 
   const startUploadedPushupPlayback = useCallback(async () => {
     const video = videoRef.current;
