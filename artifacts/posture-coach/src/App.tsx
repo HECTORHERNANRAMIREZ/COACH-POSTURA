@@ -9063,15 +9063,17 @@ function Home() {
               pose?.keypoints,
               measurementSide,
             );
-            uploadedPushupStartsAtBottomRef.current = Boolean(
-              uploadedPushupPreflightRef.current
-              && calibrationRepetitionAngle !== null
-              && isWithinAngle(
-                calibrationRepetitionAngle,
-                PUSHUP_REP_END_MIN_ANGLE,
-                PUSHUP_REP_END_MAX_ANGLE,
-              ),
-            );
+            uploadedPushupStartsAtBottomRef.current =
+              uploadedPushupStartsAtBottomRef.current
+              || Boolean(
+                uploadedPushupPreflightRef.current
+                && calibrationRepetitionAngle !== null
+                && isWithinAngle(
+                  calibrationRepetitionAngle,
+                  PUSHUP_REP_END_MIN_ANGLE,
+                  PUSHUP_REP_END_MAX_ANGLE,
+                ),
+              );
             pushupLockedMeasurementSideRef.current = measurementSide;
             sideConsistencyRef.current.lockAssignments();
             boneConstraintRef.current.lockReferences();
@@ -9169,6 +9171,22 @@ function Home() {
           measurementSide,
         )
         : null;
+      // El video puede permanecer pausado durante la calibración. Conserva
+      // cualquier lectura fresca del fondo para que el primer frame reproducido
+      // no dependa de la lectura exacta del instante de cierre de calibración.
+      if (
+        selectedExerciseForFrame === 'flexiones'
+        && uploadedPushupPreflightRef.current
+        && !pushupCalibrationSuccessfulRef.current
+        && repetitionAngle !== null
+        && isWithinAngle(
+          repetitionAngle,
+          PUSHUP_REP_END_MIN_ANGLE,
+          PUSHUP_REP_END_MAX_ANGLE,
+        )
+      ) {
+        uploadedPushupStartsAtBottomRef.current = true;
+      }
       const heldPushupMeasurementPoints = selectedExerciseForFrame === 'flexiones'
         ? getPushupHeldMeasurementPoints(
             pose?.keypoints,
@@ -10246,6 +10264,10 @@ function Home() {
     }
 
     video.pause();
+    // El diagnóstico de reproducción no debe incluir los frames de calibración
+    // que se analizaron mientras el video estaba pausado.
+    diagnosticBufferRef.current = [];
+    lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
     const initialTracker = createExerciseRepTracker();
     // Este clip empieza en el fondo de la primera flexión. Conservamos ese
     // estado para contar el primer regreso a la posición alta.
