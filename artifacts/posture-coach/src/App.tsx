@@ -10054,9 +10054,9 @@ function Home() {
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
-    const isUploadCalibrationExercise = activeExercise === 'dominadas'
-      || activeExercise === 'flexiones';
-    const shouldStartUploadedExercise = Boolean(videoFile) && !isUploadCalibrationExercise;
+    // Los videos subidos ya contienen la ejecución; no deben esperar la
+    // preparación de cámara en vivo. Las flexiones conservan su calibración.
+    const shouldStartUploadedExercise = Boolean(videoFile) && activeExercise !== 'flexiones';
     const shouldStartExercise = videoFile
       ? shouldStartUploadedExercise
       : preserveExerciseStarted;
