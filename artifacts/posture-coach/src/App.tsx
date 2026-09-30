@@ -520,6 +520,7 @@ type ExerciseRepConfig = {
   countOnlyWhenCorrect?: boolean;
   techniqueStartsOnActivation?: boolean;
   countReturnWithoutEndAsIncorrect?: boolean;
+  rawAngleCanReachEnd?: boolean;
   smoothingSamples?: number;
   techniqueMustHoldThroughout?: boolean;
 };
@@ -2276,6 +2277,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     countOnlyWhenCorrect: false,
     techniqueStartsOnActivation: true,
     countReturnWithoutEndAsIncorrect: true,
+    rawAngleCanReachEnd: true,
     smoothingSamples: PUSHUP_SMOOTHING_SAMPLES,
     techniqueMustHoldThroughout: false,
   },
@@ -2580,14 +2582,25 @@ function advanceExerciseRepTracker(
     config.startMinAngle,
     config.startMaxAngle,
   );
-  const hasActivated = config.direction === 'decrease'
+  const smoothedHasActivated = config.direction === 'decrease'
     ? smoothedAngle < config.activationAngle
     : smoothedAngle > config.activationAngle;
+  const rawHasActivated = config.rawAngleCanReachEnd && (
+    config.direction === 'decrease'
+      ? rawAngle < config.activationAngle
+      : rawAngle > config.activationAngle
+  );
+  const rawIsAtEnd = config.rawAngleCanReachEnd && isWithinAngle(
+    rawAngle,
+    config.endMinAngle,
+    config.endMaxAngle,
+  );
+  const hasActivated = smoothedHasActivated || rawHasActivated;
   const isAtEnd = isWithinAngle(
     smoothedAngle,
     config.endMinAngle,
     config.endMaxAngle,
-  );
+  ) || rawIsAtEnd;
   let completedEndpointAngle: number | null = null;
 
   if (nextTracker.phase === 'esperando inicio') {
@@ -2600,11 +2613,14 @@ function advanceExerciseRepTracker(
     }
   } else if (nextTracker.phase === 'inicio') {
     if (hasActivated) {
-      nextTracker.phase = 'en movimiento';
-      nextTracker.endpointAngle = smoothedAngle;
+      nextTracker.phase = rawIsAtEnd ? 'final' : 'en movimiento';
+      nextTracker.endpointAngle = rawIsAtEnd ? rawAngle : smoothedAngle;
       nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
         ? techniqueValid
         : nextTracker.currentRepCorrect && techniqueValid;
+      if (rawIsAtEnd) {
+        completedEndpointAngle = rawAngle;
+      }
     } else if (!isAtStart) {
       nextTracker.phase = 'esperando inicio';
       nextTracker.currentRepCorrect = false;
@@ -2613,9 +2629,10 @@ function advanceExerciseRepTracker(
     if (config.techniqueMustHoldThroughout !== false) {
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
     }
+    const endpointReading = config.rawAngleCanReachEnd ? rawAngle : smoothedAngle;
     nextTracker.endpointAngle = config.direction === 'decrease'
-      ? Math.min(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle)
-      : Math.max(nextTracker.endpointAngle ?? smoothedAngle, smoothedAngle);
+      ? Math.min(nextTracker.endpointAngle ?? endpointReading, endpointReading)
+      : Math.max(nextTracker.endpointAngle ?? endpointReading, endpointReading);
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
