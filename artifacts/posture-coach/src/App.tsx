@@ -520,6 +520,7 @@ type ExerciseRepConfig = {
   countOnlyWhenCorrect?: boolean;
   techniqueStartsOnActivation?: boolean;
   countReturnWithoutEndAsIncorrect?: boolean;
+  requireReturnPastActivation?: boolean;
   rawAngleCanReachEnd?: boolean;
   smoothingSamples?: number;
   techniqueMustHoldThroughout?: boolean;
@@ -2276,7 +2277,8 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     countOnReturn: true,
     countOnlyWhenCorrect: false,
     techniqueStartsOnActivation: true,
-    countReturnWithoutEndAsIncorrect: true,
+    countReturnWithoutEndAsIncorrect: false,
+    requireReturnPastActivation: true,
     rawAngleCanReachEnd: true,
     smoothingSamples: PUSHUP_SMOOTHING_SAMPLES,
     techniqueMustHoldThroughout: false,
@@ -2596,11 +2598,13 @@ function advanceExerciseRepTracker(
     config.endMaxAngle,
   );
   const hasActivated = smoothedHasActivated || rawHasActivated;
-  const isAtEnd = isWithinAngle(
-    smoothedAngle,
-    config.endMinAngle,
-    config.endMaxAngle,
-  ) || rawIsAtEnd;
+  const isAtEnd = config.rawAngleCanReachEnd
+    ? rawIsAtEnd
+    : isWithinAngle(
+        smoothedAngle,
+        config.endMinAngle,
+        config.endMaxAngle,
+      );
   let completedEndpointAngle: number | null = null;
 
   if (nextTracker.phase === 'esperando inicio') {
@@ -2679,12 +2683,14 @@ function advanceExerciseRepTracker(
       const hasReturnedPastActivation = config.direction === 'decrease'
         ? smoothedAngle >= config.activationAngle
         : smoothedAngle <= config.activationAngle;
+      const requiresReturnPastActivation = config.requireReturnPastActivation === true
+        || config.countReturnWithoutEndAsIncorrect === true;
 
       if (
         hasReturnedFromEnd
         && isAtStart
         && (
-          config.countReturnWithoutEndAsIncorrect !== true
+          !requiresReturnPastActivation
           || hasReturnedPastActivation
         )
       ) {
