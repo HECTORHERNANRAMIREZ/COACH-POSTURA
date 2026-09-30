@@ -2650,7 +2650,10 @@ function advanceExerciseRepTracker(
     }
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
-      if (config.techniqueStartsOnActivation) {
+      if (
+        config.techniqueStartsOnActivation
+        && config.techniqueMustHoldThroughout !== false
+      ) {
         nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
       }
       const hasReturnedFromEnd = config.direction === 'decrease'

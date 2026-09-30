@@ -7,4 +7,4 @@ For standard side-view push-ups, the accepted elbow–torso range must account f
 
 **Why:** The previous narrow elbow range rejected every visually correct repetition in a real session even though the body-line criterion passed.
 
-**How to apply:** When recalibrating this exercise, use real correct-session samples and keep the body-line constraint independent. Do not loosen pose freshness, camera readiness, stability, or repetition-counting guards to compensate for a technique threshold mismatch.
+**How to apply:** When recalibrating this exercise, use real correct-session samples and keep the body-line constraint independent. Do not loosen pose freshness, camera readiness, stability, or repetition-counting guards to compensate for a technique threshold mismatch. For regular uploaded push-ups with techniqueMustHoldThroughout disabled, evaluate technique on the return frame rather than letting an isolated intermediate body-line reading invalidate the repetition.
