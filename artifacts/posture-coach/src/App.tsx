@@ -7932,6 +7932,16 @@ function Home() {
   const uploadedPushupOfflineAnalysisRef = useRef(false);
   const uploadedPushupExportPlaybackRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
+  // TEMP: temporización del inicio de reproducción de flexiones subidas.
+  const uploadedPushupPlayDiagnosticsRef = useRef<{
+    startedAt: number | null;
+    handleVideoPlayCalls: number;
+    playingListenerAttached: boolean;
+  }>({
+    startedAt: null,
+    handleVideoPlayCalls: 0,
+    playingListenerAttached: false,
+  });
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const recorderCanvasTrackRef = useRef<{
@@ -10498,7 +10508,17 @@ function Home() {
     });
   }, [captureUploadedVideoFrame, processFrame]);
 
+  // TEMP: todos los tiempos se expresan desde el primer clic/play detectado.
+  const logUploadedPushupPlay = useCallback((message: string) => {
+    const startedAt = uploadedPushupPlayDiagnosticsRef.current.startedAt;
+    const elapsedMs = startedAt === null ? 0 : performance.now() - startedAt;
+    console.log(`[play] +${elapsedMs.toFixed(1)}ms ${message}`);
+  }, []);
+
   const startUploadedPushupPlayback = useCallback(async () => {
+    const playDiagnostics = uploadedPushupPlayDiagnosticsRef.current;
+    playDiagnostics.startedAt ??= performance.now();
+    logUploadedPushupPlay('entrada a startUploadedPushupPlayback');
     const video = videoRef.current;
     if (
       !video
@@ -10528,10 +10548,27 @@ function Home() {
     }
 
     try {
+      const processingWaitStartedAt = performance.now();
+      let processingWaitFrames = 0;
+      logUploadedPushupPlay(
+        `inicio de espera de processingFrameRef | ocupado=${processingFrameRef.current}`,
+      );
       while (processingFrameRef.current) {
+        processingWaitFrames += 1;
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
+        if (generation !== uploadedPushupAnalysisGenerationRef.current) {
+          logUploadedPushupPlay(
+            `fin de la espera de processingFrameRef | cancelada tras `
+            + `${(performance.now() - processingWaitStartedAt).toFixed(1)} ms`,
+          );
+          return;
+        }
       }
+      logUploadedPushupPlay(
+        `fin de la espera de processingFrameRef | `
+        + `${(performance.now() - processingWaitStartedAt).toFixed(1)} ms, `
+        + `${processingWaitFrames} esperas RAF`,
+      );
 
       const duration = Number.isFinite(video.duration) ? video.duration : 0;
       if (duration <= 0) {
@@ -10579,11 +10616,14 @@ function Home() {
         uploadedPushupExportPlaybackRef.current = false;
         uploadedPushupExportSamplesRef.current = [];
         video.controls = true;
+        const seekStartedAt = performance.now();
         const playbackStartTime = Math.min(
           0.001,
           Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
         );
+        let seekResult = 'ya estaba al inicio';
         if (video.seeking || Math.abs(video.currentTime - playbackStartTime) > 0.01) {
+          seekResult = 'esperó el evento seeked o el límite de 1500 ms';
           await new Promise<void>((resolve) => {
             let timeoutId = 0;
             const finishSeeking = () => {
@@ -10596,12 +10636,30 @@ function Home() {
             video.currentTime = playbackStartTime;
           });
         } else if (video.currentTime !== playbackStartTime) {
+          seekResult = 'ajuste inmediato, sin esperar seeked';
           video.currentTime = playbackStartTime;
         }
+        logUploadedPushupPlay(
+          `fin del seek | ${seekResult}; currentTime=${video.currentTime.toFixed(3)} s; `
+          + `${(performance.now() - seekStartedAt).toFixed(1)} ms`,
+        );
         if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
         uploadedPushupAnalysisStartingRef.current = false;
+        const recordingStartedAt = performance.now();
         beginVideoRecording(video);
+        logUploadedPushupPlay(
+          `fin de beginVideoRecording | `
+          + `${(performance.now() - recordingStartedAt).toFixed(1)} ms; `
+          + `recorder=${recorderRef.current?.state ?? 'no iniciado'}`,
+        );
+        const videoPlayStartedAt = performance.now();
+        logUploadedPushupPlay('llamada a video.play() iniciada');
         await video.play();
+        logUploadedPushupPlay(
+          `video.play() resuelto | `
+          + `${(performance.now() - videoPlayStartedAt).toFixed(1)} ms; `
+          + `paused=${video.paused}; currentTime=${video.currentTime.toFixed(3)} s`,
+        );
         if (
           generation === uploadedPushupAnalysisGenerationRef.current
           && activeRef.current
@@ -10820,14 +10878,50 @@ function Home() {
     scheduleNextFrame,
     updatePushupPreparationStage,
     updatePushupPreparationCountdown,
+    logUploadedPushupPlay,
   ]);
   const handleVideoPlay = useCallback(() => {
+    const isUploadedPushupVideo = inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones';
+    const playDiagnostics = uploadedPushupPlayDiagnosticsRef.current;
+    let playCallNumber = 0;
+    if (isUploadedPushupVideo) {
+      playDiagnostics.startedAt ??= performance.now();
+      playCallNumber = ++playDiagnostics.handleVideoPlayCalls;
+    }
+    const logHandleVideoPlayBranch = (branch: string, extraCallGuard: string) => {
+      if (!isUploadedPushupVideo) return;
+      logUploadedPushupPlay(
+        `onPlay disparado | rama tomada en handleVideoPlay: ${branch}`,
+      );
+      if (playCallNumber > 1) {
+        logUploadedPushupPlay(
+          `llamada extra a handleVideoPlay #${playCallNumber} | guarda/resultado: `
+          + extraCallGuard,
+        );
+      }
+    };
     if (inputModeRef.current !== 'video') return;
     const video = videoRef.current;
+    if (
+      isUploadedPushupVideo
+      && video
+      && !playDiagnostics.playingListenerAttached
+    ) {
+      playDiagnostics.playingListenerAttached = true;
+      video.addEventListener('playing', () => {
+        playDiagnostics.playingListenerAttached = false;
+        logUploadedPushupPlay("evento 'playing' recibido");
+      }, { once: true });
+    }
     if (
       selectedExerciseRef.current === 'flexiones'
       && uploadedPushupOfflineAnalysisRef.current
     ) {
+      logHandleVideoPlayBranch(
+        'prepass offline: pausa y retorno',
+        'uploadedPushupOfflineAnalysisRef=true; video.pause()',
+      );
       video?.pause();
       return;
     }
@@ -10838,17 +10932,35 @@ function Home() {
     ) {
       video?.pause();
       if (!pushupCalibrationSuccessfulRef.current) {
+        logHandleVideoPlayBranch(
+          'calibración pendiente: pausa y retorno',
+          'pushupCalibrationSuccessfulRef=false; video.pause()',
+        );
         setVideoExportStatus(
           'Espera a que termine la calibración antes de reproducir el video.',
         );
         return;
       }
+      logHandleVideoPlayBranch(
+        'calibración lista: iniciar startUploadedPushupPlayback',
+        'se permite entrar en startUploadedPushupPlayback',
+      );
       void startUploadedPushupPlayback();
       return;
     }
-    if (!activeRef.current) return;
+    if (!activeRef.current) {
+      logHandleVideoPlayBranch(
+        'activeRef=false: retorno sin pausar el video',
+        'activeRef.current=false solo retorna; no llama a video.pause()',
+      );
+      return;
+    }
+    logHandleVideoPlayBranch(
+      'activeRef=true: programar siguiente cuadro',
+      'sin guarda de bloqueo; llama a scheduleNextFrame()',
+    );
     scheduleNextFrame();
-  }, [scheduleNextFrame, startUploadedPushupPlayback]);
+  }, [logUploadedPushupPlay, scheduleNextFrame, startUploadedPushupPlayback]);
 
   const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
