@@ -7964,6 +7964,7 @@ function Home() {
   const processedVideoUrlRef = useRef<string | null>(null);
   const [processedVideoExtension, setProcessedVideoExtension] = useState<'mp4' | 'webm'>('webm');
   const [videoExportStatus, setVideoExportStatus] = useState('');
+  const [uploadedAnalysisProgress, setUploadedAnalysisProgress] = useState<number | null>(null);
   const [showUploadedPushupCalibrationNotice, setShowUploadedPushupCalibrationNotice] = useState(false);
   const [uploadedPushupCalibrationHintTimedOut, setUploadedPushupCalibrationHintTimedOut] = useState(false);
   const uploadedPushupCalibrationHintTimerRef = useRef<number | null>(null);
@@ -8364,6 +8365,7 @@ function Home() {
     setProcessedVideoExtension('webm');
     setUploadedVideoName('');
     setVideoExportStatus('');
+    setUploadedAnalysisProgress(null);
     if (canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -10636,11 +10638,13 @@ function Home() {
           setVideoExportStatus(
             `Analizando el video pausado para no alterar su velocidad: ${progress}%…`,
           );
+          setUploadedAnalysisProgress(progress);
         }
       }
 
       if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
       uploadedPushupOfflineAnalysisRef.current = false;
+      setUploadedAnalysisProgress(null);
       video.controls = true;
       const samples = uploadedPushupExportSamplesRef.current;
       const validSamples = samples.filter((sample) => sample.qualityReady).length;
@@ -10680,6 +10684,7 @@ function Home() {
       await video.play();
     } catch {
       if (generation === uploadedPushupAnalysisGenerationRef.current) {
+        setUploadedAnalysisProgress(null);
         const recorder = recorderRef.current;
         if (recorder) {
           recorder.ondataavailable = null;
@@ -11093,6 +11098,7 @@ function Home() {
           setVideoExportStatus(
             'Proceso detenido antes de terminar; no se creó una descarga incompleta.',
           );
+          setUploadedAnalysisProgress(null);
         }
         const video = videoRef.current;
         video?.pause();
@@ -11223,6 +11229,7 @@ function Home() {
       setVideoExportStatus('Elige un archivo de video compatible.');
       return;
     }
+    setUploadedAnalysisProgress(null);
     if (uploadedPushupCalibrationHintTimerRef.current !== null) {
       window.clearTimeout(uploadedPushupCalibrationHintTimerRef.current);
       uploadedPushupCalibrationHintTimerRef.current = null;
@@ -12596,6 +12603,46 @@ function Home() {
                   className="video-recording-canvas"
                   aria-hidden="true"
                 />
+                {inputMode === 'video'
+                  && selectedExercise === 'flexiones'
+                  && uploadedAnalysisProgress !== null && (
+                    <div
+                      role="status"
+                      aria-atomic="true"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        zIndex: 3,
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '1rem',
+                        background: 'rgba(5, 12, 23, 0.58)',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'grid',
+                          gap: '0.4rem',
+                          width: 'min(100%, 22rem)',
+                          padding: '1rem 1.15rem',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '1rem',
+                          background: 'rgba(8, 22, 28, 0.92)',
+                          boxShadow: '0 1rem 3rem rgba(0, 0, 0, 0.28)',
+                          color: '#f4f8fc',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <strong style={{ fontSize: 'clamp(0.95rem, 3vw, 1.15rem)' }}>
+                          Analizando el video… {uploadedAnalysisProgress}%
+                        </strong>
+                        <span style={{ color: 'rgba(223, 235, 246, 0.78)', fontSize: '0.85rem' }}>
+                          El video se reproducirá solo al terminar.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 {(isStandardPullupSelected || isStandardPushupSelected)
                   && !exerciseStarted
                   && inputMode === 'camera'
