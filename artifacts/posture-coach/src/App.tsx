@@ -7964,6 +7964,9 @@ function Home() {
   const processedVideoUrlRef = useRef<string | null>(null);
   const [processedVideoExtension, setProcessedVideoExtension] = useState<'mp4' | 'webm'>('webm');
   const [videoExportStatus, setVideoExportStatus] = useState('');
+  const [showUploadedPushupCalibrationNotice, setShowUploadedPushupCalibrationNotice] = useState(false);
+  const [uploadedPushupCalibrationHintTimedOut, setUploadedPushupCalibrationHintTimedOut] = useState(false);
+  const uploadedPushupCalibrationHintTimerRef = useRef<number | null>(null);
   const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
   const selectedExerciseRef = useRef<ExerciseId | null>(null);
   const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
@@ -8273,6 +8276,18 @@ function Home() {
     }, 1000);
 
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (exerciseStarted) {
+      setShowUploadedPushupCalibrationNotice(false);
+    }
+  }, [exerciseStarted]);
+
+  useEffect(() => () => {
+    if (uploadedPushupCalibrationHintTimerRef.current !== null) {
+      window.clearTimeout(uploadedPushupCalibrationHintTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -11208,6 +11223,19 @@ function Home() {
       setVideoExportStatus('Elige un archivo de video compatible.');
       return;
     }
+    if (uploadedPushupCalibrationHintTimerRef.current !== null) {
+      window.clearTimeout(uploadedPushupCalibrationHintTimerRef.current);
+      uploadedPushupCalibrationHintTimerRef.current = null;
+    }
+    setUploadedPushupCalibrationHintTimedOut(false);
+    const showPushupCalibrationNotice = exercise === 'flexiones';
+    setShowUploadedPushupCalibrationNotice(showPushupCalibrationNotice);
+    if (showPushupCalibrationNotice) {
+      uploadedPushupCalibrationHintTimerRef.current = window.setTimeout(() => {
+        uploadedPushupCalibrationHintTimerRef.current = null;
+        setUploadedPushupCalibrationHintTimedOut(true);
+      }, 15_000);
+    }
     void startCamera(exercise, false, file);
   }, [startCamera]);
 
@@ -11842,7 +11870,27 @@ function Home() {
                 <div className="video-export-tools" role="status" aria-live="polite">
                   <div className="video-export-copy">
                     <strong>Video: {uploadedVideoName}</strong>
-                    <span>{videoExportStatus || 'El análisis se procesa en este dispositivo.'}</span>
+                    <span>
+                      {showUploadedPushupCalibrationNotice
+                        && phase === 'tracking'
+                        && inputMode === 'video'
+                        && selectedExercise === 'flexiones'
+                        && !exerciseStarted
+                        ? pushupCalibrationStatus === 'ready'
+                          ? 'Video listo. Pulsa reproducir.'
+                          : (
+                            <>
+                              Calibrando el cuerpo… la reproducción se habilitará al terminar.
+                              {uploadedPushupCalibrationHintTimedOut && (
+                                <>
+                                  <br />
+                                  Si tarda, usa una vista lateral, buena luz y deja el cuerpo completo visible.
+                                </>
+                              )}
+                            </>
+                          )
+                        : videoExportStatus || 'El análisis se procesa en este dispositivo.'}
+                    </span>
                   </div>
                   {processedVideoUrl && (
                     <a
