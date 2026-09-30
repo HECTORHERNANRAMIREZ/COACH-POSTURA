@@ -1,4 +1,4 @@
-import { type ReactNode, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, type ReactNode, type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   ClerkProvider,
@@ -25,9 +25,11 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
+  Download,
   Maximize2,
   ShieldCheck,
   Square,
+  Upload,
 } from 'lucide-react';
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
@@ -3452,6 +3454,115 @@ function drawSkeleton(
   context.globalAlpha = 1;
   context.strokeStyle = GREEN;
   context.shadowBlur = 0;
+}
+
+type RecordedAngle = {
+  label: string;
+  value: number | null;
+  unit?: string;
+};
+
+function drawRecordedVideoHud(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  details: {
+    exerciseName: string;
+    correctRepetitions: number;
+    incorrectRepetitions: number;
+    showCounter: boolean;
+    angles: RecordedAngle[];
+  },
+) {
+  const scale = Math.max(0.72, Math.min(1.5, width / 900));
+  const margin = Math.max(12, width * 0.022);
+  const panelRadius = 9 * scale;
+  const font = (size: number, weight = 700) => `${weight} ${size * scale}px Inter, Arial, sans-serif`;
+
+  const panel = (x: number, y: number, panelWidth: number, panelHeight: number) => {
+    context.save();
+    context.fillStyle = 'rgba(7, 17, 30, 0.82)';
+    context.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    context.lineWidth = Math.max(1, scale);
+    context.beginPath();
+    context.roundRect(x, y, panelWidth, panelHeight, panelRadius);
+    context.fill();
+    context.stroke();
+    context.restore();
+  };
+
+  context.save();
+  context.textBaseline = 'middle';
+  context.shadowColor = 'rgba(0, 0, 0, 0.42)';
+  context.shadowBlur = 8 * scale;
+
+  const title = details.exerciseName.toLocaleUpperCase('es');
+  context.font = font(10, 800);
+  const titleWidth = Math.min(width * 0.52, Math.max(118 * scale, context.measureText(title).width + 24 * scale));
+  panel((width - titleWidth) / 2, margin, titleWidth, 27 * scale);
+  context.fillStyle = '#eaf3f7';
+  context.textAlign = 'center';
+  context.fillText(title, width / 2, margin + 13.5 * scale, titleWidth - 14 * scale);
+
+  if (details.showCounter) {
+    const cardWidth = 78 * scale;
+    const cardHeight = 45 * scale;
+    const cardGap = 6 * scale;
+    const counterY = margin + 36 * scale;
+    [
+      { label: 'CORRECTAS', value: details.correctRepetitions, color: '#8bffa5' },
+      { label: 'INCORRECTAS', value: details.incorrectRepetitions, color: '#ff9b93' },
+    ].forEach((item, index) => {
+      const x = margin + index * (cardWidth + cardGap);
+      panel(x, counterY, cardWidth, cardHeight);
+      context.textAlign = 'left';
+      context.font = font(7, 800);
+      context.fillStyle = 'rgba(225, 237, 244, 0.76)';
+      context.fillText(item.label, x + 8 * scale, counterY + 13 * scale);
+      context.font = font(20, 800);
+      context.fillStyle = item.color;
+      context.fillText(String(item.value), x + 8 * scale, counterY + 32 * scale);
+    });
+  }
+
+  const angleItems = details.angles
+    .filter((reading) => reading.value !== null && Number.isFinite(reading.value))
+    .slice(0, 6);
+  if (angleItems.length) {
+    const columns = angleItems.length > 2 ? 2 : 1;
+    const rows = Math.ceil(angleItems.length / columns);
+    const cardWidth = 72 * scale;
+    const cardHeight = 36 * scale;
+    const gap = 5 * scale;
+    const panelWidth = columns * cardWidth + (columns - 1) * gap + 14 * scale;
+    const panelHeight = rows * cardHeight + (rows - 1) * gap + 28 * scale;
+    const panelX = width - panelWidth - margin;
+    const panelY = height - panelHeight - margin;
+    panel(panelX, panelY, panelWidth, panelHeight);
+    context.textAlign = 'left';
+    context.font = font(6.5, 800);
+    context.fillStyle = 'rgba(225, 237, 244, 0.7)';
+    context.fillText('ÁNGULOS EN VIVO', panelX + 7 * scale, panelY + 10 * scale);
+
+    angleItems.forEach((reading, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = panelX + 7 * scale + column * (cardWidth + gap);
+      const y = panelY + 18 * scale + row * (cardHeight + gap);
+      context.fillStyle = 'rgba(255, 255, 255, 0.075)';
+      context.beginPath();
+      context.roundRect(x, y, cardWidth, cardHeight, 5 * scale);
+      context.fill();
+      context.font = font(6.5, 700);
+      context.fillStyle = 'rgba(225, 237, 244, 0.72)';
+      context.fillText(reading.label.toLocaleUpperCase('es').slice(0, 13), x + 5 * scale, y + 10 * scale);
+      context.font = font(13, 800);
+      context.fillStyle = '#8bffa5';
+      context.fillText(`${Math.round(reading.value!)}${reading.unit ?? '°'}`, x + 5 * scale, y + 25 * scale);
+    });
+  }
+
+  context.restore();
 }
 
 function selectMostConfident(
@@ -7635,7 +7746,14 @@ function getExercise(exerciseId: ExerciseId | null) {
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const recordedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const uploadedVideoUrlRef = useRef<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recorderStreamRef = useRef<MediaStream | null>(null);
+  const recorderChunksRef = useRef<Blob[]>([]);
+  const recorderGenerationRef = useRef(0);
   const detectorRef = useRef<PoseDetector | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const activeRef = useRef(false);
@@ -7643,6 +7761,13 @@ function Home() {
   const detectorTransitionRef = useRef<Promise<void> | null>(null);
   const cameraFacingModeRef = useRef<CameraFacingMode>('user');
   const [phase, setPhase] = useState<SessionPhase>('exercise-select');
+  const [inputMode, setInputMode] = useState<'camera' | 'video'>('camera');
+  const inputModeRef = useRef<'camera' | 'video'>('camera');
+  const [uploadedVideoName, setUploadedVideoName] = useState('');
+  const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
+  const processedVideoUrlRef = useRef<string | null>(null);
+  const [processedVideoExtension, setProcessedVideoExtension] = useState<'mp4' | 'webm'>('webm');
+  const [videoExportStatus, setVideoExportStatus] = useState('');
   const [selectedExercise, setSelectedExercise] = useState<ExerciseId | null>(null);
   const selectedExerciseRef = useRef<ExerciseId | null>(null);
   const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
@@ -7962,15 +8087,48 @@ function Home() {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
+    recorderGenerationRef.current += 1;
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      if (recorder.state !== 'inactive') recorder.stop();
+    }
+    recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recorderStreamRef.current = null;
+    recorderChunksRef.current = [];
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     detectorTransitionRef.current = null;
     detectorRef.current?.close();
     detectorRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+      videoRef.current.removeAttribute('src');
+      videoRef.current.load();
+    }
+    if (uploadedVideoUrlRef.current) {
+      URL.revokeObjectURL(uploadedVideoUrlRef.current);
+      uploadedVideoUrlRef.current = null;
+    }
+    if (processedVideoUrlRef.current) {
+      URL.revokeObjectURL(processedVideoUrlRef.current);
+      processedVideoUrlRef.current = null;
+      setProcessedVideoUrl(null);
+    }
+    setProcessedVideoExtension('webm');
+    setUploadedVideoName('');
+    setVideoExportStatus('');
     if (canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
+    if (recordedCanvasRef.current) {
+      const context = recordedCanvasRef.current.getContext('2d');
+      context?.clearRect(0, 0, recordedCanvasRef.current.width, recordedCanvasRef.current.height);
     }
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
@@ -8014,12 +8172,90 @@ function Home() {
     }
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    if (recordedCanvasRef.current) {
+      recordedCanvasRef.current.width = video.videoWidth;
+      recordedCanvasRef.current.height = video.videoHeight;
+    }
     videoSizeRef.current = {
       width: video.videoWidth,
       height: video.videoHeight,
     };
     setVideoRatio(`${video.videoWidth} / ${video.videoHeight}`);
     setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
+  }, []);
+
+  const beginVideoRecording = useCallback((video: HTMLVideoElement) => {
+    const canvas = recordedCanvasRef.current;
+    if (
+      !canvas
+      || typeof canvas.captureStream !== 'function'
+      || typeof MediaRecorder === 'undefined'
+    ) {
+      setVideoExportStatus('Este navegador permite analizar el video, pero no generar la descarga.');
+      return;
+    }
+
+    const candidates = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4;codecs=avc1.42E01E',
+      'video/mp4',
+    ];
+    const mimeType = candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+    const recordedStream = canvas.captureStream(30);
+    const videoWithCapture = video as HTMLVideoElement & {
+      captureStream?: () => MediaStream;
+      mozCaptureStream?: () => MediaStream;
+    };
+    const sourceStream = videoWithCapture.captureStream?.()
+      ?? videoWithCapture.mozCaptureStream?.();
+    sourceStream?.getAudioTracks().forEach((track) => recordedStream.addTrack(track));
+
+    try {
+      const recorder = new MediaRecorder(
+        recordedStream,
+        mimeType ? { mimeType } : undefined,
+      );
+      const generation = ++recorderGenerationRef.current;
+      recorderRef.current = recorder;
+      recorderStreamRef.current = recordedStream;
+      recorderChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recorderChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+        recorderStreamRef.current = null;
+        if (recorderRef.current === recorder) recorderRef.current = null;
+        if (generation !== recorderGenerationRef.current) return;
+        const chunks = recorderChunksRef.current;
+        recorderChunksRef.current = [];
+        if (!chunks.length) {
+          setVideoExportStatus('No se generó el video. Vuelve a reproducirlo para intentarlo de nuevo.');
+          return;
+        }
+        const recordedMimeType = recorder.mimeType || 'video/webm';
+        const blob = new Blob(chunks, { type: recordedMimeType });
+        const nextUrl = URL.createObjectURL(blob);
+        if (processedVideoUrlRef.current) URL.revokeObjectURL(processedVideoUrlRef.current);
+        processedVideoUrlRef.current = nextUrl;
+        setProcessedVideoExtension(recordedMimeType.includes('mp4') ? 'mp4' : 'webm');
+        setProcessedVideoUrl(nextUrl);
+        setVideoExportStatus('Video procesado y listo para descargar.');
+      };
+      recorder.onerror = () => {
+        if (generation === recorderGenerationRef.current) {
+          setVideoExportStatus('No se pudo generar la descarga del video.');
+        }
+      };
+      recorder.start(250);
+      setVideoExportStatus('Analizando y preparando la descarga…');
+    } catch {
+      recordedStream.getTracks().forEach((track) => track.stop());
+      setVideoExportStatus('No se pudo iniciar la descarga del video en este navegador.');
+    }
   }, []);
 
   const processFrame = useCallback(async () => {
@@ -8035,6 +8271,10 @@ function Home() {
       return;
     }
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      animationFrameRef.current = requestAnimationFrame(() => void processFrame());
+      return;
+    }
+    if (inputModeRef.current === 'video' && video.paused && !video.ended) {
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
       return;
     }
@@ -9455,7 +9695,7 @@ function Home() {
           canvasRef.current,
           video,
           pose,
-          cameraFacingModeRef.current === 'user',
+          inputModeRef.current === 'camera' && cameraFacingModeRef.current === 'user',
           FOOT_OVERLAY_EXERCISES.has(selectedExerciseForFrame),
           DEBUG_LIMB_TRACKING_ACTIVE,
         );
@@ -9465,7 +9705,62 @@ function Home() {
             video,
             rawPoseForDebugRef.current,
             pose,
-            cameraFacingModeRef.current === 'user',
+            inputModeRef.current === 'camera' && cameraFacingModeRef.current === 'user',
+          );
+        }
+      }
+      if (inputModeRef.current === 'video' && recordedCanvasRef.current) {
+        const recordedCanvas = recordedCanvasRef.current;
+        if (
+          recordedCanvas.width !== video.videoWidth
+          || recordedCanvas.height !== video.videoHeight
+        ) {
+          recordedCanvas.width = video.videoWidth;
+          recordedCanvas.height = video.videoHeight;
+        }
+        const recordedContext = recordedCanvas.getContext('2d');
+        if (recordedContext) {
+          recordedContext.clearRect(0, 0, recordedCanvas.width, recordedCanvas.height);
+          recordedContext.drawImage(video, 0, 0, recordedCanvas.width, recordedCanvas.height);
+          if (canvasRef.current) {
+            recordedContext.drawImage(
+              canvasRef.current,
+              0,
+              0,
+              recordedCanvas.width,
+              recordedCanvas.height,
+            );
+          }
+          const currentTracker = selectedExerciseForFrame === 'sentadillas'
+            ? squatTrackerRef.current
+            : isPullupExercise
+              ? pullupTrackerRef.current
+              : exerciseRepTrackerRef.current;
+          const showCounter = selectedExerciseForFrame === 'sentadillas'
+            || isPullupExercise
+            || Boolean(getRepetitionConfig(selectedExerciseForFrame));
+          const angleItems: RecordedAngle[] = nextLiveAngleReadings.length
+            ? nextLiveAngleReadings
+            : displayAngle === null
+              ? []
+              : [{
+                  label: activeExerciseDefinition?.angleLabel ?? 'Ángulo principal',
+                  value: displayAngle,
+                }];
+          drawRecordedVideoHud(
+            recordedContext,
+            recordedCanvas.width,
+            recordedCanvas.height,
+            {
+              exerciseName: activeExerciseDefinition?.name ?? 'NetPosture',
+              correctRepetitions: currentTracker.goodRepetitions,
+              incorrectRepetitions: Math.max(
+                0,
+                currentTracker.repetitions - currentTracker.goodRepetitions,
+              ),
+              showCounter,
+              angles: angleItems,
+            },
           );
         }
       }
@@ -9563,6 +9858,7 @@ function Home() {
   const startCamera = useCallback(async (
     exerciseId?: ExerciseId,
     preserveExerciseStarted = false,
+    videoFile?: File,
   ) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -9573,8 +9869,18 @@ function Home() {
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
-    exerciseStartedRef.current = preserveExerciseStarted;
-    setExerciseStarted(preserveExerciseStarted);
+    const isUploadCalibrationExercise = activeExercise === 'dominadas'
+      || activeExercise === 'flexiones';
+    const shouldStartUploadedExercise = Boolean(videoFile) && !isUploadCalibrationExercise;
+    const shouldStartExercise = videoFile
+      ? shouldStartUploadedExercise
+      : preserveExerciseStarted;
+    exerciseStartedRef.current = shouldStartExercise;
+    setExerciseStarted(shouldStartExercise);
+    if (videoFile) {
+      cameraFacingModeRef.current = 'environment';
+      setCameraFacingMode('environment');
+    }
     pullupSessionFinishedRef.current = false;
     pullupDetachFramesRef.current = 0;
     setPullupSessionFinished(false);
@@ -9701,29 +10007,79 @@ function Home() {
     setPhase('requesting');
 
     try {
-      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-        throw new Error('La cámara necesita una conexión segura y compatible con el navegador.');
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: cameraFacingModeRef.current,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 },
-        },
-      });
-      streamRef.current = stream;
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const video = videoRef.current;
-      if (!video) throw new Error('No se pudo preparar la vista de cámara.');
-      video.srcObject = stream;
-      await video.play();
+      if (!video) throw new Error('No se pudo preparar el video de análisis.');
+      inputModeRef.current = videoFile ? 'video' : 'camera';
+      setInputMode(inputModeRef.current);
+      if (videoFile) {
+        setUploadedVideoName(videoFile.name);
+        setVideoExportStatus('Cargando el video en este dispositivo…');
+        const sourceUrl = URL.createObjectURL(videoFile);
+        uploadedVideoUrlRef.current = sourceUrl;
+        video.pause();
+        video.srcObject = null;
+        video.controls = true;
+        video.muted = false;
+        const metadataLoaded = new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            cleanup();
+            reject(new Error('El video tardó demasiado en abrirse. Prueba con otro archivo.'));
+          }, 15_000);
+          const cleanup = () => {
+            window.clearTimeout(timeout);
+            video.removeEventListener('loadedmetadata', handleLoaded);
+            video.removeEventListener('error', handleError);
+          };
+          const handleLoaded = () => {
+            cleanup();
+            resolve();
+          };
+          const handleError = () => {
+            cleanup();
+            reject(new Error('No se pudo abrir este video. Prueba con un archivo MP4 o WebM.'));
+          };
+          video.addEventListener('loadedmetadata', handleLoaded, { once: true });
+          video.addEventListener('error', handleError, { once: true });
+        });
+        video.src = sourceUrl;
+        video.load();
+        await metadataLoaded;
+        video.currentTime = 0;
+      } else {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error('La cámara necesita una conexión segura y compatible con el navegador.');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: cameraFacingModeRef.current,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+          },
+        });
+        streamRef.current = stream;
+        video.controls = false;
+        video.muted = true;
+        video.srcObject = stream;
+        await video.play();
+      }
       syncVideoSize();
       setPhase('loading-model');
       const detector = await loadDetector();
       detectorRef.current = detector;
       setModelStatus(`${POSE_MODEL_NAME} cargado ✓`);
+      if (videoFile) {
+        beginVideoRecording(video);
+        try {
+          await video.play();
+        } catch {
+          setVideoExportStatus((current) => current.includes('descarga')
+            ? current
+            : 'Pulsa reproducir en el video para iniciar el análisis.');
+        }
+      }
       activeRef.current = true;
       setPhase('tracking');
       animationFrameRef.current = requestAnimationFrame(() => void processFrame());
@@ -9744,7 +10100,7 @@ function Home() {
     } finally {
       busyRef.current = false;
     }
-  }, [loadDetector, processFrame, stopResources, syncVideoSize]);
+  }, [beginVideoRecording, loadDetector, processFrame, stopResources, syncVideoSize]);
 
   const toggleCamera = useCallback(() => {
     if (busyRef.current || !selectedExerciseRef.current) return;
@@ -9762,6 +10118,16 @@ function Home() {
     if (exerciseStartedRef.current) {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
+      if (inputModeRef.current === 'video') {
+        videoRef.current?.pause();
+        activeRef.current = false;
+        if (animationFrameRef.current !== null) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        const recorder = recorderRef.current;
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+      }
       pullupSessionFinishedRef.current = false;
       pullupDetachFramesRef.current = 0;
       setPullupSessionFinished(false);
@@ -9805,19 +10171,59 @@ function Home() {
     if (!faceDetected && !poseDetected) return;
     exerciseStartedRef.current = true;
     setExerciseStarted(true);
+    if (inputModeRef.current === 'video') {
+      const video = videoRef.current;
+      if (video) {
+        void video.play().catch(() => {
+          setVideoExportStatus('Pulsa reproducir en el video para iniciar el análisis.');
+        });
+      }
+      activeRef.current = true;
+      if (animationFrameRef.current === null) {
+        animationFrameRef.current = requestAnimationFrame(() => void processFrame());
+      }
+    }
     setSquatFeedback(defaultSquatFeedback);
     setPullupFeedback(defaultTechniqueFeedback);
     setTechniqueFeedback(defaultTechniqueFeedback);
   }, [
     faceDetected,
     phase,
+    processFrame,
     poseDetected,
     updatePullupCalibrationStatus,
     updatePushupCalibrationStatus,
   ]);
 
+  const handleVideoUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    const exercise = selectedExerciseRef.current;
+    if (!file || !exercise) return;
+    if (!file.type.startsWith('video/')) {
+      setVideoExportStatus('Elige un archivo de video compatible.');
+      return;
+    }
+    void startCamera(exercise, false, file);
+  }, [startCamera]);
+
+  const handleUploadedVideoEnded = useCallback(() => {
+    activeRef.current = false;
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    exerciseStartedRef.current = false;
+    setExerciseStarted(false);
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (!recorder) setVideoExportStatus('El análisis del video terminó.');
+  }, []);
+
   const returnToWelcome = useCallback(() => {
     stopResources();
+    inputModeRef.current = 'camera';
+    setInputMode('camera');
     selectedExerciseRef.current = null;
     setSelectedExercise(null);
     exerciseStartedRef.current = false;
@@ -10357,6 +10763,23 @@ function Home() {
                   </div>
                 </div>
                 <div className="active-header-actions">
+                  <input
+                    ref={videoUploadInputRef}
+                    className="video-upload-input"
+                    type="file"
+                    accept="video/*"
+                    onChange={handleVideoUpload}
+                    aria-label="Subir un video para analizar"
+                  />
+                  <button
+                    type="button"
+                    className="upload-video-button"
+                    disabled={phase === 'requesting' || phase === 'loading-model'}
+                    onClick={() => videoUploadInputRef.current?.click()}
+                  >
+                    <Upload size={14} strokeWidth={1.9} aria-hidden="true" />
+                    <span>{inputMode === 'video' ? 'Cambiar video' : 'Subir video'}</span>
+                  </button>
                   <button
                     type="button"
                     className="camera-switch-button"
@@ -10370,6 +10793,24 @@ function Home() {
                   <ShieldCheck size={18} color={GREEN} strokeWidth={1.8} aria-label="Procesamiento privado" />
                 </div>
               </div>
+              {inputMode === 'video' && (
+                <div className="video-export-tools" role="status" aria-live="polite">
+                  <div className="video-export-copy">
+                    <strong>Video: {uploadedVideoName}</strong>
+                    <span>{videoExportStatus || 'El análisis se procesa en este dispositivo.'}</span>
+                  </div>
+                  {processedVideoUrl && (
+                    <a
+                      className="video-download-button"
+                      href={processedVideoUrl}
+                      download={`${uploadedVideoName.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}-]+/gu, '-') || 'video'}-netposture.${processedVideoExtension}`}
+                    >
+                      <Download size={15} strokeWidth={2} aria-hidden="true" />
+                      Descargar video
+                    </a>
+                  )}
+                </div>
+              )}
               {activeExercise && (
                 <details className="tracking-contract">
                   <summary>
@@ -10974,11 +11415,17 @@ function Home() {
               >
                 <video
                   ref={videoRef}
-                  muted
-                  autoPlay
+                  muted={inputMode !== 'video'}
+                  autoPlay={inputMode !== 'video'}
+                  controls={inputMode === 'video'}
                   playsInline
-                  style={{ transform: cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none' }}
+                  style={{
+                    transform: inputMode === 'camera' && cameraFacingMode === 'user'
+                      ? 'scaleX(-1)'
+                      : 'none',
+                  }}
                   onLoadedMetadata={syncVideoSize}
+                  onEnded={inputMode === 'video' ? handleUploadedVideoEnded : undefined}
                   data-testid="video-camera-preview"
                   aria-label={`Vista previa de la cámara ${
                     selectedExercise === 'flexiones'
@@ -11032,6 +11479,11 @@ function Home() {
                   }`}
                 />
                 <canvas ref={canvasRef} aria-hidden="true" />
+                <canvas
+                  ref={recordedCanvasRef}
+                  className="video-recording-canvas"
+                  aria-hidden="true"
+                />
                 {(isStandardPullupSelected || isStandardPushupSelected)
                   && !exerciseStarted
                   && (
