@@ -10348,14 +10348,15 @@ function Home() {
       && uploadedPushupPreflightRef.current
       && !exerciseStartedRef.current
     ) {
-      video?.pause();
       if (!pushupCalibrationSuccessfulRef.current) {
         uploadedPushupPlaybackRequestedRef.current = true;
         setVideoExportStatus(
-          'Preparando el cuerpo. El video comenzará desde el inicio cuando esté listo.',
+          'Reproduciendo el video mientras se calibra. El análisis completo comenzará desde el inicio.',
         );
+        scheduleNextFrame();
         return;
       }
+      video?.pause();
       void startUploadedPushupPlayback();
       return;
     }
@@ -10735,8 +10736,8 @@ function Home() {
       const video = videoRef.current;
       if (!video) return;
 
-      // En flexiones subidas, el evento play conserva la calibración pausada
-      // y solo inicia el análisis cuando el cuerpo ya quedó fijado.
+      // En flexiones subidas, permite reproducir mientras la calibración
+      // continúa en paralelo; el análisis completo se reinicia desde el inicio.
       if (
         selectedExerciseRef.current === 'flexiones'
         && uploadedPushupPreflightRef.current
@@ -10744,8 +10745,13 @@ function Home() {
         if (!pushupCalibrationSuccessfulRef.current) {
           uploadedPushupPlaybackRequestedRef.current = true;
           setVideoExportStatus(
-            'Preparando el cuerpo. El video comenzará desde el inicio cuando esté listo.',
+            'Reproduciendo el video mientras se calibra. El análisis completo comenzará desde el inicio.',
           );
+          void video.play().catch(() => {
+            setVideoExportStatus(
+              'No se pudo reproducir el video. Pulsa Reproducir video para intentar de nuevo.',
+            );
+          });
           return;
         }
         void startUploadedPushupPlayback();
