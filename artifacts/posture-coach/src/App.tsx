@@ -7913,8 +7913,6 @@ function Home() {
   const [inputMode, setInputMode] = useState<'camera' | 'video'>('camera');
   const inputModeRef = useRef<'camera' | 'video'>('camera');
   const uploadedPushupPreflightRef = useRef(false);
-  const uploadedPushupPlaybackRequestedRef = useRef(false);
-  const startUploadedPushupPlaybackRef = useRef<(() => Promise<void>) | null>(null);
   const [uploadedVideoName, setUploadedVideoName] = useState('');
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
   const processedVideoUrlRef = useRef<string | null>(null);
@@ -8245,7 +8243,6 @@ function Home() {
   const stopResources = useCallback(() => {
     activeRef.current = false;
     uploadedPushupPreflightRef.current = false;
-    uploadedPushupPlaybackRequestedRef.current = false;
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -9106,10 +9103,6 @@ function Home() {
               setVideoExportStatus(
                 'Cuerpo detectado y fijado. Pulsa Reproducir video para analizar desde el inicio.',
               );
-              if (uploadedPushupPlaybackRequestedRef.current) {
-                uploadedPushupPlaybackRequestedRef.current = false;
-                void startUploadedPushupPlaybackRef.current?.();
-              }
             } else {
               updatePushupPreparationCountdown(
                 Math.ceil(PUSHUP_PREPARATION_COUNTDOWN_MS / 1000),
@@ -10283,7 +10276,6 @@ function Home() {
       return;
     }
 
-    uploadedPushupPlaybackRequestedRef.current = false;
     video.pause();
     // El diagnóstico de reproducción no debe incluir los frames de calibración
     // que se analizaron mientras el video estaba pausado.
@@ -10338,8 +10330,6 @@ function Home() {
     updatePushupPreparationCountdown,
     updatePushupPreparationStage,
   ]);
-  startUploadedPushupPlaybackRef.current = startUploadedPushupPlayback;
-
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video' || !activeRef.current) return;
     const video = videoRef.current;
@@ -10348,15 +10338,13 @@ function Home() {
       && uploadedPushupPreflightRef.current
       && !exerciseStartedRef.current
     ) {
+      video?.pause();
       if (!pushupCalibrationSuccessfulRef.current) {
-        uploadedPushupPlaybackRequestedRef.current = true;
         setVideoExportStatus(
-          'Reproduciendo el video mientras se calibra. El análisis completo comenzará desde el inicio.',
+          'Espera a que termine la calibración antes de reproducir el video.',
         );
-        scheduleNextFrame();
         return;
       }
-      video?.pause();
       void startUploadedPushupPlayback();
       return;
     }
@@ -10736,22 +10724,16 @@ function Home() {
       const video = videoRef.current;
       if (!video) return;
 
-      // En flexiones subidas, permite reproducir mientras la calibración
-      // continúa en paralelo; el análisis completo se reinicia desde el inicio.
+      // En flexiones subidas, espera a que la calibración termine antes
+      // de iniciar el análisis completo desde el principio.
       if (
         selectedExerciseRef.current === 'flexiones'
         && uploadedPushupPreflightRef.current
       ) {
         if (!pushupCalibrationSuccessfulRef.current) {
-          uploadedPushupPlaybackRequestedRef.current = true;
           setVideoExportStatus(
-            'Reproduciendo el video mientras se calibra. El análisis completo comenzará desde el inicio.',
+            'Espera a que termine la calibración antes de reproducir el video.',
           );
-          void video.play().catch(() => {
-            setVideoExportStatus(
-              'No se pudo reproducir el video. Pulsa Reproducir video para intentar de nuevo.',
-            );
-          });
           return;
         }
         void startUploadedPushupPlayback();
