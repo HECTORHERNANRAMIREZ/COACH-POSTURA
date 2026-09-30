@@ -2659,8 +2659,18 @@ function advanceExerciseRepTracker(
       const hasReturnedFromEnd = config.direction === 'decrease'
         ? smoothedAngle > config.endMaxAngle
         : smoothedAngle < config.endMinAngle;
+      const hasReturnedPastActivation = config.direction === 'decrease'
+        ? smoothedAngle >= config.activationAngle
+        : smoothedAngle <= config.activationAngle;
 
-      if (hasReturnedFromEnd && isAtStart) {
+      if (
+        hasReturnedFromEnd
+        && isAtStart
+        && (
+          config.countReturnWithoutEndAsIncorrect !== true
+          || hasReturnedPastActivation
+        )
+      ) {
         const repetitionWasCorrect = nextTracker.currentRepCorrect && techniqueValid;
         nextTracker.phase = 'inicio';
         if (config.countOnlyWhenCorrect === true && !repetitionWasCorrect) {
