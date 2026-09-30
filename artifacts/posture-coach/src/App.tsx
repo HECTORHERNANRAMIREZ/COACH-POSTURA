@@ -10572,9 +10572,13 @@ function Home() {
       video.playbackRate = 1;
 
       const seekAndWait = async (timeSeconds: number) => {
+        let seekMs = 0;
+        let firstRafMs = 0;
+        let secondRafMs = 0;
         if (Math.abs(video.currentTime - timeSeconds) > 0.01) {
           await new Promise<void>((resolve, reject) => {
             let settled = false;
+            const seekStartedAt = performance.now();
             const cleanup = () => {
               window.clearTimeout(timeoutId);
               video.removeEventListener('seeked', finish);
@@ -10582,6 +10586,7 @@ function Home() {
             const finish = () => {
               if (settled) return;
               settled = true;
+              seekMs = performance.now() - seekStartedAt;
               cleanup();
               resolve();
             };
@@ -10604,12 +10609,31 @@ function Home() {
           });
         }
         await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          const firstRafStartedAt = performance.now();
+          requestAnimationFrame(() => {
+            firstRafMs = performance.now() - firstRafStartedAt;
+            const secondRafStartedAt = performance.now();
+            requestAnimationFrame(() => {
+              secondRafMs = performance.now() - secondRafStartedAt;
+              resolve();
+            });
+          });
         });
+        return { seekMs, firstRafMs, secondRafMs };
       };
 
       const sampleCount = Math.ceil(duration * UPLOADED_PUSHUP_ANALYSIS_FPS) + 1;
+      console.log(
+        `[analisis] inicio | duración video: ${duration.toFixed(2)} s`
+        + ` | resolución: ${video.videoWidth} x ${video.videoHeight}`
+        + ` | muestras totales: ${sampleCount}`,
+      );
       let lastProgress = -1;
+      let timingSampleCount = 0;
+      let seekMsInBatch = 0;
+      let firstRafMsInBatch = 0;
+      let secondRafMsInBatch = 0;
+      let processFrameMsInBatch = 0;
       for (let index = 0; index < sampleCount; index += 1) {
         if (
           generation !== uploadedPushupAnalysisGenerationRef.current
@@ -10621,16 +10645,46 @@ function Home() {
           Math.max(0, duration - 0.001),
           index / UPLOADED_PUSHUP_ANALYSIS_FPS,
         );
-        await seekAndWait(targetTime);
+        const seekTimings = await seekAndWait(targetTime);
         if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
         processingFrameRef.current = true;
+        let processFrameMs = 0;
         try {
           const analysisTimestamp = Number.isFinite(lastDetectorTimestampRef.current)
             ? lastDetectorTimestampRef.current + 1000 / UPLOADED_PUSHUP_ANALYSIS_FPS
             : performance.now();
+          const processFrameStartedAt = performance.now();
           await processFrame(analysisTimestamp);
+          processFrameMs = performance.now() - processFrameStartedAt;
         } finally {
           processingFrameRef.current = false;
+        }
+        timingSampleCount += 1;
+        seekMsInBatch += seekTimings.seekMs;
+        firstRafMsInBatch += seekTimings.firstRafMs;
+        secondRafMsInBatch += seekTimings.secondRafMs;
+        processFrameMsInBatch += processFrameMs;
+        if (timingSampleCount === 10) {
+          const detector = detectorRef.current;
+          const detectorThread = detector?.detectForVideoAsync
+            ? 'worker'
+            : 'hilo principal';
+          const average = (totalMs: number) => (totalMs / timingSampleCount).toFixed(1);
+          console.log(
+            `[analisis] muestras: ${index + 1}/${sampleCount}`
+            + ` | seek ms: ${average(seekMsInBatch)}`
+            + ` | rAF ms: ${average(firstRafMsInBatch + secondRafMsInBatch)}`
+            + ` (1: ${average(firstRafMsInBatch)}, 2: ${average(secondRafMsInBatch)})`
+            + ` | processFrame ms: ${average(processFrameMsInBatch)}`
+            + ` | detector: ${detectorThread}, modelo ${detector?.activeModel ?? 'desconocido'}`
+            + `, delegate ${detector?.activeDelegate ?? 'desconocido'}`
+            + ` | document.visibilityState: ${document.visibilityState}`,
+          );
+          timingSampleCount = 0;
+          seekMsInBatch = 0;
+          firstRafMsInBatch = 0;
+          secondRafMsInBatch = 0;
+          processFrameMsInBatch = 0;
         }
         const progress = Math.min(100, Math.floor(((index + 1) / sampleCount) * 100));
         if (progress !== lastProgress) {
