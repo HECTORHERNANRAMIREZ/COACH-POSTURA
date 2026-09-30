@@ -3,8 +3,8 @@ name: Uploaded video playback
 description: Performance constraint for pose analysis of uploaded exercise videos.
 ---
 
-Uploaded exercise videos must keep normal playback independent from pose inference. Synchronous pose detection on every source frame can block the browser's main thread and make the video appear slow; analyze a resized detector frame at a bounded cadence and prefer the faster model for uploaded clips. Keep the export canvas below 4K unless full source resolution is explicitly required.
+Uploaded exercise videos must keep normal playback independent from pose inference. Run pose detection in a dedicated worker so synchronous MediaPipe inference cannot block playback or rendering on the main thread. Keep analysis bounded, send resized transferable frames, and avoid redundant processed-canvas draws.
 
-**Why:** The diagnostic buffer showed many repeated video timestamps while heavy per-frame inference was running, so the player advanced much more slowly than the source video. A supplied clip was 3840×2160, which also made full-resolution canvas capture unnecessarily expensive.
+**Why:** A later diagnostic advanced at nearly real-time wall-clock speed but provided only about 5.7 pose readings per second, indicating that main-thread inference and repeated canvas composition could still cause visual stutter and miss movement phases even after analysis was throttled.
 
-**How to apply:** Keep uploaded-video analysis on a bounded cadence (currently 12 readings per second), resize the detector input to about 1280×720, and capture the processed output around 1920×1080. Do not duplicate full-resolution canvas work on skipped source frames. Live camera analysis can retain its separate higher-fidelity path.
+**How to apply:** For uploaded clips, initialize the faster full model in a worker, transfer detector-sized frames around 1280×720, and cap analysis at 12 readings per second. Keep processed recording output around 1920×1080, capture it independently of inference, and do not composite it twice for one source frame. If worker initialization fails, surface the error rather than silently moving inference back onto the playback thread. Live camera analysis can retain its separate higher-fidelity path.

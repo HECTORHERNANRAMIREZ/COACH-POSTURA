@@ -49,14 +49,19 @@ export type Pose = {
   timestamp: number;
 };
 
-export type PoseVideoSource = HTMLVideoElement | HTMLCanvasElement;
+export type PoseVideoSource = HTMLVideoElement | HTMLCanvasElement | ImageBitmap;
 
 export type PoseDetector = {
-  detectForVideo: (
+  detectForVideo?: (
     source: PoseVideoSource,
     timestamp: number,
     outputSize?: { width: number; height: number },
   ) => Pose | null;
+  detectForVideoAsync?: (
+    source: PoseVideoSource,
+    timestamp: number,
+    outputSize?: { width: number; height: number },
+  ) => Promise<Pose | null>;
   close: () => void;
   activeModel?: PoseModel;
   activeDelegate?: PoseDelegate;
@@ -128,6 +133,31 @@ export type CreatePoseDetectorOptions = {
   model?: PoseModel;
   delegate?: PoseDelegate;
 };
+
+export type PoseDetectorWorkerRequest =
+  | {
+      type: 'initialize';
+      id: number;
+      options: CreatePoseDetectorOptions;
+    }
+  | {
+      type: 'detect';
+      id: number;
+      bitmap: ImageBitmap;
+      timestamp: number;
+      outputSize?: { width: number; height: number };
+    }
+  | { type: 'close' };
+
+export type PoseDetectorWorkerResponse =
+  | {
+      type: 'ready';
+      id: number;
+      activeModel?: PoseModel;
+      activeDelegate?: PoseDelegate;
+    }
+  | { type: 'pose'; id: number; pose: Pose | null }
+  | { type: 'error'; id: number; message: string };
 
 type DetectorCandidate = {
   model: PoseModel;
@@ -252,8 +282,8 @@ export async function createPoseDetector(
     activeModel: activeCandidate.model,
     activeDelegate: activeCandidate.delegate,
     detectForVideo(source, timestamp, outputSize) {
-      const sourceWidth = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
-      const sourceHeight = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
+      const sourceWidth = 'videoWidth' in source ? source.videoWidth : source.width;
+      const sourceHeight = 'videoHeight' in source ? source.videoHeight : source.height;
       if (!sourceWidth || !sourceHeight) return null;
       if (closed) return null;
       const safeTimestamp = Math.max(timestamp, lastTimestamp + 0.001);

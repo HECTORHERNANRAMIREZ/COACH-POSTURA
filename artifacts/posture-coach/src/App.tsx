@@ -111,6 +111,7 @@ import {
   type PosePoint,
   type PoseVideoSource,
 } from '@/pose3d';
+import { createPoseWorkerDetector } from '@/pose3d-worker-client';
 import {
   createBoneConstraintFilter,
   setDebugBoneConstraintsEnabled,
@@ -8591,11 +8592,21 @@ function Home() {
       );
       lastDetectorTimestampRef.current = frameTimestamp;
       const detectorSource = prepareDetectorFrame(video);
-      const detectedResult = detector.detectForVideo(
-        detectorSource,
-        frameTimestamp,
-        { width: video.videoWidth, height: video.videoHeight },
-      );
+      const outputSize = { width: video.videoWidth, height: video.videoHeight };
+      const detectedResult = detector.detectForVideoAsync
+        ? await detector.detectForVideoAsync(
+            detectorSource,
+            frameTimestamp,
+            outputSize,
+          )
+        : detector.detectForVideo?.(
+            detectorSource,
+            frameTimestamp,
+            outputSize,
+          );
+      if (detectedResult === undefined) {
+        throw new Error('El detector de pose no tiene un método de análisis disponible.');
+      }
       detectionFrameTimesRef.current = [
         ...detectionFrameTimesRef.current,
         now,
@@ -10143,10 +10154,10 @@ function Home() {
           );
         }
       }
-      if (inputModeRef.current === 'video') {
-        // El cuadro de salida se actualiza con la pose más reciente. La
-        // captura independiente de scheduleNextFrame mantiene el video a
-        // velocidad normal incluso si esta inferencia tarda más.
+      if (inputModeRef.current === 'video' && video.paused) {
+        // En la calibración pausada no hay cuadros de reproducción que capturen
+        // el overlay; durante la reproducción, scheduleNextFrame ya captura
+        // cada cuadro fuente y evita repetir el costoso repintado a 1080p aquí.
         captureUploadedVideoFrame();
       }
 
@@ -10377,11 +10388,11 @@ function Home() {
   const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
     try {
+      const detectorPromise = preferFastVideoModel
+        ? createPoseWorkerDetector({ model: 'full', delegate: 'GPU' })
+        : createPoseDetector({ model: 'heavy', delegate: 'GPU' });
       return await Promise.race([
-        createPoseDetector({
-          model: preferFastVideoModel ? 'full' : 'heavy',
-          delegate: 'GPU',
-        }),
+        detectorPromise,
         new Promise<never>((_, reject) => {
           timeoutId = window.setTimeout(() => {
             reject(new Error('El modelo de análisis tardó demasiado en cargar. Comprueba tu conexión e inténtalo de nuevo.'));
