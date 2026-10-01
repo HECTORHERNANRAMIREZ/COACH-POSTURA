@@ -8007,6 +8007,7 @@ function Home() {
   const uploadedVideoUrlRef = useRef<string | null>(null);
   const uploadedPushupAnalysisStartingRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
+  const uploadedPushupVideoEndedRef = useRef(false);
   const uploadedPushupFpsDiagnosticsRef = useRef({
     active: false,
     lastReportSourceTime: 0,
@@ -8175,6 +8176,13 @@ function Home() {
     uploadedPushupWristHeldException: boolean;
     elbowTorsoAngle: number | null;
     bodyLineAngle: number | null;
+  } | null>(null);
+  const uploadedPushupLastCompletedRepRef = useRef<{
+    videoTimeSeconds: { activation: number | null; return: number };
+    techniqueValid: { activation: boolean | null; return: boolean };
+    elbowTorsoAngle: { activation: number | null; return: number | null };
+    bodyLineAngle: { activation: number | null; return: number | null };
+    wasCorrect: boolean;
   } | null>(null);
   const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pullupCalibrationReadySinceRef = useRef<number | null>(null);
@@ -9868,6 +9876,25 @@ function Home() {
           );
           const repetitionWasCorrect = exerciseRepUpdate.tracker.goodRepetitions
             > previousExerciseRepTracker.goodRepetitions;
+          uploadedPushupLastCompletedRepRef.current = {
+            videoTimeSeconds: {
+              activation: activationSample?.videoTimeSeconds ?? null,
+              return: Number(video.currentTime.toFixed(3)),
+            },
+            techniqueValid: {
+              activation: activationSample?.techniqueValid ?? null,
+              return: pushupTechniqueValidForTracker,
+            },
+            elbowTorsoAngle: {
+              activation: activationSample?.elbowTorsoAngle ?? null,
+              return: returnTechniqueAngles.elbowTorsoAngle,
+            },
+            bodyLineAngle: {
+              activation: activationSample?.bodyLineAngle ?? null,
+              return: returnTechniqueAngles.bodyLineAngle,
+            },
+            wasCorrect: repetitionWasCorrect,
+          };
           console.log(
             `[rep-tecnica] ${JSON.stringify({
               videoTimeSeconds: {
@@ -10477,6 +10504,8 @@ function Home() {
     const isUploadedPushupPlayback = inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
       && !canInspectPausedPushupVideo;
+    const uploadedPushupPlaybackHasEnded = isUploadedPushupPlayback
+      && uploadedPushupVideoEndedRef.current;
     const analysisIntervalSeconds = isUploadedPushupPlayback
       ? UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS
       : UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS;
@@ -10486,6 +10515,7 @@ function Home() {
       || !video
       || (video.paused && !canInspectPausedPushupVideo)
       || video.ended
+      || uploadedPushupPlaybackHasEnded
       || animationFrameRef.current !== null
       || videoFrameCallbackRef.current !== null
     ) {
@@ -10493,7 +10523,10 @@ function Home() {
     }
 
     const runFrame = (timestamp: number, sourceTime: number) => {
-      if (!activeRef.current) return;
+      if (
+        !activeRef.current
+        || (isUploadedPushupPlayback && uploadedPushupVideoEndedRef.current)
+      ) return;
       const shouldAnalyzeVideoFrame = canInspectPausedPushupVideo
         ? timestamp - lastDetectorTimestampRef.current
           >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS * 1000
@@ -10661,6 +10694,8 @@ function Home() {
       // pausada. El video no se graba mientras el detector evalúa las muestras.
       diagnosticBufferRef.current = [];
       lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+      uploadedPushupVideoEndedRef.current = false;
+      uploadedPushupLastCompletedRepRef.current = null;
       const initialTracker = createExerciseRepTracker();
       if (uploadedPushupStartsAtBottomRef.current) {
         initialTracker.phase = 'final';
@@ -11220,11 +11255,44 @@ function Home() {
     void startCamera(exercise, false, file);
   }, [startCamera]);
 
-  const handleUploadedVideoEnded = useCallback(() => {
-    if (
+  const handleUploadedVideoEnded = useCallback(async () => {
+    const isUploadedStandardPushup = (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
-    ) {
+    );
+    if (isUploadedStandardPushup) {
+      if (uploadedPushupVideoEndedRef.current) return;
+      uploadedPushupVideoEndedRef.current = true;
+      const video = videoRef.current;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video?.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+
+      let waitTimedOut = false;
+      if (processingFrameRef.current) {
+        waitTimedOut = await new Promise<boolean>((resolve) => {
+          let pollingTimer: number | null = null;
+          const deadlineTimer = window.setTimeout(() => {
+            if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+            resolve(true);
+          }, 2_000);
+          const checkForFrameCompletion = () => {
+            if (!processingFrameRef.current) {
+              window.clearTimeout(deadlineTimer);
+              resolve(false);
+              return;
+            }
+            pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+          };
+          checkForFrameCompletion();
+        });
+      }
+
       const rawAngleFrames = diagnosticBufferRef.current.filter((frame) => (
         frame.exercise === 'flexiones'
         && frame.videoTimeSeconds !== null
@@ -11237,8 +11305,33 @@ function Home() {
       console.log(
         `[fin] fase=${tracker.phase}`
         + ` | total=${tracker.repetitions}`
-        + ` | último ángulo bruto=${formatUploadedPushupDiagnosticAngle(lastRawAngle)}`,
+        + ` | último ángulo bruto=${formatUploadedPushupDiagnosticAngle(lastRawAngle)}`
+        + ` | tope de espera alcanzado=${waitTimedOut}`,
       );
+      const lastCompletedRep = uploadedPushupLastCompletedRepRef.current;
+      if (
+        !waitTimedOut
+        && tracker.repetitions > 0
+        && lastCompletedRep
+        && !lastCompletedRep.wasCorrect
+      ) {
+        console.log(
+          `[rep-ultima] ${JSON.stringify({
+            videoTimeSeconds: lastCompletedRep.videoTimeSeconds,
+            techniqueValid: lastCompletedRep.techniqueValid,
+            elbowTorsoAngle: lastCompletedRep.elbowTorsoAngle,
+            bodyLineAngle: lastCompletedRep.bodyLineAngle,
+            repetitionWasCorrect: lastCompletedRep.wasCorrect,
+          })}`,
+        );
+        const reclassifiedTracker = {
+          ...tracker,
+          goodRepetitions: tracker.goodRepetitions + 1,
+        };
+        exerciseRepTrackerRef.current = reclassifiedTracker;
+        setExerciseGoodRepetitions(reclassifiedTracker.goodRepetitions);
+      }
+      uploadedPushupLastCompletedRepRef.current = null;
     }
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     if (videoRef.current) videoRef.current.controls = true;
