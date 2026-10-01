@@ -7974,6 +7974,10 @@ function getExercise(exerciseId: ExerciseId | null) {
   return exercises.find((exercise) => exercise.id === exerciseId) ?? null;
 }
 
+function formatUploadedPushupDiagnosticAngle(angle: number | null) {
+  return angle === null ? '—' : `${angle}°`;
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -7983,6 +7987,13 @@ function Home() {
   const uploadedVideoUrlRef = useRef<string | null>(null);
   const uploadedPushupAnalysisStartingRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
+  const uploadedPushupFpsDiagnosticsRef = useRef({
+    active: false,
+    lastReportSourceTime: 0,
+    analyzedSamples: 0,
+    detectorMs: 0,
+    busySkipped: 0,
+  });
   const detectorRef = useRef<PoseDetector | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const videoFrameCallbackRef = useRef<number | null>(null);
@@ -8336,6 +8347,7 @@ function Home() {
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
+    uploadedPushupFpsDiagnosticsRef.current.active = false;
     uploadedPushupAnalysisGenerationRef.current += 1;
     uploadedPushupAnalysisStartingRef.current = false;
     uploadedPushupPreflightRef.current = false;
@@ -8485,6 +8497,13 @@ function Home() {
       lastDetectorTimestampRef.current = frameTimestamp;
       const detectorSource = prepareDetectorFrame(video);
       const outputSize = { width: video.videoWidth, height: video.videoHeight };
+      const uploadedPushupFpsMetrics = uploadedPushupFpsDiagnosticsRef.current;
+      const measureUploadedPushupDetector = uploadedPushupFpsMetrics.active
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones';
+      const detectorStartedAt = measureUploadedPushupDetector
+        ? performance.now()
+        : 0;
       const detectedResult = detector.detectForVideoAsync
         ? await detector.detectForVideoAsync(
             detectorSource,
@@ -8498,6 +8517,10 @@ function Home() {
           );
       if (detectedResult === undefined) {
         throw new Error('El detector de pose no tiene un método de análisis disponible.');
+      }
+      if (measureUploadedPushupDetector && uploadedPushupFpsMetrics.active) {
+        uploadedPushupFpsMetrics.analyzedSamples += 1;
+        uploadedPushupFpsMetrics.detectorMs += performance.now() - detectorStartedAt;
       }
       detectionFrameTimesRef.current = [
         ...detectionFrameTimesRef.current,
@@ -9686,8 +9709,9 @@ function Home() {
                 && selectedExerciseForFrame === 'flexiones',
             }
           : repetitionConfig;
+        const previousExerciseRepTracker = exerciseRepTrackerRef.current;
         const exerciseRepUpdate = advanceExerciseRepTracker(
-          exerciseRepTrackerRef.current,
+          previousExerciseRepTracker,
           repetitionAngle,
           trackerConfig,
           isPushupExercise
@@ -9703,6 +9727,27 @@ function Home() {
                 : true,
         );
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones'
+          && (
+            exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
+            || exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
+          )
+        ) {
+          const postBottomRawPeak = exerciseRepUpdate.tracker.postBottomRawSamples.length
+            ? Math.max(...exerciseRepUpdate.tracker.postBottomRawSamples)
+            : null;
+          console.log(
+            `[rep-event] video=${video.currentTime.toFixed(3)} s`
+            + ` | fase anterior=${previousExerciseRepTracker.phase}`
+            + ` | fase nueva=${exerciseRepUpdate.tracker.phase}`
+            + ` | ángulo bruto=${formatUploadedPushupDiagnosticAngle(repetitionAngle)}`
+            + ` | ángulo suavizado=${formatUploadedPushupDiagnosticAngle(exerciseRepUpdate.smoothedAngle)}`
+            + ` | máx post-fondo=${formatUploadedPushupDiagnosticAngle(postBottomRawPeak)}`
+            + ` | fondo detectado=${repetitionAngle >= 70 && repetitionAngle <= 105}`,
+          );
+        }
         setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
         setExerciseGoodRepetitions(exerciseRepUpdate.tracker.goodRepetitions);
         setExerciseRepPhase(exerciseRepUpdate.tracker.phase);
@@ -10159,6 +10204,33 @@ function Home() {
     updatePushupPreparationStage,
   ]);
 
+  const logUploadedPushupFpsDiagnostics = useCallback((sourceTime: number) => {
+    const metrics = uploadedPushupFpsDiagnosticsRef.current;
+    if (!metrics.active) return;
+    if (sourceTime < metrics.lastReportSourceTime) {
+      metrics.lastReportSourceTime = sourceTime;
+      metrics.analyzedSamples = 0;
+      metrics.detectorMs = 0;
+      metrics.busySkipped = 0;
+      return;
+    }
+    const elapsedVideoSeconds = sourceTime - metrics.lastReportSourceTime;
+    if (elapsedVideoSeconds < 2) return;
+    const samples = metrics.analyzedSamples;
+    const averageDetectorMs = samples > 0
+      ? (metrics.detectorMs / samples).toFixed(1)
+      : '0.0';
+    console.log(
+      `[fps] ${(samples / elapsedVideoSeconds).toFixed(1)} muestras por segundo de video`
+      + ` | ${metrics.busySkipped} cuadros omitidos`
+      + ` | detección media ${averageDetectorMs} ms`,
+    );
+    metrics.lastReportSourceTime = sourceTime;
+    metrics.analyzedSamples = 0;
+    metrics.detectorMs = 0;
+    metrics.busySkipped = 0;
+  }, []);
+
   const scheduleNextFrame = useCallback(() => {
     const video = videoRef.current;
     const canInspectPausedPushupVideo = Boolean(
@@ -10195,10 +10267,14 @@ function Home() {
             >= analysisIntervalSeconds
           || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
       if (!shouldAnalyzeVideoFrame) {
+        logUploadedPushupFpsDiagnostics(sourceTime);
         if (activeRef.current) scheduleNextFrame();
         return;
       }
       if (processingFrameRef.current) {
+        const metrics = uploadedPushupFpsDiagnosticsRef.current;
+        if (metrics.active) metrics.busySkipped += 1;
+        logUploadedPushupFpsDiagnostics(sourceTime);
         if (activeRef.current) scheduleNextFrame();
         return;
       }
@@ -10209,6 +10285,7 @@ function Home() {
       void processFrame(timestamp).finally(() => {
         processingFrameRef.current = false;
       });
+      logUploadedPushupFpsDiagnostics(sourceTime);
       if (activeRef.current) scheduleNextFrame();
     };
 
@@ -10226,7 +10303,82 @@ function Home() {
       animationFrameRef.current = null;
       runFrame(timestamp, video.currentTime);
     });
-  }, [processFrame]);
+  }, [logUploadedPushupFpsDiagnostics, processFrame]);
+
+  useEffect(() => {
+    const logUploadedPushupRepDiagnostics = () => {
+      const video = videoRef.current;
+      if (
+        inputModeRef.current !== 'video'
+        || selectedExerciseRef.current !== 'flexiones'
+        || !video
+        || video.paused
+        || video.ended
+      ) {
+        return;
+      }
+
+      const now = performance.now();
+      const recentFrames = diagnosticBufferRef.current.filter((frame) => (
+        frame.exercise === 'flexiones'
+        && frame.videoTimeSeconds !== null
+        && frame.timestamp <= now
+        && now - frame.timestamp <= 1000
+      ));
+      const currentFrame = recentFrames[recentFrames.length - 1];
+      const rawAngles = recentFrames
+        .map((frame) => frame.measurements.repetitionAngle)
+        .filter((angle): angle is number => angle !== null);
+      const trackerInputAngles = diagnosticBufferRef.current
+        .filter((frame) => (
+          frame.exercise === 'flexiones'
+          && frame.repetitionFrameReady
+          && frame.measurements.repetitionAngle !== null
+        ))
+        .slice(-3)
+        .map((frame) => frame.measurements.repetitionAngle)
+        .filter((angle): angle is number => angle !== null);
+      const tracker = exerciseRepTrackerRef.current;
+      const readyCount = recentFrames.filter((frame) => frame.repetitionFrameReady).length;
+      const postBottomRawPeak = tracker.postBottomRawSamples.length
+        ? Math.max(...tracker.postBottomRawSamples)
+        : null;
+      const blockingReasonCounts = new Map<string, number>();
+      recentFrames
+        .filter((frame) => !frame.repetitionFrameReady)
+        .forEach((frame) => {
+          const reasons = frame.repetitionBlockingReasons.length
+            ? frame.repetitionBlockingReasons
+            : ['sin razón detallada'];
+          reasons.forEach((reason) => {
+            blockingReasonCounts.set(reason, (blockingReasonCounts.get(reason) ?? 0) + 1);
+          });
+        });
+      const blockingReasons = [...blockingReasonCounts.entries()]
+        .sort(([firstReason, firstCount], [secondReason, secondCount]) => (
+          secondCount - firstCount || firstReason.localeCompare(secondReason)
+        ))
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(', ') || 'ninguna';
+      const formatAngle = formatUploadedPushupDiagnosticAngle;
+
+      console.log(
+        `[rep] fase=${tracker.phase}`
+        + ` | total=${tracker.repetitions}`
+        + ` | codo suavizado=${formatAngle(median(trackerInputAngles))}`
+        + ` | máx bruto post-fondo=${formatAngle(postBottomRawPeak)}`
+        + ` | codo bruto actual=${formatAngle(currentFrame?.measurements.repetitionAngle ?? null)}`
+        + ` | codo bruto min/max 1s=${formatAngle(rawAngles.length ? Math.min(...rawAngles) : null)}`
+        + `/${formatAngle(rawAngles.length ? Math.max(...rawAngles) : null)}`
+        + ` | repetitionFrameReady=${readyCount} true/${recentFrames.length - readyCount} false`
+        + ` | bloqueos 1s=${blockingReasons}`
+        + ` | muestras/s=${recentFrames.length}`,
+      );
+    };
+
+    const intervalId = window.setInterval(logUploadedPushupRepDiagnostics, 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const startUploadedPushupPlayback = useCallback(async () => {
     const video = videoRef.current;
@@ -10315,6 +10467,12 @@ function Home() {
       }
       if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
       uploadedPushupAnalysisStartingRef.current = false;
+      const fpsMetrics = uploadedPushupFpsDiagnosticsRef.current;
+      fpsMetrics.active = true;
+      fpsMetrics.lastReportSourceTime = video.currentTime;
+      fpsMetrics.analyzedSamples = 0;
+      fpsMetrics.detectorMs = 0;
+      fpsMetrics.busySkipped = 0;
       await video.play();
       if (
         generation === uploadedPushupAnalysisGenerationRef.current
@@ -10325,6 +10483,7 @@ function Home() {
       return;
     } catch {
       if (generation === uploadedPushupAnalysisGenerationRef.current) {
+        uploadedPushupFpsDiagnosticsRef.current.active = false;
         uploadedPushupAnalysisStartingRef.current = false;
         activeRef.current = false;
         exerciseStartedRef.current = false;
@@ -10827,6 +10986,26 @@ function Home() {
   }, [startCamera]);
 
   const handleUploadedVideoEnded = useCallback(() => {
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones'
+    ) {
+      const rawAngleFrames = diagnosticBufferRef.current.filter((frame) => (
+        frame.exercise === 'flexiones'
+        && frame.videoTimeSeconds !== null
+        && frame.measurements.repetitionAngle !== null
+      ));
+      const lastRawAngle = rawAngleFrames.length
+        ? rawAngleFrames[rawAngleFrames.length - 1].measurements.repetitionAngle
+        : null;
+      const tracker = exerciseRepTrackerRef.current;
+      console.log(
+        `[fin] fase=${tracker.phase}`
+        + ` | total=${tracker.repetitions}`
+        + ` | último ángulo bruto=${formatUploadedPushupDiagnosticAngle(lastRawAngle)}`,
+      );
+    }
+    uploadedPushupFpsDiagnosticsRef.current.active = false;
     if (videoRef.current) videoRef.current.controls = true;
     activeRef.current = false;
     if (animationFrameRef.current !== null) {
