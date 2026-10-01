@@ -666,6 +666,7 @@ type ExerciseRepConfig = {
   countReturnWithoutEndAsIncorrect?: boolean;
   requireReturnPastActivation?: boolean;
   rawAngleCanReachEnd?: boolean;
+  postBottomRawPeakForReturn?: boolean;
   smoothingSamples?: number;
   techniqueMustHoldThroughout?: boolean;
 };
@@ -675,6 +676,7 @@ type ExerciseRepTracker = {
   goodRepetitions: number;
   endpointAngle: number | null;
   samples: number[];
+  postBottomRawSamples: number[];
   event: 'valid' | null;
   currentRepCorrect: boolean;
 };
@@ -2425,6 +2427,7 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     countReturnWithoutEndAsIncorrect: false,
     requireReturnPastActivation: true,
     rawAngleCanReachEnd: true,
+    postBottomRawPeakForReturn: true,
     smoothingSamples: PUSHUP_SMOOTHING_SAMPLES,
     techniqueMustHoldThroughout: false,
   },
@@ -2692,6 +2695,7 @@ function createExerciseRepTracker(): ExerciseRepTracker {
     goodRepetitions: 0,
     endpointAngle: null,
     samples: [],
+    postBottomRawSamples: [],
     event: null,
     currentRepCorrect: false,
   };
@@ -2719,9 +2723,17 @@ function advanceExerciseRepTracker(
     -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
   );
   const smoothedAngle = median(samples) ?? rawAngle;
+  const postBottomRawSamples = config.postBottomRawPeakForReturn
+    && tracker.phase === 'final'
+    ? [...tracker.postBottomRawSamples, rawAngle].slice(-PUSHUP_SMOOTHING_SAMPLES)
+    : tracker.postBottomRawSamples;
+  const postBottomRawPeak = postBottomRawSamples.length
+    ? Math.max(...postBottomRawSamples)
+    : null;
   const nextTracker: ExerciseRepTracker = {
     ...tracker,
     samples,
+    postBottomRawSamples,
     event: null,
   };
   const isAtStart = isWithinAngle(
@@ -2763,6 +2775,9 @@ function advanceExerciseRepTracker(
   } else if (nextTracker.phase === 'inicio') {
     if (hasActivated) {
       nextTracker.phase = rawIsAtEnd ? 'final' : 'en movimiento';
+      if (config.postBottomRawPeakForReturn && rawIsAtEnd) {
+        nextTracker.postBottomRawSamples = [];
+      }
       nextTracker.endpointAngle = rawIsAtEnd ? rawAngle : smoothedAngle;
       nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
         ? techniqueValid
@@ -2785,6 +2800,9 @@ function advanceExerciseRepTracker(
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
+      if (config.postBottomRawPeakForReturn) {
+        nextTracker.postBottomRawSamples = [];
+      }
       // Una lectura intermedia aislada puede perder un punto mientras el
       // cuerpo sigue visible. Para flexiones de video se evalúa la técnica en
       // el fondo y al regresar, no se invalida toda la repetición por ese
@@ -2825,9 +2843,14 @@ function advanceExerciseRepTracker(
       const hasReturnedFromEnd = config.direction === 'decrease'
         ? smoothedAngle > config.endMaxAngle
         : smoothedAngle < config.endMinAngle;
+      const returnAngleForActivation = config.postBottomRawPeakForReturn
+        ? postBottomRawPeak
+        : smoothedAngle;
       const hasReturnedPastActivation = config.direction === 'decrease'
-        ? smoothedAngle >= config.activationAngle
-        : smoothedAngle <= config.activationAngle;
+        ? returnAngleForActivation !== null
+          && returnAngleForActivation >= config.activationAngle
+        : returnAngleForActivation !== null
+          && returnAngleForActivation <= config.activationAngle;
       const requiresReturnPastActivation = config.requireReturnPastActivation === true
         || config.countReturnWithoutEndAsIncorrect === true;
 
@@ -9833,10 +9856,17 @@ function Home() {
         && (isPushupExercise || repetitionTechniqueReady)
         && !frameMeasurementBlocked
       ) {
+        const trackerConfig = repetitionConfig.postBottomRawPeakForReturn
+          ? {
+              ...repetitionConfig,
+              postBottomRawPeakForReturn: inputModeRef.current === 'video'
+                && selectedExerciseForFrame === 'flexiones',
+            }
+          : repetitionConfig;
         const exerciseRepUpdate = advanceExerciseRepTracker(
           exerciseRepTrackerRef.current,
           repetitionAngle,
-          repetitionConfig,
+          trackerConfig,
           isPushupExercise
             ? pushupTechniqueReady
             : selectedExerciseForFrame === 'jalon'
@@ -10469,6 +10499,9 @@ function Home() {
         .filter((angle): angle is number => angle !== null);
       const tracker = exerciseRepTrackerRef.current;
       const readyCount = recentFrames.filter((frame) => frame.repetitionFrameReady).length;
+      const postBottomRawPeak = tracker.postBottomRawSamples.length
+        ? Math.max(...tracker.postBottomRawSamples)
+        : null;
       const blockingReasonCounts = new Map<string, number>();
       recentFrames
         .filter((frame) => !frame.repetitionFrameReady)
@@ -10496,6 +10529,7 @@ function Home() {
         + ` | correctas=${tracker.goodRepetitions}`
         + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
         + ` | codo suavizado=${formatAngle(median(trackerInputAngles))}`
+        + ` | máx bruto post-fondo=${formatAngle(postBottomRawPeak)}`
         + ` | codo bruto actual=${formatAngle(currentFrame?.measurements.repetitionAngle ?? null)}`
         + ` | codo bruto min/max 1s=${formatAngle(rawAngles.length ? Math.min(...rawAngles) : null)}`
         + `/${formatAngle(rawAngles.length ? Math.max(...rawAngles) : null)}`
