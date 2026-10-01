@@ -203,6 +203,7 @@ type UploadedPushupLiveMetrics = {
   observer: PerformanceObserver | null;
 };
 let uploadedPushupLiveMetrics: UploadedPushupLiveMetrics | null = null;
+let lastUploadedPushupHudLogAtMs = Number.NEGATIVE_INFINITY;
 
 function recordUploadedPushupLiveDuration(
   key: UploadedPushupLiveTimingKey,
@@ -8871,6 +8872,47 @@ function Home() {
           recordedCanvas.width,
           recordedCanvas.height,
         );
+      }
+      if (selectedExerciseRef.current === 'flexiones') {
+        const hudState = recordingHudStateRef.current;
+        const readings = hudState?.liveAngleReadings ?? [];
+        const jointReadings = [
+          'cadera',
+          'hombro',
+          'codo',
+          'muñeca',
+          'rodilla',
+          'tobillo',
+        ].map((joint) => {
+          const values = readings
+            .filter((reading) => reading.label.toLocaleLowerCase('es').includes(joint))
+            .map((reading) => reading.value === null
+              ? '—'
+              : `${reading.value}${reading.unit ?? '°'}`);
+          return `${joint}: ${values.length ? values.join('/') : '—'}`;
+        }).join(' | ');
+        const hudStateIsEmpty = !hudState || (
+          !hudState.exercise
+          && !hudState.hasEvaluationCounter
+          && hudState.correctRepetitions === 0
+          && hudState.incorrectRepetitions === 0
+          && readings.length === 0
+          && (hudState.dipJointReadings?.length ?? 0) === 0
+          && (hudState.pullupJointReadings?.length ?? 0) === 0
+        );
+        const now = performance.now();
+        if (now - lastUploadedPushupHudLogAtMs >= 1000) {
+          lastUploadedPushupHudLogAtMs = now;
+          console.log(
+            `[hud] hasEvaluationCounter=${hudState?.hasEvaluationCounter ?? 'null'}`
+            + ` | correctas=${hudState?.correctRepetitions ?? 'null'}`
+            + ` | incorrectas=${hudState?.incorrectRepetitions ?? 'null'}`
+            + ` | lecturas=${jointReadings}`
+            + ` | canvas=${recordedCanvas.width}x${recordedCanvas.height}`
+            + ` | ref nulo=${hudState == null}`
+            + ` | ref vacío=${hudStateIsEmpty}`,
+          );
+        }
       }
       drawVideoRecordingHud(
         recordedContext,
