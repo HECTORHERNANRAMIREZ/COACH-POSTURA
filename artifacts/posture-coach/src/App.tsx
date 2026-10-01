@@ -1989,6 +1989,8 @@ const PUSHUP_REP_START_MAX_ANGLE = 180;
 const PUSHUP_REP_ACTIVATION_ANGLE = 120;
 const PUSHUP_REP_END_MIN_ANGLE = 70;
 const PUSHUP_REP_END_MAX_ANGLE = 105;
+// Extremo ampliado solo para flexiones estándar analizadas desde video subido.
+const UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE = 112;
 const PUSHUP_SMOOTHING_SAMPLES = 3;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
@@ -9695,6 +9697,7 @@ function Home() {
       // TEMP-DIAGNOSTICO: reflejan la condición real y la llamada efectiva al tracker.
       let uploadedPushupTrackerGatePassed = false;
       let uploadedPushupTrackerWasCalled = false;
+      let uploadedPushupTrackerEndMaxAngle: number | null = null;
       if (
         exerciseStartedRef.current
         && !uploadedPushupAnalysisStartingRef.current
@@ -9710,7 +9713,11 @@ function Home() {
               pushupLockedMeasurementSideRef.current ?? measurementSide,
             )
             && repetitionAngle !== null
-            && isWithinAngle(repetitionAngle, PUSHUP_REP_END_MIN_ANGLE, PUSHUP_REP_END_MAX_ANGLE)
+            && isWithinAngle(
+              repetitionAngle,
+              PUSHUP_REP_END_MIN_ANGLE,
+              UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+            )
           )
         )
         && repetitionConfig
@@ -9722,10 +9729,15 @@ function Home() {
         const trackerConfig = repetitionConfig.postBottomRawPeakForReturn
           ? {
               ...repetitionConfig,
+              ...(inputModeRef.current === 'video'
+                && selectedExerciseForFrame === 'flexiones'
+                ? { endMaxAngle: UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE }
+                : {}),
               postBottomRawPeakForReturn: inputModeRef.current === 'video'
                 && selectedExerciseForFrame === 'flexiones',
             }
           : repetitionConfig;
+        uploadedPushupTrackerEndMaxAngle = trackerConfig.endMaxAngle;
         const previousExerciseRepTracker = exerciseRepTrackerRef.current;
         const exerciseRepUpdate = advanceExerciseRepTracker(
           previousExerciseRepTracker,
@@ -9829,6 +9841,8 @@ function Home() {
           `[fondo-gate] ${JSON.stringify({
             videoTimeSeconds: Number(video.currentTime.toFixed(3)),
             repetitionAngle,
+            endMaxAngleGate: UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+            endMaxAngleTracker: uploadedPushupTrackerEndMaxAngle,
             countFrameReady,
             frameCameraReady,
             hasFreshPose,
