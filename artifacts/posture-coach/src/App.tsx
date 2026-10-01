@@ -9168,7 +9168,24 @@ function Home() {
         : [];
       const repetitionFrameReady = Boolean(
         exerciseStartedRef.current
-        && countFrameReady
+        && (
+          countFrameReady
+          || (
+            inputModeRef.current === 'video'
+            && selectedExerciseForFrame === 'flexiones'
+            && frameCameraReady
+            && hasFreshPushupMeasurement(
+              pose?.keypoints,
+              pushupLockedMeasurementSideRef.current ?? measurementSide,
+            )
+            && repetitionAngle !== null
+            && isWithinAngle(
+              repetitionAngle,
+              PUSHUP_REP_END_MIN_ANGLE,
+              PUSHUP_REP_END_MAX_ANGLE,
+            )
+          )
+        )
         && repetitionConfig
         && repetitionAngle !== null
         && !frameMeasurementBlocked,
