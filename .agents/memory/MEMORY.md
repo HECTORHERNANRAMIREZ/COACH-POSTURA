@@ -1,5 +1,5 @@
 - [Push-up tracking locks](pushup-tracking-locks.md) — lock anatomical assignments after initial detection, while keeping landmark coordinates live.
-- [Pose continuity safety](pose-continuity.md) — anchored overlays must not become measurements; require fresh, camera-ready, stable frames after gaps or bilateral crossings.
+- [Pose continuity safety](pose-continuity.md) — retained landmarks stay display-only except the narrow uploaded-standard-push-up held-wrist tracker exception.
 - [Push-up technique calibration](pushup-technique-calibration.md) — judge the 3D elbow–torso reading with the empirically validated side-view range, not the old narrow screen-angle assumption.
 - [Paused push-up video calibration](paused-pushup-video-calibration.md) — calibrate uploaded clips before playback, then analyze from the beginning.
 - [Uploaded video playback](uploaded-video-playback.md) — separate push-up analysis from 1× rendering; keep other uploaded-video inference off the playback thread.

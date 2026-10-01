@@ -4138,6 +4138,24 @@ function hasFreshPushupMeasurement(
   ].every((index) => isFreshPullupMeasurementPoint(keypoints[index]));
 }
 
+function hasFreshPushupWristHeldExceptionMeasurement(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+
+  const indexes = sideKeypoints[side];
+  const wrist = keypoints[indexes.wrist];
+  return [
+    indexes.shoulder,
+    indexes.elbow,
+    indexes.hip,
+    indexes.ankle,
+  ].every((index) => isFreshPullupMeasurementPoint(keypoints[index]))
+    && isHeldPoint(wrist)
+    && (wrist?.score ?? 0) >= 0.8;
+}
+
 function getPushupCalibrationPoints(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
@@ -9694,6 +9712,52 @@ function Home() {
         && pallofTechniqueReady
         && dumbbellPressTechniqueReady
         && shoulderMachinePressTechniqueReady;
+      const uploadedPushupWristExceptionIndexes = measurementSide
+        ? sideKeypoints[measurementSide]
+        : null;
+      const uploadedPushupWristExceptionPoint = uploadedPushupWristExceptionIndexes
+        ? pose?.keypoints?.[uploadedPushupWristExceptionIndexes.wrist]
+        : undefined;
+      const uploadedPushupOtherTrackedPointHeld = getTrackedPointsForExercise(
+        'flexiones',
+        pose?.keypoints,
+        measurementSide,
+      ).some(({ point }) => (
+        point !== uploadedPushupWristExceptionPoint && isHeldPoint(point)
+      ));
+      const uploadedPushupWristIsOnlyLowConfidencePoint = Boolean(
+        isHeldPoint(uploadedPushupWristExceptionPoint)
+        && (uploadedPushupWristExceptionPoint?.score ?? 0) >= 0.8
+        && !uploadedPushupOtherTrackedPointHeld,
+      );
+      // El low-confidence global también marca la muñeca retenida. Para este
+      // único bypass se permite solo si es el único punto retenido del ejercicio.
+      const uploadedPushupWristHeldException = Boolean(
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones'
+        && frameCameraReady
+        && (
+          !frameLowConfidence
+          || uploadedPushupWristIsOnlyLowConfidencePoint
+        )
+        && hasFreshPose
+        && !effectiveViewBlocksFrame
+        && repetitionAngle !== null
+        && isWithinAngle(
+          repetitionAngle,
+          PUSHUP_REP_END_MIN_ANGLE,
+          UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+        )
+        && hasFreshPushupWristHeldExceptionMeasurement(
+          pose?.keypoints,
+          measurementSide,
+        )
+        && !uploadedPushupOtherTrackedPointHeld
+        && frameMeasurementBlocked
+        && pushupMeasurementBlocked
+        && !pullupMeasurementBlocked
+        && !hasFreshPushupMeasurement(pose?.keypoints, measurementSide)
+      );
       // TEMP-DIAGNOSTICO: reflejan la condición real y la llamada efectiva al tracker.
       let uploadedPushupTrackerGatePassed = false;
       let uploadedPushupTrackerWasCalled = false;
@@ -9719,11 +9783,12 @@ function Home() {
               UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
             )
           )
+          || uploadedPushupWristHeldException
         )
         && repetitionConfig
         && repetitionAngle !== null
         && (isPushupExercise || repetitionTechniqueReady)
-        && !frameMeasurementBlocked
+        && (!frameMeasurementBlocked || uploadedPushupWristHeldException)
       ) {
         uploadedPushupTrackerGatePassed = true;
         const trackerConfig = repetitionConfig.postBottomRawPeakForReturn
@@ -9847,6 +9912,7 @@ function Home() {
             frameCameraReady,
             hasFreshPose,
             frameMeasurementBlocked,
+            wristHeldException: uploadedPushupWristHeldException,
             stabilityFrames: stabilityFramesRef.current,
             hasFreshPushupMeasurement: hasFreshPushupMeasurement(
               pose?.keypoints,
