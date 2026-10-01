@@ -164,10 +164,10 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
-// Las flexiones subidas necesitan muestreo denso para no perder picos breves de repetición.
+// Las flexiones subidas usan más muestras por segundo de video en el fondo de cada repetición.
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
-const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.5;
+const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.35;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 // Número de frames usados para calcular la media móvil del FPS real del detector.
@@ -1990,7 +1990,7 @@ const PUSHUP_REP_ACTIVATION_ANGLE = 120;
 const PUSHUP_REP_END_MIN_ANGLE = 70;
 const PUSHUP_REP_END_MAX_ANGLE = 105;
 // Extremo ampliado solo para flexiones estándar analizadas desde video subido.
-const UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE = 112;
+const UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE = 118;
 const PUSHUP_SMOOTHING_SAMPLES = 3;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
