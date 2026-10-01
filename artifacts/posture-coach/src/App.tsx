@@ -172,7 +172,7 @@ const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 20;
 const UPLOADED_PUSHUP_OFFLINE_PREPASS = false;
-const UPLOADED_VIDEO_RECORDING_ENABLED = false;
+const UPLOADED_VIDEO_RECORDING_ENABLED = true;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 const RECORDED_VIDEO_MAX_WIDTH = 1920;
@@ -8605,8 +8605,17 @@ function Home() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     if (recordedCanvasRef.current) {
-      const recordedSize = selectedExerciseRef.current === 'flexiones'
-        ? { width: video.videoWidth, height: video.videoHeight }
+      const isUploadedPushupVideo = inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones';
+      const recordedSize = isUploadedPushupVideo
+        ? getContainedVideoSize(
+            video.videoWidth,
+            video.videoHeight,
+            1280,
+            720,
+          )
+        : selectedExerciseRef.current === 'flexiones'
+          ? { width: video.videoWidth, height: video.videoHeight }
         : getContainedVideoSize(
             video.videoWidth,
             video.videoHeight,
@@ -8697,14 +8706,21 @@ function Home() {
 
     try {
       const preservesPushupSourceQuality = selectedExerciseRef.current === 'flexiones';
+      const isUploadedPushupVideo = inputModeRef.current === 'video'
+        && preservesPushupSourceQuality;
       const pixelCount = canvas.width * canvas.height;
       const recorderOptions: MediaRecorderOptions | undefined = preservesPushupSourceQuality
         ? {
             ...(mimeType ? { mimeType } : {}),
-            videoBitsPerSecond: Math.max(
-              4_000_000,
-              Math.min(50_000_000, Math.round(pixelCount * 6.5)),
-            ),
+            videoBitsPerSecond: isUploadedPushupVideo
+              ? Math.min(
+                  5_000_000,
+                  Math.max(4_000_000, Math.round(pixelCount * 6.5)),
+                )
+              : Math.max(
+                  4_000_000,
+                  Math.min(50_000_000, Math.round(pixelCount * 6.5)),
+                ),
             audioBitsPerSecond: 192_000,
           }
         : mimeType
