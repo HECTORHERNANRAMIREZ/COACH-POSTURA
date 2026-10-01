@@ -8168,6 +8168,14 @@ function Home() {
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const uploadedPushupTechniqueActivationSampleRef = useRef<{
+    videoTimeSeconds: number;
+    techniqueValid: boolean;
+    pushupMeasurementBlocked: boolean;
+    uploadedPushupWristHeldException: boolean;
+    elbowTorsoAngle: number | null;
+    bodyLineAngle: number | null;
+  } | null>(null);
   const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
   const pullupCalibrationReadySinceRef = useRef<number | null>(null);
   const pullupCalibrationSuccessfulRef = useRef(false);
@@ -9827,6 +9835,70 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        const isUploadedStandardPushup = inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones';
+        const pushupActivationStarted = isUploadedStandardPushup
+          && previousExerciseRepTracker.phase === 'inicio'
+          && (
+            exerciseRepUpdate.tracker.phase === 'en movimiento'
+            || exerciseRepUpdate.tracker.phase === 'final'
+          );
+        if (pushupActivationStarted) {
+          const techniqueAngles = calculatePushupTechniqueAngles(
+            pose?.keypoints,
+            nextDominantSide,
+          );
+          uploadedPushupTechniqueActivationSampleRef.current = {
+            videoTimeSeconds: Number(video.currentTime.toFixed(3)),
+            techniqueValid: pushupTechniqueValidForTracker,
+            pushupMeasurementBlocked,
+            uploadedPushupWristHeldException,
+            elbowTorsoAngle: techniqueAngles.elbowTorsoAngle,
+            bodyLineAngle: techniqueAngles.bodyLineAngle,
+          };
+        }
+        if (
+          isUploadedStandardPushup
+          && exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
+        ) {
+          const activationSample = uploadedPushupTechniqueActivationSampleRef.current;
+          const returnTechniqueAngles = calculatePushupTechniqueAngles(
+            pose?.keypoints,
+            nextDominantSide,
+          );
+          const repetitionWasCorrect = exerciseRepUpdate.tracker.goodRepetitions
+            > previousExerciseRepTracker.goodRepetitions;
+          console.log(
+            `[rep-tecnica] ${JSON.stringify({
+              videoTimeSeconds: {
+                activation: activationSample?.videoTimeSeconds ?? null,
+                return: Number(video.currentTime.toFixed(3)),
+              },
+              techniqueValid: {
+                activation: activationSample?.techniqueValid ?? null,
+                return: pushupTechniqueValidForTracker,
+              },
+              pushupMeasurementBlocked: {
+                activation: activationSample?.pushupMeasurementBlocked ?? null,
+                return: pushupMeasurementBlocked,
+              },
+              uploadedPushupWristHeldException: {
+                activation: activationSample?.uploadedPushupWristHeldException ?? null,
+                return: uploadedPushupWristHeldException,
+              },
+              elbowTorsoAngle: {
+                activation: activationSample?.elbowTorsoAngle ?? null,
+                return: returnTechniqueAngles.elbowTorsoAngle,
+              },
+              bodyLineAngle: {
+                activation: activationSample?.bodyLineAngle ?? null,
+                return: returnTechniqueAngles.bodyLineAngle,
+              },
+              repetitionWasCorrect,
+            })}`,
+          );
+          uploadedPushupTechniqueActivationSampleRef.current = null;
+        }
         uploadedPushupTrackerWasCalled = true;
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         if (
