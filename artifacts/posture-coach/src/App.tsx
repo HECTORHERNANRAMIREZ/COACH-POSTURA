@@ -9758,6 +9758,13 @@ function Home() {
         && !pullupMeasurementBlocked
         && !hasFreshPushupMeasurement(pose?.keypoints, measurementSide)
       );
+      const pushupTechniqueValidForTracker = uploadedPushupWristHeldException
+        ? isPushupTechniqueValid(
+            pose?.keypoints,
+            nextDominantSide,
+            'regular',
+          )
+        : pushupTechniqueReady;
       // TEMP-DIAGNOSTICO: reflejan la condición real y la llamada efectiva al tracker.
       let uploadedPushupTrackerGatePassed = false;
       let uploadedPushupTrackerWasCalled = false;
@@ -9809,7 +9816,7 @@ function Home() {
           repetitionAngle,
           trackerConfig,
           isPushupExercise
-            ? pushupTechniqueReady
+            ? pushupTechniqueValidForTracker
             : selectedExerciseForFrame === 'jalon'
             ? pulldownTechniqueReady
             : selectedExerciseForFrame === 'press-pallof-polea-banda'
