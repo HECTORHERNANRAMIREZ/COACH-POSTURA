@@ -1,0 +1,27 @@
+[play] +0.9ms onPlay disparado | rama tomada en handleVideoPlay: calibración pendiente: pausa y retorno
+injected.js:37 [play] +59.6ms evento 'playing' recibido
+injected.js:37 [play] +3904.9ms onPlay disparado | rama tomada en handleVideoPlay: calibración pendiente: pausa y retorno
+injected.js:37 [play] +3905.7ms llamada extra a handleVideoPlay #2 | guarda/resultado: pushupCalibrationSuccessfulRef=false; video.pause()
+injected.js:37 [play] +3908.1ms evento 'playing' recibido
+injected.js:37 [play] +6754.8ms onPlay disparado | rama tomada en handleVideoPlay: calibración pendiente: pausa y retorno
+injected.js:37 [play] +6755.3ms llamada extra a handleVideoPlay #3 | guarda/resultado: pushupCalibrationSuccessfulRef=false; video.pause()
+injected.js:37 [play] +6755.9ms evento 'playing' recibido
+injected.js:37 [play] +8741.3ms onPlay disparado | rama tomada en handleVideoPlay: calibración pendiente: pausa y retorno
+injected.js:37 [play] +8741.7ms llamada extra a handleVideoPlay #4 | guarda/resultado: pushupCalibrationSuccessfulRef=false; video.pause()
+injected.js:37 [play] +8742.4ms evento 'playing' recibido
+injected.js:37 [play] +9424.4ms onPlay disparado | rama tomada en handleVideoPlay: calibración pendiente: pausa y retorno
+injected.js:37 [play] +9424.9ms llamada extra a handleVideoPlay #5 | guarda/resultado: pushupCalibrationSuccessfulRef=false; video.pause()
+injected.js:37 [play] +9425.5ms evento 'playing' recibido
+injected.js:37 [play] +10057.1ms onPlay disparado | rama tomada en handleVideoPlay: calibración lista: iniciar startUploadedPushupPlayback
+injected.js:37 [play] +10057.5ms llamada extra a handleVideoPlay #6 | guarda/resultado: se permite entrar en startUploadedPushupPlayback
+injected.js:37 [play] +10058.5ms entrada a startUploadedPushupPlayback
+injected.js:37 [play] +10060.0ms inicio de espera de processingFrameRef | ocupado=false
+injected.js:37 [play] +10060.9ms fin de la espera de processingFrameRef | 0.9 ms, 0 esperas RAF
+injected.js:37 [play] +10122.7ms evento 'playing' recibido
+injected.js:37 [play] +10185.2ms fin del seek | esperó el evento seeked o el límite de 1500 ms; currentTime=0.001 s; 123.1 ms
+injected.js:37 [play] +10196.3ms fin de beginVideoRecording | 10.8 ms; recorder=recording
+injected.js:37 [play] +10196.6ms llamada a video.play() iniciada
+injected.js:37 [play] +10251.0ms onPlay disparado | rama tomada en handleVideoPlay: activeRef=true: programar siguiente cuadro
+injected.js:37 [play] +10251.4ms llamada extra a handleVideoPlay #7 | guarda/resultado: sin guarda de bloqueo; llama a scheduleNextFrame()
+injected.js:37 [play] +10252.0ms evento 'playing' recibido
+injected.js:37 [play] +10252.4ms video.play() resuelto | 55.8 ms; paused=false; currentTime=0.005 s
