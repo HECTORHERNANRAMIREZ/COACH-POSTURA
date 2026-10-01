@@ -168,6 +168,9 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
+const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
+const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
+const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.5;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 // Número de frames usados para calcular la media móvil del FPS real del detector.
@@ -10355,6 +10358,12 @@ function Home() {
       && uploadedPushupPreflightRef.current
       && !pushupCalibrationSuccessfulRef.current,
     );
+    const isUploadedPushupPlayback = inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones'
+      && !canInspectPausedPushupVideo;
+    const analysisIntervalSeconds = isUploadedPushupPlayback
+      ? UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS
+      : UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS;
     if (
       !activeRef.current
       || !detectorRef.current
@@ -10378,7 +10387,7 @@ function Home() {
           >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS * 1000
         : inputModeRef.current !== 'video'
           || sourceTime - lastVideoAnalysisSourceTimeRef.current
-            >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
+            >= analysisIntervalSeconds
           || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
       if (!shouldAnalyzeVideoFrame) {
         logUploadedPushupLiveMetrics(sourceTime);
@@ -10588,7 +10597,7 @@ function Home() {
       updatePushupPreparationCountdown(null);
       setTechniqueFeedback(defaultTechniqueFeedback);
       activeRef.current = true;
-      video.playbackRate = 1;
+      video.playbackRate = UPLOADED_PUSHUP_PLAYBACK_RATE;
 
       video.controls = true;
       const seekStartedAt = performance.now();
