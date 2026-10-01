@@ -153,10 +153,6 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 import type { ExerciseDiagnosticSnapshot } from '@/pullup-diagnostics';
-import {
-  EMPTY_VIDEO_RECORDING_HUD,
-  type VideoRecordingHudState,
-} from '@/video-recording-overlay';
 
 const queryClient = new QueryClient();
 const TOTAL_FRAMES = 11;
@@ -168,6 +164,7 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
+// Las flexiones subidas necesitan muestreo denso para no perder picos breves de repetición.
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
 const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.5;
@@ -179,110 +176,6 @@ const FPS_WINDOW_FRAMES = 45;
 const MIN_FPS = 15;
 // Segundos consecutivos bajo MIN_FPS necesarios para cambiar a full.
 const FPS_LOW_SECONDS = 4;
-type UploadedPushupLiveTimingKey =
-  | 'detectorMs'
-  | 'processFrameMs'
-  | 'skeletonDrawMs';
-type UploadedPushupLiveMetrics = {
-  active: boolean;
-  lastReportSourceTime: number;
-  analyzedSamples: number;
-  detectorMs: number;
-  processFrameMs: number;
-  skeletonDrawMs: number;
-  busySkipped: number;
-  longTaskCount: number;
-  longTaskMs: number;
-  observer: PerformanceObserver | null;
-};
-let uploadedPushupLiveMetrics: UploadedPushupLiveMetrics | null = null;
-let lastUploadedPushupHudLogAtMs = Number.NEGATIVE_INFINITY;
-
-function recordUploadedPushupLiveDuration(
-  key: UploadedPushupLiveTimingKey,
-  durationMs: number,
-) {
-  if (uploadedPushupLiveMetrics?.active) {
-    uploadedPushupLiveMetrics[key] += durationMs;
-  }
-}
-
-function startUploadedPushupLiveMetrics(sourceTime: number) {
-  const metrics: UploadedPushupLiveMetrics = {
-    active: true,
-    lastReportSourceTime: sourceTime,
-    analyzedSamples: 0,
-    detectorMs: 0,
-    processFrameMs: 0,
-    skeletonDrawMs: 0,
-    busySkipped: 0,
-    longTaskCount: 0,
-    longTaskMs: 0,
-    observer: null,
-  };
-  uploadedPushupLiveMetrics = metrics;
-  if (
-    typeof PerformanceObserver === 'undefined'
-    || !PerformanceObserver.supportedEntryTypes?.includes('longtask')
-  ) {
-    return;
-  }
-  try {
-    metrics.observer = new PerformanceObserver((list) => {
-      if (!metrics.active || uploadedPushupLiveMetrics !== metrics) return;
-      list.getEntries().forEach((entry) => {
-        metrics.longTaskCount += 1;
-        metrics.longTaskMs += entry.duration;
-      });
-    });
-    metrics.observer.observe({ type: 'longtask', buffered: false });
-  } catch {
-    metrics.observer?.disconnect();
-    metrics.observer = null;
-  }
-}
-
-function stopUploadedPushupLiveMetrics() {
-  if (!uploadedPushupLiveMetrics) return;
-  uploadedPushupLiveMetrics.active = false;
-  uploadedPushupLiveMetrics.observer?.disconnect();
-  uploadedPushupLiveMetrics.observer = null;
-}
-
-function instrumentUploadedPushupDetector(detector: PoseDetector) {
-  const asyncDetect = detector.detectForVideoAsync;
-  if (asyncDetect) {
-    detector.detectForVideoAsync = async (...args) => {
-      const metrics = uploadedPushupLiveMetrics;
-      if (!metrics?.active) return asyncDetect.call(detector, ...args);
-      const startedAt = performance.now();
-      try {
-        return await asyncDetect.call(detector, ...args);
-      } finally {
-        if (metrics.active && uploadedPushupLiveMetrics === metrics) {
-          metrics.analyzedSamples += 1;
-          metrics.detectorMs += performance.now() - startedAt;
-        }
-      }
-    };
-  }
-  const syncDetect = detector.detectForVideo;
-  if (syncDetect) {
-    detector.detectForVideo = (...args) => {
-      const metrics = uploadedPushupLiveMetrics;
-      if (!metrics?.active) return syncDetect.call(detector, ...args);
-      const startedAt = performance.now();
-      try {
-        return syncDetect.call(detector, ...args);
-      } finally {
-        if (metrics.active && uploadedPushupLiveMetrics === metrics) {
-          metrics.analyzedSamples += 1;
-          metrics.detectorMs += performance.now() - startedAt;
-        }
-      }
-    };
-  }
-}
 
 const pullupScrollFrames = [
   pullupScrollFrame01,
@@ -3704,19 +3597,7 @@ function drawSkeleton(
   debugVisuals = false,
   clearCanvas = true,
 ) {
-  if (!uploadedPushupLiveMetrics?.active) {
-    drawSkeletonImpl(canvas, video, pose, mirror, showFoot, debugVisuals, clearCanvas);
-    return;
-  }
-  const startedAt = performance.now();
-  try {
-    drawSkeletonImpl(canvas, video, pose, mirror, showFoot, debugVisuals, clearCanvas);
-  } finally {
-    recordUploadedPushupLiveDuration(
-      'skeletonDrawMs',
-      performance.now() - startedAt,
-    );
-  }
+  drawSkeletonImpl(canvas, video, pose, mirror, showFoot, debugVisuals, clearCanvas);
 }
 
 function getContainedVideoSize(
@@ -8096,25 +7977,12 @@ function getExercise(exerciseId: ExerciseId | null) {
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const recordingHudStateRef = useRef<VideoRecordingHudState>(
-    EMPTY_VIDEO_RECORDING_HUD,
-  );
   const detectorFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
   const uploadedPushupAnalysisStartingRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
-  // TEMP: temporización del inicio de reproducción de flexiones subidas.
-  const uploadedPushupPlayDiagnosticsRef = useRef<{
-    startedAt: number | null;
-    handleVideoPlayCalls: number;
-    playingListenerAttached: boolean;
-  }>({
-    startedAt: null,
-    handleVideoPlayCalls: 0,
-    playingListenerAttached: false,
-  });
   const detectorRef = useRef<PoseDetector | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const videoFrameCallbackRef = useRef<number | null>(null);
@@ -8468,7 +8336,6 @@ function Home() {
 
   const stopResources = useCallback(() => {
     activeRef.current = false;
-    stopUploadedPushupLiveMetrics();
     uploadedPushupAnalysisGenerationRef.current += 1;
     uploadedPushupAnalysisStartingRef.current = false;
     uploadedPushupPreflightRef.current = false;
@@ -8582,50 +8449,6 @@ function Home() {
     if (!context) return video;
     context.drawImage(video, 0, 0, detectorSize.width, detectorSize.height);
     return detectorCanvas;
-  }, []);
-
-  const logUploadedPushupHud = useCallback(() => {
-    if (selectedExerciseRef.current !== 'flexiones') return;
-    const hudState = recordingHudStateRef.current;
-    const readings = hudState?.liveAngleReadings ?? [];
-    const jointReadings = [
-      'cadera',
-      'hombro',
-      'codo',
-      'muñeca',
-      'rodilla',
-      'tobillo',
-    ].map((joint) => {
-      const values = readings
-        .filter((reading) => reading.label.toLocaleLowerCase('es').includes(joint))
-        .map((reading) => reading.value === null
-          ? '—'
-          : `${reading.value}${reading.unit ?? '°'}`);
-      return `${joint}: ${values.length ? values.join('/') : '—'}`;
-    }).join(' | ');
-    const hudStateIsEmpty = !hudState || (
-      !hudState.exercise
-      && !hudState.hasEvaluationCounter
-      && hudState.correctRepetitions === 0
-      && hudState.incorrectRepetitions === 0
-      && readings.length === 0
-      && (hudState.dipJointReadings?.length ?? 0) === 0
-      && (hudState.pullupJointReadings?.length ?? 0) === 0
-    );
-    const now = performance.now();
-    if (now - lastUploadedPushupHudLogAtMs >= 1000) {
-      lastUploadedPushupHudLogAtMs = now;
-      const canvas = canvasRef.current;
-      console.log(
-        `[hud] hasEvaluationCounter=${hudState?.hasEvaluationCounter ?? 'null'}`
-        + ` | correctas=${hudState?.correctRepetitions ?? 'null'}`
-        + ` | incorrectas=${hudState?.incorrectRepetitions ?? 'null'}`
-        + ` | lecturas=${jointReadings}`
-        + ` | canvas=${canvas?.width ?? 0}x${canvas?.height ?? 0}`
-        + ` | ref nulo=${hudState == null}`
-        + ` | ref vacío=${hudStateIsEmpty}`,
-      );
-    }
   }, []);
 
   const processFrame = useCallback(async (scheduledTimestamp?: number) => {
@@ -10336,50 +10159,6 @@ function Home() {
     updatePushupPreparationStage,
   ]);
 
-  const logUploadedPushupLiveMetrics = useCallback((sourceTime: number) => {
-    const metrics = uploadedPushupLiveMetrics;
-    if (!metrics?.active) return;
-    if (sourceTime < metrics.lastReportSourceTime) {
-      metrics.lastReportSourceTime = sourceTime;
-      metrics.analyzedSamples = 0;
-      metrics.detectorMs = 0;
-      metrics.processFrameMs = 0;
-      metrics.skeletonDrawMs = 0;
-      metrics.busySkipped = 0;
-      metrics.longTaskCount = 0;
-      metrics.longTaskMs = 0;
-      return;
-    }
-    const elapsedVideoSeconds = sourceTime - metrics.lastReportSourceTime;
-    if (elapsedVideoSeconds < 2) return;
-    const samples = metrics.analyzedSamples;
-    const average = (totalMs: number, count = samples) => (
-      count > 0 ? (totalMs / count).toFixed(1) : '0.0'
-    );
-    const processFrameRestMs = Math.max(
-      0,
-      metrics.processFrameMs - metrics.detectorMs - metrics.skeletonDrawMs,
-    );
-    console.log(
-      `[fps] ${(samples / elapsedVideoSeconds).toFixed(1)} muestras analizadas por segundo de video`
-      + ` | ${metrics.busySkipped} cuadros omitidos por detector ocupado`
-      + ` | ms medios: detección ${average(metrics.detectorMs)}, `
-      + `resto de processFrame ${average(processFrameRestMs)}, `
-      + `dibujo del esqueleto ${average(metrics.skeletonDrawMs)}, `
-      + `tareas largas del hilo principal: ${metrics.longTaskCount} `
-      + `(${metrics.longTaskMs.toFixed(1)} ms total)`
-      + ` | grabación: desactivada`,
-    );
-    metrics.lastReportSourceTime = sourceTime;
-    metrics.analyzedSamples = 0;
-    metrics.detectorMs = 0;
-    metrics.processFrameMs = 0;
-    metrics.skeletonDrawMs = 0;
-    metrics.busySkipped = 0;
-    metrics.longTaskCount = 0;
-    metrics.longTaskMs = 0;
-  }, []);
-
   const scheduleNextFrame = useCallback(() => {
     const video = videoRef.current;
     const canInspectPausedPushupVideo = Boolean(
@@ -10408,10 +10187,6 @@ function Home() {
 
     const runFrame = (timestamp: number, sourceTime: number) => {
       if (!activeRef.current) return;
-      const isUploadedPushup = selectedExerciseRef.current === 'flexiones';
-      if (inputModeRef.current === 'video' && isUploadedPushup) {
-        logUploadedPushupHud();
-      }
       const shouldAnalyzeVideoFrame = canInspectPausedPushupVideo
         ? timestamp - lastDetectorTimestampRef.current
           >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS * 1000
@@ -10420,15 +10195,10 @@ function Home() {
             >= analysisIntervalSeconds
           || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
       if (!shouldAnalyzeVideoFrame) {
-        logUploadedPushupLiveMetrics(sourceTime);
         if (activeRef.current) scheduleNextFrame();
         return;
       }
       if (processingFrameRef.current) {
-        if (uploadedPushupLiveMetrics?.active) {
-          uploadedPushupLiveMetrics.busySkipped += 1;
-        }
-        logUploadedPushupLiveMetrics(sourceTime);
         if (activeRef.current) scheduleNextFrame();
         return;
       }
@@ -10436,15 +10206,9 @@ function Home() {
         lastVideoAnalysisSourceTimeRef.current = sourceTime;
       }
       processingFrameRef.current = true;
-      const processFrameStartedAt = performance.now();
       void processFrame(timestamp).finally(() => {
-        recordUploadedPushupLiveDuration(
-          'processFrameMs',
-          performance.now() - processFrameStartedAt,
-        );
         processingFrameRef.current = false;
       });
-      logUploadedPushupLiveMetrics(sourceTime);
       if (activeRef.current) scheduleNextFrame();
     };
 
@@ -10462,98 +10226,9 @@ function Home() {
       animationFrameRef.current = null;
       runFrame(timestamp, video.currentTime);
     });
-  }, [logUploadedPushupHud, logUploadedPushupLiveMetrics, processFrame]);
-
-  useEffect(() => {
-    const logUploadedPushupRepDiagnostics = () => {
-      const video = videoRef.current;
-      if (
-        inputModeRef.current !== 'video'
-        || selectedExerciseRef.current !== 'flexiones'
-        || !video
-        || video.paused
-        || video.ended
-      ) {
-        return;
-      }
-
-      const now = performance.now();
-      const recentFrames = diagnosticBufferRef.current.filter((frame) => (
-        frame.exercise === 'flexiones'
-        && frame.videoTimeSeconds !== null
-        && frame.timestamp <= now
-        && now - frame.timestamp <= 1000
-      ));
-      const currentFrame = recentFrames[recentFrames.length - 1];
-      const rawAngles = recentFrames
-        .map((frame) => frame.measurements.repetitionAngle)
-        .filter((angle): angle is number => angle !== null);
-      const trackerInputAngles = diagnosticBufferRef.current
-        .filter((frame) => (
-          frame.exercise === 'flexiones'
-          && frame.repetitionFrameReady
-          && frame.measurements.repetitionAngle !== null
-        ))
-        .slice(-3)
-        .map((frame) => frame.measurements.repetitionAngle)
-        .filter((angle): angle is number => angle !== null);
-      const tracker = exerciseRepTrackerRef.current;
-      const readyCount = recentFrames.filter((frame) => frame.repetitionFrameReady).length;
-      const postBottomRawPeak = tracker.postBottomRawSamples.length
-        ? Math.max(...tracker.postBottomRawSamples)
-        : null;
-      const blockingReasonCounts = new Map<string, number>();
-      recentFrames
-        .filter((frame) => !frame.repetitionFrameReady)
-        .forEach((frame) => {
-          const reasons = frame.repetitionBlockingReasons.length
-            ? frame.repetitionBlockingReasons
-            : ['sin razón detallada'];
-          reasons.forEach((reason) => {
-            blockingReasonCounts.set(reason, (blockingReasonCounts.get(reason) ?? 0) + 1);
-          });
-        });
-      const blockingReasons = [...blockingReasonCounts.entries()]
-        .sort(([firstReason, firstCount], [secondReason, secondCount]) => (
-          secondCount - firstCount || firstReason.localeCompare(secondReason)
-        ))
-        .map(([reason, count]) => `${reason}=${count}`)
-        .join(', ') || 'ninguna';
-      const formatAngle = (angle: number | null) => (
-        angle === null ? '—' : `${angle}°`
-      );
-
-      console.log(
-        `[rep] fase=${tracker.phase}`
-        + ` | total=${tracker.repetitions}`
-        + ` | correctas=${tracker.goodRepetitions}`
-        + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
-        + ` | codo suavizado=${formatAngle(median(trackerInputAngles))}`
-        + ` | máx bruto post-fondo=${formatAngle(postBottomRawPeak)}`
-        + ` | codo bruto actual=${formatAngle(currentFrame?.measurements.repetitionAngle ?? null)}`
-        + ` | codo bruto min/max 1s=${formatAngle(rawAngles.length ? Math.min(...rawAngles) : null)}`
-        + `/${formatAngle(rawAngles.length ? Math.max(...rawAngles) : null)}`
-        + ` | repetitionFrameReady=${readyCount} true/${recentFrames.length - readyCount} false`
-        + ` | bloqueos 1s=${blockingReasons}`
-        + ` | muestras/s=${recentFrames.length}`,
-      );
-    };
-
-    const intervalId = window.setInterval(logUploadedPushupRepDiagnostics, 1000);
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  // TEMP: todos los tiempos se expresan desde el primer clic/play detectado.
-  const logUploadedPushupPlay = useCallback((message: string) => {
-    const startedAt = uploadedPushupPlayDiagnosticsRef.current.startedAt;
-    const elapsedMs = startedAt === null ? 0 : performance.now() - startedAt;
-    console.log(`[play] +${elapsedMs.toFixed(1)}ms ${message}`);
-  }, []);
+  }, [processFrame]);
 
   const startUploadedPushupPlayback = useCallback(async () => {
-    const playDiagnostics = uploadedPushupPlayDiagnosticsRef.current;
-    playDiagnostics.startedAt ??= performance.now();
-    logUploadedPushupPlay('entrada a startUploadedPushupPlayback');
     const video = videoRef.current;
     if (
       !video
@@ -10583,27 +10258,12 @@ function Home() {
     }
 
     try {
-      const processingWaitStartedAt = performance.now();
-      let processingWaitFrames = 0;
-      logUploadedPushupPlay(
-        `inicio de espera de processingFrameRef | ocupado=${processingFrameRef.current}`,
-      );
       while (processingFrameRef.current) {
-        processingWaitFrames += 1;
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         if (generation !== uploadedPushupAnalysisGenerationRef.current) {
-          logUploadedPushupPlay(
-            `fin de la espera de processingFrameRef | cancelada tras `
-            + `${(performance.now() - processingWaitStartedAt).toFixed(1)} ms`,
-          );
           return;
         }
       }
-      logUploadedPushupPlay(
-        `fin de la espera de processingFrameRef | `
-        + `${(performance.now() - processingWaitStartedAt).toFixed(1)} ms, `
-        + `${processingWaitFrames} esperas RAF`,
-      );
 
       const duration = Number.isFinite(video.duration) ? video.duration : 0;
       if (duration <= 0) {
@@ -10634,14 +10294,11 @@ function Home() {
       video.playbackRate = UPLOADED_PUSHUP_PLAYBACK_RATE;
 
       video.controls = true;
-      const seekStartedAt = performance.now();
       const playbackStartTime = Math.min(
         0.001,
         Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
       );
-      let seekResult = 'ya estaba al inicio';
       if (video.seeking || Math.abs(video.currentTime - playbackStartTime) > 0.01) {
-        seekResult = 'esperó el evento seeked o el límite de 1500 ms';
         await new Promise<void>((resolve) => {
           let timeoutId = 0;
           const finishSeeking = () => {
@@ -10654,24 +10311,11 @@ function Home() {
           video.currentTime = playbackStartTime;
         });
       } else if (video.currentTime !== playbackStartTime) {
-        seekResult = 'ajuste inmediato, sin esperar seeked';
         video.currentTime = playbackStartTime;
       }
-      logUploadedPushupPlay(
-        `fin del seek | ${seekResult}; currentTime=${video.currentTime.toFixed(3)} s; `
-        + `${(performance.now() - seekStartedAt).toFixed(1)} ms`,
-      );
       if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
       uploadedPushupAnalysisStartingRef.current = false;
-      startUploadedPushupLiveMetrics(video.currentTime);
-      const videoPlayStartedAt = performance.now();
-      logUploadedPushupPlay('llamada a video.play() iniciada');
       await video.play();
-      logUploadedPushupPlay(
-        `video.play() resuelto | `
-        + `${(performance.now() - videoPlayStartedAt).toFixed(1)} ms; `
-        + `paused=${video.paused}; currentTime=${video.currentTime.toFixed(3)} s`,
-      );
       if (
         generation === uploadedPushupAnalysisGenerationRef.current
         && activeRef.current
@@ -10681,7 +10325,6 @@ function Home() {
       return;
     } catch {
       if (generation === uploadedPushupAnalysisGenerationRef.current) {
-        stopUploadedPushupLiveMetrics();
         uploadedPushupAnalysisStartingRef.current = false;
         activeRef.current = false;
         exerciseStartedRef.current = false;
@@ -10705,42 +10348,10 @@ function Home() {
     scheduleNextFrame,
     updatePushupPreparationStage,
     updatePushupPreparationCountdown,
-    logUploadedPushupPlay,
   ]);
   const handleVideoPlay = useCallback(() => {
-    const isUploadedPushupVideo = inputModeRef.current === 'video'
-      && selectedExerciseRef.current === 'flexiones';
-    const playDiagnostics = uploadedPushupPlayDiagnosticsRef.current;
-    let playCallNumber = 0;
-    if (isUploadedPushupVideo) {
-      playDiagnostics.startedAt ??= performance.now();
-      playCallNumber = ++playDiagnostics.handleVideoPlayCalls;
-    }
-    const logHandleVideoPlayBranch = (branch: string, extraCallGuard: string) => {
-      if (!isUploadedPushupVideo) return;
-      logUploadedPushupPlay(
-        `onPlay disparado | rama tomada en handleVideoPlay: ${branch}`,
-      );
-      if (playCallNumber > 1) {
-        logUploadedPushupPlay(
-          `llamada extra a handleVideoPlay #${playCallNumber} | guarda/resultado: `
-          + extraCallGuard,
-        );
-      }
-    };
     if (inputModeRef.current !== 'video') return;
     const video = videoRef.current;
-    if (
-      isUploadedPushupVideo
-      && video
-      && !playDiagnostics.playingListenerAttached
-    ) {
-      playDiagnostics.playingListenerAttached = true;
-      video.addEventListener('playing', () => {
-        playDiagnostics.playingListenerAttached = false;
-        logUploadedPushupPlay("evento 'playing' recibido");
-      }, { once: true });
-    }
     if (
       selectedExerciseRef.current === 'flexiones'
       && uploadedPushupPreflightRef.current
@@ -10748,35 +10359,17 @@ function Home() {
     ) {
       video?.pause();
       if (!pushupCalibrationSuccessfulRef.current) {
-        logHandleVideoPlayBranch(
-          'calibración pendiente: pausa y retorno',
-          'pushupCalibrationSuccessfulRef=false; video.pause()',
-        );
         setVideoExportStatus(
           'Espera a que termine la calibración antes de reproducir el video.',
         );
         return;
       }
-      logHandleVideoPlayBranch(
-        'calibración lista: iniciar startUploadedPushupPlayback',
-        'se permite entrar en startUploadedPushupPlayback',
-      );
       void startUploadedPushupPlayback();
       return;
     }
-    if (!activeRef.current) {
-      logHandleVideoPlayBranch(
-        'activeRef=false: retorno sin pausar el video',
-        'activeRef.current=false solo retorna; no llama a video.pause()',
-      );
-      return;
-    }
-    logHandleVideoPlayBranch(
-      'activeRef=true: programar siguiente cuadro',
-      'sin guarda de bloqueo; llama a scheduleNextFrame()',
-    );
+    if (!activeRef.current) return;
     scheduleNextFrame();
-  }, [logUploadedPushupPlay, scheduleNextFrame, startUploadedPushupPlayback]);
+  }, [scheduleNextFrame, startUploadedPushupPlayback]);
 
   const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
@@ -11038,7 +10631,6 @@ function Home() {
       syncVideoSize();
       setPhase('loading-model');
       const detector = await loadDetector(Boolean(videoFile));
-      if (isUploadedPushupVideo) instrumentUploadedPushupDetector(detector);
       detectorRef.current = detector;
       setModelStatus(`${POSE_MODEL_NAME} cargado ✓`);
       if (videoFile) {
@@ -11235,7 +10827,6 @@ function Home() {
   }, [startCamera]);
 
   const handleUploadedVideoEnded = useCallback(() => {
-    stopUploadedPushupLiveMetrics();
     if (videoRef.current) videoRef.current.controls = true;
     activeRef.current = false;
     if (animationFrameRef.current !== null) {
@@ -11601,16 +11192,6 @@ function Home() {
       : hasEvaluationCounter
         ? `${correctRepetitions} / ${evaluatedRepetitions}`
         : 'Pendiente';
-  recordingHudStateRef.current = {
-    exercise: selectedExercise,
-    hasEvaluationCounter,
-    correctRepetitions,
-    incorrectRepetitions,
-    liveAngleReadings,
-    dipJointReadings,
-    pullupJointReadings,
-  };
-
   return (
     <div className="posture-app">
       <div className="ambient-orb ambient-orb--top" aria-hidden="true" />
