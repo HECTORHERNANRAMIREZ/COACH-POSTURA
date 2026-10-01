@@ -1395,15 +1395,6 @@
   pointer-events: none;
 }
 
-.video-stage canvas.video-recording-canvas {
-  position: fixed;
-  top: 0;
-  left: -10000px;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
 .video-upload-input {
   position: absolute;
   width: 1px;
@@ -1413,8 +1404,7 @@
   white-space: nowrap;
 }
 
-.upload-video-button,
-.video-download-button {
+.upload-video-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1433,8 +1423,7 @@
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
-.upload-video-button:hover,
-.video-download-button:hover {
+.upload-video-button:hover {
   transform: translateY(-1px);
   border-color: rgba(57, 255, 106, 0.65);
   background: rgba(57, 255, 106, 0.15);
@@ -1445,7 +1434,7 @@
   opacity: 0.55;
 }
 
-.video-export-tools {
+.uploaded-video-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1458,13 +1447,13 @@
     rgba(8, 22, 28, 0.52);
 }
 
-.video-export-copy {
+.uploaded-video-status-copy {
   display: grid;
   min-width: 0;
   gap: 0.18rem;
 }
 
-.video-export-copy strong {
+.uploaded-video-status-copy strong {
   overflow: hidden;
   color: rgba(238, 247, 241, 0.94);
   font-size: 0.65rem;
@@ -1473,24 +1462,10 @@
   white-space: nowrap;
 }
 
-.video-export-copy span {
+.uploaded-video-status-copy span {
   color: rgba(195, 215, 202, 0.7);
   font-size: 0.58rem;
   line-height: 1.35;
-}
-
-.video-download-button {
-  flex: 0 0 auto;
-  min-height: 2.25rem;
-  color: #07150b;
-  border-color: rgba(139, 255, 165, 0.75);
-  background: #8bffa5;
-}
-
-.video-download-button:hover {
-  color: #07150b;
-  border-color: #b5ffc5;
-  background: #b5ffc5;
 }
 
 .limb-debug-panel {

@@ -1,0 +1,14 @@
+Aprobado el alcance de tu informe (eliminar grabación y descarga en todos los ejercicios con video subido; solo queda la vista previa), en un solo cambio, solo en App.tsx e index.css, con estas condiciones:
+
+Antes de editar, confirma en una línea: el valor actual de UPLOADED_VIDEO_RECORDING_ENABLED y que no queda ninguna edición parcial previa.
+
+Durante la edición:
+1. Al quitar las llamadas a captureUploadedVideoFrame, conserva intacto el ciclo de cuadros (requestVideoFrameCallback / requestAnimationFrame), la programación del siguiente cuadro y todo lo que no sea grabación en processFrame.
+2. Al quitar la parada/limpieza del MediaRecorder y la "captura final" al terminar el video, asegúrate de que todo lo que no sea grabación siga ocurriendo al terminar el video (liberar banderas de procesamiento, estados de pantalla, mensajes).
+3. Conserva el bloqueo de la reproducción hasta terminar la calibración y el arranque con un clic. No toques las guardas de handleVideoPlay salvo la parte exclusiva de la ruta de dos pasadas.
+4. Borra el bloque exportador de processFrame (~10540-10591) y sus refs, ya confirmado como seguro.
+5. Conserva uploadedVideoUrlRef, uploadedVideoName, videoExportStatus (carga, calibración y reproducción), el canvas de vista previa, el detector, el worker, el tracker, la calibración, los umbrales, el contador, el HUD y la cámara en vivo.
+6. Logs: conserva [fps], [hud] y [rep]. En [fps], quita la medición de captureUploadedVideoFrame y pon grabación: desactivada. En [hud], el campo canvas= debe tomar el tamaño del canvas de vista previa.
+7. CSS: quita solo las reglas de grabación/descarga que indicaste; conserva las del botón de subida.
+
+Al terminar: archivos y líneas editadas, chequeo de tipos aprobado, y confirmación de los puntos 1 a 3 y 5.
