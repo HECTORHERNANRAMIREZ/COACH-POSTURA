@@ -223,6 +223,22 @@ type ViewDiagnosticSnapshot = {
   atTop: boolean;
 };
 
+type DiagnosticLandmarkSample = {
+  x: number;
+  y: number;
+  score: number | null;
+  held: boolean;
+  heldFrames: number;
+  heldReason: string | null;
+} | null;
+
+type ExtremityDiagnosticSample = {
+  rawModel: DiagnosticLandmarkSample;
+  afterSideAssignment: DiagnosticLandmarkSample;
+  afterBoneConstraints: DiagnosticLandmarkSample;
+  filtered: DiagnosticLandmarkSample;
+};
+
 type FrameDiagnosticSnapshot = {
   timestamp: number;
   videoTimeSeconds: number | null;
@@ -270,11 +286,29 @@ type FrameDiagnosticSnapshot = {
     recommendedView: ViewAlignmentState['recommendedView'];
     status: ViewAlignmentState['status'];
   };
+  extremityPoints: Record<PoseSide, {
+    wrist: ExtremityDiagnosticSample;
+    ankle: ExtremityDiagnosticSample;
+  }> | null;
   pose: {
     keypoints: PosePoint[];
     worldLandmarks: PosePoint[];
   } | null;
 };
+
+function toDiagnosticLandmarkSample(
+  point: PosePoint | undefined,
+): DiagnosticLandmarkSample {
+  if (!point) return null;
+  return {
+    x: point.x,
+    y: point.y,
+    score: point.score ?? null,
+    held: Boolean(point.held),
+    heldFrames: point.heldFrames ?? 0,
+    heldReason: point.heldReason ?? null,
+  };
+}
 
 const clerkPubKey = AUTH_AND_BILLING_ENABLED
   ? publishableKeyFromHost(
@@ -8206,7 +8240,7 @@ function Home() {
       await navigator.clipboard.writeText(
         JSON.stringify(
           {
-            format: 'netposture-diagnostic-v2',
+            format: 'netposture-diagnostic-v3',
             buffers: {
               frames: diagnosticBufferRef.current,
               pullup: pullupDiagnosticBufferRef.current,
@@ -10205,6 +10239,26 @@ function Home() {
       const genericTracker = isPullupExercise
         ? pullupTrackerRef.current
         : exerciseRepTrackerRef.current;
+      const getExtremityDiagnosticSample = (
+        side: PoseSide,
+        landmark: 'wrist' | 'ankle',
+      ): ExtremityDiagnosticSample => {
+        const landmarkIndex = sideKeypoints[side][landmark];
+        return {
+          rawModel: toDiagnosticLandmarkSample(
+            detectedPose?.keypoints[landmarkIndex],
+          ),
+          afterSideAssignment: toDiagnosticLandmarkSample(
+            sideConsistentPose?.keypoints[landmarkIndex],
+          ),
+          afterBoneConstraints: toDiagnosticLandmarkSample(
+            constrainedPose?.keypoints[landmarkIndex],
+          ),
+          filtered: toDiagnosticLandmarkSample(
+            pose?.keypoints[landmarkIndex],
+          ),
+        };
+      };
       const frameDiagnosticSnapshot: FrameDiagnosticSnapshot = {
         timestamp: frameTimestamp,
         videoTimeSeconds: inputModeRef.current === 'video' ? video.currentTime : null,
@@ -10264,6 +10318,18 @@ function Home() {
           recommendedView,
           status: nextViewAlignment.status,
         },
+        extremityPoints: isPushupExercise
+          ? {
+              left: {
+                wrist: getExtremityDiagnosticSample('left', 'wrist'),
+                ankle: getExtremityDiagnosticSample('left', 'ankle'),
+              },
+              right: {
+                wrist: getExtremityDiagnosticSample('right', 'wrist'),
+                ankle: getExtremityDiagnosticSample('right', 'ankle'),
+              },
+            }
+          : null,
         pose: pose
           ? {
               keypoints: pose.keypoints.map((point) => point ? { ...point } : { x: 0, y: 0, score: 0 }),
