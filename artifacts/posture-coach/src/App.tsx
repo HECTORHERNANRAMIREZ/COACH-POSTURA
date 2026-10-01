@@ -10851,6 +10851,81 @@ function Home() {
     });
   }, [captureUploadedVideoFrame, logUploadedPushupLiveMetrics, processFrame]);
 
+  useEffect(() => {
+    const logUploadedPushupRepDiagnostics = () => {
+      const video = videoRef.current;
+      if (
+        inputModeRef.current !== 'video'
+        || selectedExerciseRef.current !== 'flexiones'
+        || !video
+        || video.paused
+        || video.ended
+      ) {
+        return;
+      }
+
+      const now = performance.now();
+      const recentFrames = diagnosticBufferRef.current.filter((frame) => (
+        frame.exercise === 'flexiones'
+        && frame.videoTimeSeconds !== null
+        && frame.timestamp <= now
+        && now - frame.timestamp <= 1000
+      ));
+      const currentFrame = recentFrames[recentFrames.length - 1];
+      const rawAngles = recentFrames
+        .map((frame) => frame.measurements.repetitionAngle)
+        .filter((angle): angle is number => angle !== null);
+      const trackerInputAngles = diagnosticBufferRef.current
+        .filter((frame) => (
+          frame.exercise === 'flexiones'
+          && frame.repetitionFrameReady
+          && frame.measurements.repetitionAngle !== null
+        ))
+        .slice(-3)
+        .map((frame) => frame.measurements.repetitionAngle)
+        .filter((angle): angle is number => angle !== null);
+      const tracker = exerciseRepTrackerRef.current;
+      const readyCount = recentFrames.filter((frame) => frame.repetitionFrameReady).length;
+      const blockingReasonCounts = new Map<string, number>();
+      recentFrames
+        .filter((frame) => !frame.repetitionFrameReady)
+        .forEach((frame) => {
+          const reasons = frame.repetitionBlockingReasons.length
+            ? frame.repetitionBlockingReasons
+            : ['sin razón detallada'];
+          reasons.forEach((reason) => {
+            blockingReasonCounts.set(reason, (blockingReasonCounts.get(reason) ?? 0) + 1);
+          });
+        });
+      const blockingReasons = [...blockingReasonCounts.entries()]
+        .sort(([firstReason, firstCount], [secondReason, secondCount]) => (
+          secondCount - firstCount || firstReason.localeCompare(secondReason)
+        ))
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(', ') || 'ninguna';
+      const formatAngle = (angle: number | null) => (
+        angle === null ? '—' : `${angle}°`
+      );
+
+      console.log(
+        `[rep] fase=${tracker.phase}`
+        + ` | total=${tracker.repetitions}`
+        + ` | correctas=${tracker.goodRepetitions}`
+        + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
+        + ` | codo suavizado=${formatAngle(median(trackerInputAngles))}`
+        + ` | codo bruto actual=${formatAngle(currentFrame?.measurements.repetitionAngle ?? null)}`
+        + ` | codo bruto min/max 1s=${formatAngle(rawAngles.length ? Math.min(...rawAngles) : null)}`
+        + `/${formatAngle(rawAngles.length ? Math.max(...rawAngles) : null)}`
+        + ` | repetitionFrameReady=${readyCount} true/${recentFrames.length - readyCount} false`
+        + ` | bloqueos 1s=${blockingReasons}`
+        + ` | muestras/s=${recentFrames.length}`,
+      );
+    };
+
+    const intervalId = window.setInterval(logUploadedPushupRepDiagnostics, 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   // TEMP: todos los tiempos se expresan desde el primer clic/play detectado.
   const logUploadedPushupPlay = useCallback((message: string) => {
     const startedAt = uploadedPushupPlayDiagnosticsRef.current.startedAt;
