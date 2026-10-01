@@ -11156,7 +11156,7 @@ function Home() {
         uploadedVideoUrlRef.current = sourceUrl;
         video.pause();
         video.srcObject = null;
-        video.controls = true;
+        video.controls = selectedExerciseRef.current !== 'flexiones';
         video.muted = false;
         const metadataLoaded = new Promise<void>((resolve, reject) => {
           const timeout = window.setTimeout(() => {
@@ -11611,7 +11611,9 @@ function Home() {
               : 'Cuerpo registrado ✓ · cuélgate en la barra'
         : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
           ? inputMode === 'video'
-            ? 'Detectando el cuerpo en el video...'
+            ? pushupPreparationCountdown !== null
+              ? `Calibrando postura · ${pushupPreparationCountdown}s`
+              : 'Detectando el cuerpo en el video...'
             : pushupPreparationCountdown !== null
               ? `Registrando tu cuerpo · ${pushupPreparationCountdown}`
               : pushupCalibrationStatus === 'calibrating'
@@ -12948,7 +12950,12 @@ function Home() {
                     {exerciseStarted
                       ? 'Terminar ejercicio'
                       : inputMode === 'video'
-                        ? 'Reproducir video'
+                        ? selectedExercise === 'flexiones'
+                          && pushupCalibrationStatus !== 'ready'
+                          ? pushupPreparationCountdown !== null
+                            ? `Calibrando · ${pushupPreparationCountdown}s`
+                            : 'Detectando cuerpo…'
+                          : 'Reproducir video'
                         : personDetected
                           ? 'Iniciar ejercicio'
                           : 'Buscando cuerpo'}
