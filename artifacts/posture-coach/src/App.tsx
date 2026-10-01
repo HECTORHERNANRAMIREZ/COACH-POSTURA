@@ -9709,6 +9709,9 @@ function Home() {
         && pallofTechniqueReady
         && dumbbellPressTechniqueReady
         && shoulderMachinePressTechniqueReady;
+      // TEMP-DIAGNOSTICO: reflejan la condición real y la llamada efectiva al tracker.
+      let uploadedPushupTrackerGatePassed = false;
+      let uploadedPushupTrackerWasCalled = false;
       if (
         exerciseStartedRef.current
         && !uploadedPushupAnalysisStartingRef.current
@@ -9719,6 +9722,7 @@ function Home() {
         && (isPushupExercise || repetitionTechniqueReady)
         && !frameMeasurementBlocked
       ) {
+        uploadedPushupTrackerGatePassed = true;
         const trackerConfig = repetitionConfig.postBottomRawPeakForReturn
           ? {
               ...repetitionConfig,
@@ -9743,6 +9747,7 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        uploadedPushupTrackerWasCalled = true;
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         if (
           inputModeRef.current === 'video'
@@ -9797,6 +9802,64 @@ function Home() {
         setExerciseGoodRepetitions(resetTracker.goodRepetitions);
         setExerciseRepPhase(resetTracker.phase);
         setExerciseMinimumAngle(resetTracker.endpointAngle);
+      }
+      // TEMP-DIAGNOSTICO: una sola línea por cuadro de fondo candidato en video subido.
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones'
+        && repetitionAngle !== null
+        && repetitionAngle < 112
+      ) {
+        const diagnosticMeasurementSide = pushupLockedMeasurementSideRef.current
+          ?? measurementSide;
+        const diagnosticMeasurementIndexes = diagnosticMeasurementSide
+          ? sideKeypoints[diagnosticMeasurementSide]
+          : null;
+        const diagnosticShoulder = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.shoulder]
+          : undefined;
+        const diagnosticElbow = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.elbow]
+          : undefined;
+        const diagnosticWrist = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.wrist]
+          : undefined;
+        const diagnosticHeldPoints = [
+          isHeldPoint(diagnosticShoulder),
+          isHeldPoint(diagnosticElbow),
+          isHeldPoint(diagnosticWrist),
+        ];
+        console.log(
+          `[fondo-gate] ${JSON.stringify({
+            videoTimeSeconds: Number(video.currentTime.toFixed(3)),
+            repetitionAngle,
+            countFrameReady,
+            frameCameraReady,
+            hasFreshPose,
+            frameMeasurementBlocked,
+            stabilityFrames: stabilityFramesRef.current,
+            hasFreshPushupMeasurement: hasFreshPushupMeasurement(
+              pose?.keypoints,
+              diagnosticMeasurementSide,
+            ),
+            measurementSide: diagnosticMeasurementSide,
+            shoulder: {
+              score: diagnosticShoulder?.score ?? null,
+              held: diagnosticHeldPoints[0],
+            },
+            elbow: {
+              score: diagnosticElbow?.score ?? null,
+              held: diagnosticHeldPoints[1],
+            },
+            wrist: {
+              score: diagnosticWrist?.score ?? null,
+              held: diagnosticHeldPoints[2],
+            },
+            anyMeasurementPointHeld: diagnosticHeldPoints.some(Boolean),
+            trackerConditionPassed: uploadedPushupTrackerGatePassed,
+            trackerCalled: uploadedPushupTrackerWasCalled,
+          })}`,
+        );
       }
       if (
         rawAngle !== null
