@@ -1,1 +1,1 @@
-- [Pull-up preparation flow](pullup-preparation.md) — Standard pull-ups require full-body detection, then an automatic bar countdown before counting repetitions.
+- [Anclaje persistente de pose](pose-anchor-tracking.md) — tras calibrar el cuerpo, la retención debe seguir activa mientras el cuerpo ancla permanezca dentro del encuadre.
