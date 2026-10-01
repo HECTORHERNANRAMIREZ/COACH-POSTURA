@@ -10469,10 +10469,13 @@ function Home() {
       }
       const shouldAnalyzeVideoFrame = !uploadedPushupExportPlaybackRef.current
         && (
-          inputModeRef.current !== 'video'
-          || sourceTime - lastVideoAnalysisSourceTimeRef.current
-            >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
-          || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY
+          canInspectPausedPushupVideo
+            ? timestamp - lastDetectorTimestampRef.current
+              >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS * 1000
+            : inputModeRef.current !== 'video'
+              || sourceTime - lastVideoAnalysisSourceTimeRef.current
+                >= UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS
+              || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY
         );
       if (!shouldAnalyzeVideoFrame) {
         if (activeRef.current) scheduleNextFrame();
