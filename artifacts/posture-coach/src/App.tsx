@@ -603,10 +603,40 @@ type UploadedDipDiagnosticMoment = {
     shoulderElbowOffsetByTorso: { dx: number | null; dy: number | null };
   };
 };
+type UploadedDipPointKey = 'shoulder' | 'elbow' | 'wrist' | 'hip';
+type UploadedDipJointScores = Record<UploadedDipPointKey, number | null>;
+type UploadedDipScoreFailures = Record<UploadedDipPointKey, boolean>;
+type UploadedDipLiveSide = {
+  scores: UploadedDipJointScores;
+  scoreFailures: UploadedDipScoreFailures;
+};
+type UploadedDipLiveSnapshot = {
+  videoTimeSeconds: number;
+  screenSide: PoseSide | null;
+  countSide: PoseSide | null;
+  techniqueSide: PoseSide | null;
+  sides: Record<PoseSide, UploadedDipLiveSide>;
+  angles: {
+    screenElbow: number | null;
+    countElbow: number | null;
+    torsoLean: number | null;
+  };
+  camera: {
+    ready: boolean;
+    tone: CameraGuidanceTone;
+    message: string;
+    detail: string;
+  };
+  measurementBlocked: boolean;
+  techniqueReady: boolean;
+  techniqueFailures: string[];
+  frameBlockers: string[];
+};
 type UploadedDipDiagnosticFrame = {
   ready: boolean;
   blockers: string[];
   moment: UploadedDipDiagnosticMoment;
+  live: UploadedDipLiveSnapshot;
 };
 type UploadedDipRepetitionMeasurement = {
   repetition: number;
@@ -632,6 +662,7 @@ type UploadedDipDiagnostics = {
   lastSmoothedElbowAngle: number | null;
   lastReportTimestamp: number | null;
   lastFpsVideoTime: number | null;
+  latestLiveSnapshot?: UploadedDipLiveSnapshot;
 };
 type AngleDiagnosticPoint = {
   label: string;
@@ -10057,10 +10088,85 @@ function Home() {
             ? `conteo: ${moment.count.status}`
             : null,
         ].filter((reason): reason is string => reason !== null);
+        const snapshotForSide = (side: PoseSide): UploadedDipLiveSide => {
+          const indexes = sideKeypoints[side];
+          const scores: UploadedDipJointScores = {
+            shoulder: pose?.keypoints?.[indexes.shoulder]?.score ?? null,
+            elbow: pose?.keypoints?.[indexes.elbow]?.score ?? null,
+            wrist: pose?.keypoints?.[indexes.wrist]?.score ?? null,
+            hip: pose?.keypoints?.[indexes.hip]?.score ?? null,
+          };
+          return {
+            scores,
+            scoreFailures: {
+              shoulder: (scores.shoulder ?? 0) < CAMERA_POINT_MIN_SCORE,
+              elbow: (scores.elbow ?? 0) < CAMERA_POINT_MIN_SCORE,
+              wrist: (scores.wrist ?? 0) < CAMERA_POINT_MIN_SCORE,
+              hip: (scores.hip ?? 0) < CAMERA_POINT_MIN_SCORE,
+            },
+          };
+        };
+        const sides = {
+          left: snapshotForSide('left'),
+          right: snapshotForSide('right'),
+        };
+        const screenElbowAngle = nextDominantSide
+          ? calculateAngle(
+              pose?.keypoints?.[sideKeypoints[nextDominantSide].shoulder],
+              pose?.keypoints?.[sideKeypoints[nextDominantSide].elbow],
+              pose?.keypoints?.[sideKeypoints[nextDominantSide].wrist],
+            )
+          : null;
+        const torsoLeanAngle = moment.technique.torsoLean.angle;
+        const techniqueSideScoreFailures = nextDominantSide
+          ? sides[nextDominantSide].scoreFailures
+          : null;
+        const techniqueFailures = [
+          !pose?.keypoints ? 'pose no disponible' : null,
+          !nextDominantSide ? 'lado técnico no disponible' : null,
+          ...([
+            { key: 'shoulder' as const, label: 'hombro' },
+            { key: 'elbow' as const, label: 'codo' },
+            { key: 'wrist' as const, label: 'muñeca' },
+            { key: 'hip' as const, label: 'cadera' },
+          ]
+            .filter(({ key }) => techniqueSideScoreFailures?.[key])
+            .map(({ label }) => `${label} < ${CAMERA_POINT_MIN_SCORE}`)),
+          torsoLeanAngle === null ? 'ángulo de torso no calculable' : null,
+          torsoLeanAngle !== null
+            && !isWithinAngle(torsoLeanAngle, DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE)
+            ? `torso ${torsoLeanAngle}° fuera de ${DIP_TORSO_MIN_ANGLE}–${DIP_TORSO_MAX_ANGLE}°`
+            : null,
+          screenElbowAngle === null ? 'ángulo de codo no calculable' : null,
+        ].filter((reason): reason is string => reason !== null);
+        const liveSnapshot: UploadedDipLiveSnapshot = {
+          videoTimeSeconds: Number(video.currentTime.toFixed(3)),
+          screenSide: nextDominantSide,
+          countSide: moment.countSide,
+          techniqueSide: nextDominantSide,
+          sides,
+          angles: {
+            screenElbow: screenElbowAngle,
+            countElbow: repetitionAngle,
+            torsoLean: torsoLeanAngle,
+          },
+          camera: {
+            ready: frameCameraReady,
+            tone: rawCameraGuidance.tone,
+            message: rawCameraGuidance.message,
+            detail: rawCameraGuidance.detail,
+          },
+          measurementBlocked: frameMeasurementBlocked,
+          techniqueReady: dipTechniqueReady,
+          techniqueFailures,
+          frameBlockers: [...new Set(blockers)],
+        };
+        uploadedDipDiagnostics.latestLiveSnapshot = liveSnapshot;
         uploadedDipDiagnostics.windowFrames.push({
           ready: repetitionFrameReady && repetitionTechniqueReady,
           blockers: [...new Set(blockers)],
           moment,
+          live: liveSnapshot,
         });
         if (
           moment.count.elbowRaw !== null
@@ -11161,6 +11267,71 @@ function Home() {
       const tracker = exerciseRepTrackerRef.current;
       const lastFrame = frames[frames.length - 1];
       const readyFrames = frames.filter((frame) => frame.ready).length;
+      const scoreFailureCounts = {
+        left: { shoulder: 0, elbow: 0, wrist: 0, hip: 0 },
+        right: { shoulder: 0, elbow: 0, wrist: 0, hip: 0 },
+      };
+      const angleNotCalculableCounts = {
+        screenElbow: 0,
+        countElbow: 0,
+        torsoLean: 0,
+      };
+      const createScoreRange = () => ({
+        frames: 0,
+        minimum: {
+          shoulder: null,
+          elbow: null,
+          wrist: null,
+          hip: null,
+        } as UploadedDipJointScores,
+        maximum: {
+          shoulder: null,
+          elbow: null,
+          wrist: null,
+          hip: null,
+        } as UploadedDipJointScores,
+      });
+      const usedSideScoreRanges: Record<PoseSide, ReturnType<typeof createScoreRange>> = {
+        left: createScoreRange(),
+        right: createScoreRange(),
+      };
+      let torsoOutsideRangeCount = 0;
+      let cameraNotReadyCount = 0;
+      frames.forEach(({ live }) => {
+        (['left', 'right'] as const).forEach((side) => {
+          (['shoulder', 'elbow', 'wrist', 'hip'] as const).forEach((point) => {
+            if (live.sides[side].scoreFailures[point]) {
+              scoreFailureCounts[side][point] += 1;
+            }
+          });
+        });
+        if (
+          live.angles.torsoLean !== null
+          && !isWithinAngle(
+            live.angles.torsoLean,
+            DIP_TORSO_MIN_ANGLE,
+            DIP_TORSO_MAX_ANGLE,
+          )
+        ) {
+          torsoOutsideRangeCount += 1;
+        }
+        if (live.angles.screenElbow === null) angleNotCalculableCounts.screenElbow += 1;
+        if (live.angles.countElbow === null) angleNotCalculableCounts.countElbow += 1;
+        if (live.angles.torsoLean === null) angleNotCalculableCounts.torsoLean += 1;
+        if (!live.camera.ready) cameraNotReadyCount += 1;
+
+        if (!live.countSide) return;
+        const range = usedSideScoreRanges[live.countSide];
+        range.frames += 1;
+        (['shoulder', 'elbow', 'wrist', 'hip'] as const).forEach((point) => {
+          const score = live.sides[live.countSide!].scores[point];
+          if (score === null) return;
+          const minimum = range.minimum[point];
+          const maximum = range.maximum[point];
+          range.minimum[point] = minimum === null ? score : Math.min(minimum, score);
+          range.maximum[point] = maximum === null ? score : Math.max(maximum, score);
+        });
+      });
       console.log(
         `[rep] fase=${tracker.phase} | total=${tracker.repetitions}`
         + ` | conteo.codo bruto=${formatUploadedDipAngle(lastFrame?.moment.count.elbowRaw ?? null)}`
@@ -11170,6 +11341,21 @@ function Home() {
         + ` | listos=${readyFrames}/${frames.length}`
         + ` | bloqueos=${blockerSummary}`
         + ` | muestras/s=${(frames.length / elapsedWallSeconds).toFixed(1)}`,
+      );
+      console.log(
+        `[fondos-video-puntos] ${JSON.stringify({
+          ultimoCuadro: diagnostics.latestLiveSnapshot ?? null,
+          ventana: {
+            cuadros: frames.length,
+            fallos: {
+              scoreMenor038PorLadoYPunto: scoreFailureCounts,
+              torsoFueraDeRango: torsoOutsideRangeCount,
+              anguloNoCalculable: angleNotCalculableCounts,
+              camaraNoLista: cameraNotReadyCount,
+            },
+            minMaxScoresLadoUsadoParaConteo: usedSideScoreRanges,
+          },
+        })}`,
       );
       const elapsedVideoSeconds = diagnostics.lastFpsVideoTime === null
         ? 0
