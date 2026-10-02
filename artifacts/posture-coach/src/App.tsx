@@ -10350,6 +10350,7 @@ function Home() {
           ? {
               ...repetitionConfig,
               startMinAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
+              activationAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
               endMinAngle: UPLOADED_DIP_VIDEO_END_MIN_ANGLE,
               endMaxAngle: UPLOADED_DIP_VIDEO_END_MAX_ANGLE,
             }
