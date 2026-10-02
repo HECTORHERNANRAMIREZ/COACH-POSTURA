@@ -615,6 +615,9 @@ type UploadedDipLiveSnapshot = {
   screenSide: PoseSide | null;
   countSide: PoseSide | null;
   techniqueSide: PoseSide | null;
+  originalSelectorSide: PoseSide | null;
+  ruleSelectedSide: PoseSide | null;
+  torsoLeanBySide: Record<PoseSide, number | null>;
   sides: Record<PoseSide, UploadedDipLiveSide>;
   angles: {
     screenElbow: number | null;
@@ -9096,6 +9099,57 @@ function Home() {
               : 0,
           }
         : detectedDominantSideResult;
+    const uploadedDipSideSelectionForFrame = (
+      inputModeRef.current === 'video'
+      && selectedExerciseForFrame === 'fondos'
+    )
+      ? (() => {
+          const originalSelectorSide = nextDominantSideResult?.side ?? null;
+          if (nextDominantSideResult) {
+            const qualifyingSides = (['left', 'right'] as const)
+              .map((side) => {
+                const indexes = sideKeypoints[side];
+                const elbowScore = pose?.keypoints?.[indexes.elbow]?.score ?? 0;
+                const wristScore = pose?.keypoints?.[indexes.wrist]?.score ?? 0;
+                return {
+                  side,
+                  average: (elbowScore + wristScore) / 2,
+                  qualifies: elbowScore >= CAMERA_POINT_MIN_SCORE
+                    && wristScore >= CAMERA_POINT_MIN_SCORE,
+                };
+              })
+              .filter(({ qualifies }) => qualifies);
+            const previousFrameSide = previousSideRef.current;
+            const trackerLocksSide = exerciseRepTrackerRef.current.phase === 'en movimiento'
+              || exerciseRepTrackerRef.current.phase === 'final';
+            let selectedSide = originalSelectorSide;
+            if (trackerLocksSide) {
+              selectedSide = previousFrameSide ?? selectedSide;
+            } else if (qualifyingSides.length) {
+              const previousQualifyingSide = qualifyingSides.find(
+                ({ side }) => side === previousFrameSide,
+              );
+              selectedSide = previousQualifyingSide?.side
+                ?? qualifyingSides.reduce((best, candidate) => (
+                  candidate.average > best.average ? candidate : best
+                )).side;
+            }
+            if (selectedSide) nextDominantSideResult.side = selectedSide;
+          }
+          const torsoAngleForSide = (side: PoseSide) => calculateForwardLeanAngle(
+            pose?.keypoints?.[sideKeypoints[side].shoulder],
+            pose?.keypoints?.[sideKeypoints[side].hip],
+          );
+          return {
+            originalSelectorSide,
+            ruleSelectedSide: nextDominantSideResult?.side ?? null,
+            torsoLeanBySide: {
+              left: torsoAngleForSide('left'),
+              right: torsoAngleForSide('right'),
+            },
+          };
+        })()
+      : null;
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const nextSideViewCandidate = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
         ? getSideViewCandidate(pose?.keypoints)
@@ -10144,6 +10198,10 @@ function Home() {
           screenSide: nextDominantSide,
           countSide: moment.countSide,
           techniqueSide: nextDominantSide,
+          originalSelectorSide: uploadedDipSideSelectionForFrame?.originalSelectorSide ?? null,
+          ruleSelectedSide: uploadedDipSideSelectionForFrame?.ruleSelectedSide ?? null,
+          torsoLeanBySide: uploadedDipSideSelectionForFrame?.torsoLeanBySide
+            ?? { left: null, right: null },
           sides,
           angles: {
             screenElbow: screenElbowAngle,
