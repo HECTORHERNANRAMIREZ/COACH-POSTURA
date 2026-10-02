@@ -168,6 +168,7 @@ const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
 const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.35;
+const UPLOADED_DIP_VIDEO_PLAYBACK_RATE = 0.5;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
 const DETECTOR_MAX_FRAME_HEIGHT = 720;
 // Número de frames usados para calcular la media móvil del FPS real del detector.
@@ -8344,6 +8345,9 @@ function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
   const uploadedDipDiagnosticsRef = useRef<UploadedDipDiagnostics | null>(null);
+  const uploadedDipPlaybackRateManualOverrideRef = useRef(false);
+  const uploadedDipPlaybackRateExpectedRef = useRef<number | null>(null);
+  const uploadedDipPlaybackRateInitializedRef = useRef(false);
   const uploadedPushupAnalysisStartingRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
   const uploadedPushupVideoEndedRef = useRef(false);
@@ -11429,7 +11433,16 @@ function Home() {
         ? 0
         : video.currentTime - diagnostics.lastFpsVideoTime;
       if (elapsedVideoSeconds > 0) {
-        console.log(`[fps] ${(frames.length / elapsedVideoSeconds).toFixed(1)} muestras/s de video`);
+        const samplesPerVideoSecond = frames.length / elapsedVideoSeconds;
+        const samplesPerWallSecond = elapsedWallSeconds > 0
+          ? frames.length / elapsedWallSeconds
+          : 0;
+        console.log(`[fps] ${samplesPerVideoSecond.toFixed(1)} muestras/s de video`);
+        console.log(
+          `[velocidad] playbackRate=${video.playbackRate.toFixed(2)}×`
+          + ` | ${samplesPerWallSecond.toFixed(1)} muestras/s de reloj`
+          + ` | ${samplesPerVideoSecond.toFixed(1)} muestras/s de video`,
+        );
       }
       diagnostics.lastReportTimestamp = now;
       diagnostics.lastFpsVideoTime = video.currentTime;
@@ -11568,9 +11581,48 @@ function Home() {
     updatePushupPreparationStage,
     updatePushupPreparationCountdown,
   ]);
+  const applyUploadedDipPlaybackRate = useCallback((video: HTMLVideoElement | null) => {
+    if (
+      !video
+      || inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'fondos'
+      || uploadedDipPlaybackRateManualOverrideRef.current
+    ) {
+      return;
+    }
+    if (video.playbackRate !== UPLOADED_DIP_VIDEO_PLAYBACK_RATE) {
+      uploadedDipPlaybackRateExpectedRef.current = UPLOADED_DIP_VIDEO_PLAYBACK_RATE;
+      video.playbackRate = UPLOADED_DIP_VIDEO_PLAYBACK_RATE;
+    }
+    uploadedDipPlaybackRateInitializedRef.current = true;
+  }, []);
+  const handleUploadedDipPlaybackRateChange = useCallback(
+    (event: { currentTarget: HTMLVideoElement }) => {
+      if (
+        inputModeRef.current !== 'video'
+        || selectedExerciseRef.current !== 'fondos'
+        || !uploadedDipPlaybackRateInitializedRef.current
+      ) {
+        return;
+      }
+      const video = event.currentTarget;
+      const expectedRate = uploadedDipPlaybackRateExpectedRef.current;
+      if (
+        expectedRate !== null
+        && Math.abs(video.playbackRate - expectedRate) < 0.001
+      ) {
+        uploadedDipPlaybackRateExpectedRef.current = null;
+        return;
+      }
+      uploadedDipPlaybackRateExpectedRef.current = null;
+      uploadedDipPlaybackRateManualOverrideRef.current = true;
+    },
+    [],
+  );
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video') return;
     const video = videoRef.current;
+    applyUploadedDipPlaybackRate(video);
     if (
       selectedExerciseRef.current === 'flexiones'
       && uploadedPushupPreflightRef.current
@@ -11588,7 +11640,7 @@ function Home() {
     }
     if (!activeRef.current) return;
     scheduleNextFrame();
-  }, [scheduleNextFrame, startUploadedPushupPlayback]);
+  }, [applyUploadedDipPlaybackRate, scheduleNextFrame, startUploadedPushupPlayback]);
 
   const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
@@ -11810,6 +11862,9 @@ function Home() {
         video.src = sourceUrl;
         video.load();
         await metadataLoaded;
+        if (activeExercise === 'fondos') {
+          applyUploadedDipPlaybackRate(video);
+        }
         setVideoDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
         video.pause();
         const firstMillisecond = Math.min(
@@ -11888,6 +11943,7 @@ function Home() {
       busyRef.current = false;
     }
   }, [
+    applyUploadedDipPlaybackRate,
     loadDetector,
     scheduleNextFrame,
     stopResources,
@@ -12045,6 +12101,9 @@ function Home() {
     if (file.type.startsWith('video/') && exercise === 'fondos') {
       uploadedDipDiagnosticsRef.current = createUploadedDipDiagnostics();
     }
+    uploadedDipPlaybackRateManualOverrideRef.current = false;
+    uploadedDipPlaybackRateExpectedRef.current = null;
+    uploadedDipPlaybackRateInitializedRef.current = false;
     void startCamera(exercise, false, file);
   }, [startCamera]);
 
@@ -13455,6 +13514,7 @@ function Home() {
                   }}
                   onLoadedMetadata={syncVideoSize}
                   onPlay={handleVideoPlay}
+                  onRateChange={handleUploadedDipPlaybackRateChange}
                   onEnded={inputMode === 'video' ? handleUploadedVideoEnded : undefined}
                   data-testid="video-camera-preview"
                   aria-label={`Vista previa de la cámara ${
