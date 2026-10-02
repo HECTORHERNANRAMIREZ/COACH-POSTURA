@@ -578,6 +578,61 @@ type ExerciseRepTrackerUpdate = {
   smoothedAngle: number;
   completedEndpointAngle: number | null;
 };
+type UploadedDipDiagnosticAngle = {
+  angle: number | null;
+  status: string;
+};
+type UploadedDipFacing = {
+  imageDirection: 'izquierda' | 'derecha' | 'desconocida';
+  noseFromShoulderCenterX: number | null;
+};
+type UploadedDipDiagnosticMoment = {
+  videoTimeSeconds: number;
+  countSide: PoseSide | null;
+  techniqueSide: PoseSide | null;
+  facing: UploadedDipFacing;
+  count: {
+    elbowRaw: number | null;
+    elbowSmoothed: number | null;
+    status: string;
+  };
+  technique: {
+    torsoLean: UploadedDipDiagnosticAngle;
+    elbowDepth: UploadedDipDiagnosticAngle;
+    shoulderRelative: UploadedDipDiagnosticAngle;
+    shoulderElbowOffsetByTorso: { dx: number | null; dy: number | null };
+  };
+};
+type UploadedDipDiagnosticFrame = {
+  ready: boolean;
+  blockers: string[];
+  moment: UploadedDipDiagnosticMoment;
+};
+type UploadedDipRepetitionMeasurement = {
+  repetition: number;
+  complete: boolean;
+  start: UploadedDipDiagnosticMoment | null;
+  bottom: UploadedDipDiagnosticMoment | null;
+  return: UploadedDipDiagnosticMoment | null;
+  elbowRawMinimum: number | null;
+  torsoLeanMinimum: number | null;
+  torsoLeanMaximum: number | null;
+};
+type UploadedDipDiagnostics = {
+  windowFrames: UploadedDipDiagnosticFrame[];
+  angleSamples: {
+    elbowCount: number[];
+    torsoLean: number[];
+    shoulderRelative: number[];
+  };
+  repetitions: UploadedDipRepetitionMeasurement[];
+  currentRepetition: UploadedDipRepetitionMeasurement | null;
+  nextRepetitionNumber: number;
+  incompleteRepetitions: number;
+  lastSmoothedElbowAngle: number | null;
+  lastReportTimestamp: number | null;
+  lastFpsVideoTime: number | null;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -7998,6 +8053,252 @@ function formatUploadedPushupDiagnosticAngle(angle: number | null) {
   return angle === null ? '—' : `${angle}°`;
 }
 
+function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
+  return {
+    windowFrames: [],
+    angleSamples: { elbowCount: [], torsoLean: [], shoulderRelative: [] },
+    repetitions: [],
+    currentRepetition: null,
+    nextRepetitionNumber: 1,
+    incompleteRepetitions: 0,
+    lastSmoothedElbowAngle: null,
+    lastReportTimestamp: null,
+    lastFpsVideoTime: null,
+  };
+}
+
+function getUploadedDipMeasurementStatus(
+  angle: number | null,
+  points: Array<{ label: string; point: PosePoint | undefined }>,
+  min?: number,
+  max?: number,
+  unscoredStatus = 'medido; sin rango técnico calibrado',
+) {
+  if (!points.length) return 'no se pudo medir: lado no disponible';
+  const held = points
+    .filter(({ point }) => isHeldPoint(point))
+    .map(({ label }) => label);
+  if (held.length) return `no se pudo medir: punto retenido (${held.join(', ')})`;
+  const unavailable = points
+    .filter(({ point }) => !point || (point.score ?? 0) < CAMERA_POINT_MIN_SCORE)
+    .map(({ label }) => label);
+  if (unavailable.length) {
+    return `no se pudo medir: punto no visible o confianza insuficiente (${unavailable.join(', ')})`;
+  }
+  if (angle === null) return 'no se pudo medir: ángulo no calculable';
+  if (min !== undefined && max !== undefined && !isWithinAngle(angle, min, max)) {
+    return 'ángulo fuera de rango';
+  }
+  return min === undefined ? unscoredStatus : 'medido dentro del rango';
+}
+
+function getUploadedDipFacingInFrame(keypoints: PosePoint[] | undefined): UploadedDipFacing {
+  const nose = keypoints?.[0];
+  const leftShoulder = keypoints?.[sideKeypoints.left.shoulder];
+  const rightShoulder = keypoints?.[sideKeypoints.right.shoulder];
+  const reliable = [nose, leftShoulder, rightShoulder].every((point) => (
+    point
+    && !isHeldPoint(point)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+  ));
+  if (!reliable || !nose || !leftShoulder || !rightShoulder) {
+    return { imageDirection: 'desconocida', noseFromShoulderCenterX: null };
+  }
+  const noseOffset = nose.x - ((leftShoulder.x + rightShoulder.x) / 2);
+  return {
+    imageDirection: noseOffset < 0
+      ? 'izquierda'
+      : noseOffset > 0
+        ? 'derecha'
+        : 'desconocida',
+    noseFromShoulderCenterX: Number(noseOffset.toFixed(4)),
+  };
+}
+
+function createUploadedDipDiagnosticMoment({
+  keypoints,
+  countSide,
+  techniqueSide,
+  videoTimeSeconds,
+  rawElbowAngle,
+  smoothedElbowAngle,
+  atBottom,
+}: {
+  keypoints: PosePoint[] | undefined;
+  countSide: PoseSide | null;
+  techniqueSide: PoseSide | null;
+  videoTimeSeconds: number;
+  rawElbowAngle: number | null;
+  smoothedElbowAngle: number | null;
+  atBottom: boolean;
+}): UploadedDipDiagnosticMoment {
+  const countIndexes = countSide ? sideKeypoints[countSide] : null;
+  const techniqueIndexes = techniqueSide ? sideKeypoints[techniqueSide] : null;
+  const countPoints = countIndexes
+    ? [
+        { label: 'hombro', point: keypoints?.[countIndexes.shoulder] },
+        { label: 'codo', point: keypoints?.[countIndexes.elbow] },
+        { label: 'muñeca', point: keypoints?.[countIndexes.wrist] },
+      ]
+    : [];
+  const torsoPoints = techniqueIndexes
+    ? [
+        { label: 'hombro', point: keypoints?.[techniqueIndexes.shoulder] },
+        { label: 'cadera', point: keypoints?.[techniqueIndexes.hip] },
+      ]
+    : [];
+  const shoulderPoints = techniqueIndexes
+    ? [
+        { label: 'cadera', point: keypoints?.[techniqueIndexes.hip] },
+        { label: 'hombro', point: keypoints?.[techniqueIndexes.shoulder] },
+        { label: 'codo', point: keypoints?.[techniqueIndexes.elbow] },
+      ]
+    : [];
+  const hip = techniqueIndexes ? keypoints?.[techniqueIndexes.hip] : undefined;
+  const shoulder = techniqueIndexes ? keypoints?.[techniqueIndexes.shoulder] : undefined;
+  const elbow = techniqueIndexes ? keypoints?.[techniqueIndexes.elbow] : undefined;
+  const torsoLean = calculateForwardLeanAngle(shoulder, hip);
+  const shoulderRelative = calculateAngle(hip, shoulder, elbow);
+  const offsetPointsReliable = [hip, shoulder, elbow].every((point) => (
+    point
+    && !isHeldPoint(point)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+  ));
+  const torsoLength = hip && shoulder
+    ? Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y)
+    : 0;
+  const offsetIsMeasurable = offsetPointsReliable && torsoLength > 0;
+
+  return {
+    videoTimeSeconds: Number(videoTimeSeconds.toFixed(3)),
+    countSide,
+    techniqueSide,
+    facing: getUploadedDipFacingInFrame(keypoints),
+    count: {
+      elbowRaw: rawElbowAngle,
+      elbowSmoothed: smoothedElbowAngle,
+      status: getUploadedDipMeasurementStatus(
+        rawElbowAngle,
+        countPoints,
+        undefined,
+        undefined,
+        'medido; conteo según fase del tracker',
+      ),
+    },
+    technique: {
+      torsoLean: {
+        angle: torsoLean,
+        status: getUploadedDipMeasurementStatus(
+          torsoLean,
+          torsoPoints,
+          DIP_TORSO_MIN_ANGLE,
+          DIP_TORSO_MAX_ANGLE,
+        ),
+      },
+      elbowDepth: {
+        angle: atBottom ? rawElbowAngle : null,
+        status: atBottom
+          ? getUploadedDipMeasurementStatus(
+              rawElbowAngle,
+              countPoints,
+              DIP_VALID_MIN_ANGLE,
+              DIP_VALID_MAX_ANGLE,
+            )
+          : 'no evaluado: no es un evento de fondo',
+      },
+      shoulderRelative: {
+        angle: shoulderRelative,
+        status: getUploadedDipMeasurementStatus(
+          shoulderRelative,
+          shoulderPoints,
+        ),
+      },
+      shoulderElbowOffsetByTorso: {
+        dx: offsetIsMeasurable
+          ? Number(((shoulder!.x - elbow!.x) / torsoLength).toFixed(4))
+          : null,
+        dy: offsetIsMeasurable
+          ? Number(((shoulder!.y - elbow!.y) / torsoLength).toFixed(4))
+          : null,
+      },
+    },
+  };
+}
+
+function createUploadedDipRepetitionMeasurement(
+  diagnostics: UploadedDipDiagnostics,
+  moment: UploadedDipDiagnosticMoment | null,
+  startAtMoment: boolean,
+): UploadedDipRepetitionMeasurement {
+  const repetition: UploadedDipRepetitionMeasurement = {
+    repetition: diagnostics.nextRepetitionNumber,
+    complete: false,
+    start: startAtMoment ? moment : null,
+    bottom: null,
+    return: null,
+    elbowRawMinimum: null,
+    torsoLeanMinimum: null,
+    torsoLeanMaximum: null,
+  };
+  diagnostics.nextRepetitionNumber += 1;
+  return repetition;
+}
+
+function updateUploadedDipRepetitionExtremes(
+  repetition: UploadedDipRepetitionMeasurement,
+  moment: UploadedDipDiagnosticMoment,
+) {
+  const rawElbow = moment.count.elbowRaw;
+  if (
+    rawElbow !== null
+    && !moment.count.status.startsWith('no se pudo medir')
+  ) {
+    repetition.elbowRawMinimum = repetition.elbowRawMinimum === null
+      ? rawElbow
+      : Math.min(repetition.elbowRawMinimum, rawElbow);
+  }
+  const torsoLean = moment.technique.torsoLean;
+  if (
+    torsoLean.angle !== null
+    && !torsoLean.status.startsWith('no se pudo medir')
+  ) {
+    repetition.torsoLeanMinimum = repetition.torsoLeanMinimum === null
+      ? torsoLean.angle
+      : Math.min(repetition.torsoLeanMinimum, torsoLean.angle);
+    repetition.torsoLeanMaximum = repetition.torsoLeanMaximum === null
+      ? torsoLean.angle
+      : Math.max(repetition.torsoLeanMaximum, torsoLean.angle);
+  }
+}
+
+function formatUploadedDipAngle(angle: number | null) {
+  return angle === null ? '—' : `${angle.toFixed(1)}°`;
+}
+
+function summarizeUploadedDipAngles(values: number[]) {
+  if (!values.length) {
+    return { muestras: 0, minimo: null, maximo: null, promedio: null, desviacion: null };
+  }
+  let minimo = Number.POSITIVE_INFINITY;
+  let maximo = Number.NEGATIVE_INFINITY;
+  let suma = 0;
+  for (const value of values) {
+    minimo = Math.min(minimo, value);
+    maximo = Math.max(maximo, value);
+    suma += value;
+  }
+  const promedio = suma / values.length;
+  const varianza = values.reduce((total, value) => total + (value - promedio) ** 2, 0)
+    / values.length;
+  return {
+    muestras: values.length,
+    minimo,
+    maximo,
+    promedio,
+    desviacion: Math.sqrt(varianza),
+  };
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -8005,6 +8306,7 @@ function Home() {
   const videoUploadInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
+  const uploadedDipDiagnosticsRef = useRef<UploadedDipDiagnostics | null>(null);
   const uploadedPushupAnalysisStartingRef = useRef(false);
   const uploadedPushupAnalysisGenerationRef = useRef(0);
   const uploadedPushupVideoEndedRef = useRef(false);
@@ -9169,6 +9471,8 @@ function Home() {
           measurementSide,
         )
         : null;
+      const isUploadedDipVideo = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'fondos';
       // El video puede permanecer pausado durante la calibración. Conserva
       // cualquier lectura fresca del fondo para que el primer frame reproducido
       // no dependa de la lectura exacta del instante de cierre de calibración.
@@ -9728,6 +10032,63 @@ function Home() {
         && pallofTechniqueReady
         && dumbbellPressTechniqueReady
         && shoulderMachinePressTechniqueReady;
+      const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
+      if (
+        isUploadedDipVideo
+        && exerciseStartedRef.current
+        && uploadedDipDiagnostics
+      ) {
+        const moment = createUploadedDipDiagnosticMoment({
+          keypoints: pose?.keypoints,
+          countSide: measurementSide,
+          techniqueSide: nextDominantSide,
+          videoTimeSeconds: video.currentTime,
+          rawElbowAngle: repetitionAngle,
+          smoothedElbowAngle: uploadedDipDiagnostics.lastSmoothedElbowAngle,
+          atBottom: false,
+        });
+        const blockers = [
+          !hasFreshPose ? 'pose no fresca' : null,
+          !frameCameraReady ? 'cámara no lista' : null,
+          frameMeasurementBlocked ? 'medición bloqueada' : null,
+          !repetitionFrameReady ? 'frame de conteo no listo' : null,
+          !dipTechniqueReady ? 'técnica de fondos no lista' : null,
+          moment.count.status.startsWith('no se pudo medir')
+            ? `conteo: ${moment.count.status}`
+            : null,
+        ].filter((reason): reason is string => reason !== null);
+        uploadedDipDiagnostics.windowFrames.push({
+          ready: repetitionFrameReady && repetitionTechniqueReady,
+          blockers: [...new Set(blockers)],
+          moment,
+        });
+        if (
+          moment.count.elbowRaw !== null
+          && !moment.count.status.startsWith('no se pudo medir')
+        ) {
+          uploadedDipDiagnostics.angleSamples.elbowCount.push(moment.count.elbowRaw);
+        }
+        if (
+          moment.technique.torsoLean.angle !== null
+          && !moment.technique.torsoLean.status.startsWith('no se pudo medir')
+        ) {
+          uploadedDipDiagnostics.angleSamples.torsoLean.push(moment.technique.torsoLean.angle);
+        }
+        if (
+          moment.technique.shoulderRelative.angle !== null
+          && !moment.technique.shoulderRelative.status.startsWith('no se pudo medir')
+        ) {
+          uploadedDipDiagnostics.angleSamples.shoulderRelative.push(
+            moment.technique.shoulderRelative.angle,
+          );
+        }
+        if (uploadedDipDiagnostics.currentRepetition) {
+          updateUploadedDipRepetitionExtremes(
+            uploadedDipDiagnostics.currentRepetition,
+            moment,
+          );
+        }
+      }
       const uploadedPushupWristExceptionIndexes = measurementSide
         ? sideKeypoints[measurementSide]
         : null;
@@ -9843,6 +10204,95 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
+        if (isUploadedDipVideo && uploadedDipDiagnostics) {
+          uploadedDipDiagnostics.lastSmoothedElbowAngle = exerciseRepUpdate.smoothedAngle;
+          if (
+            exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
+            || exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
+          ) {
+            const bottomDetected = exerciseRepUpdate.tracker.phase === 'final'
+              && previousExerciseRepTracker.phase !== 'final';
+            const returnDetected = previousExerciseRepTracker.phase !== 'esperando inicio'
+              && previousExerciseRepTracker.phase !== 'inicio'
+              && exerciseRepUpdate.tracker.phase === 'inicio';
+            const moment = createUploadedDipDiagnosticMoment({
+              keypoints: pose?.keypoints,
+              countSide: measurementSide,
+              techniqueSide: nextDominantSide,
+              videoTimeSeconds: video.currentTime,
+              rawElbowAngle: repetitionAngle,
+              smoothedElbowAngle: exerciseRepUpdate.smoothedAngle,
+              atBottom: bottomDetected,
+            });
+            console.log(
+              `[rep-event] video=${moment.videoTimeSeconds}s`
+              + ` | fase=${previousExerciseRepTracker.phase}->${exerciseRepUpdate.tracker.phase}`
+              + ` | lados: conteo=${moment.countSide ?? 'ninguno'}`
+              + ` técnica=${moment.techniqueSide ?? 'ninguno'}`
+              + ` | mira=${moment.facing.imageDirection}`
+              + ` | conteo.codo bruto=${formatUploadedDipAngle(moment.count.elbowRaw)}`
+              + ` suavizado=${formatUploadedDipAngle(moment.count.elbowSmoothed)}`
+              + ` (${moment.count.status})`
+              + ` | técnica.torso=${formatUploadedDipAngle(moment.technique.torsoLean.angle)}`
+              + ` (${moment.technique.torsoLean.status})`
+              + ` | técnica.fondo-codo=${formatUploadedDipAngle(moment.technique.elbowDepth.angle)}`
+              + ` (${moment.technique.elbowDepth.status})`
+              + ` | técnica.hombro-relativo=${formatUploadedDipAngle(moment.technique.shoulderRelative.angle)}`
+              + ` (${moment.technique.shoulderRelative.status})`,
+            );
+            const started = previousExerciseRepTracker.phase === 'inicio'
+              && (
+                exerciseRepUpdate.tracker.phase === 'en movimiento'
+                || exerciseRepUpdate.tracker.phase === 'final'
+              );
+            if (started) {
+              uploadedDipDiagnostics.currentRepetition = createUploadedDipRepetitionMeasurement(
+                uploadedDipDiagnostics,
+                moment,
+                true,
+              );
+              updateUploadedDipRepetitionExtremes(
+                uploadedDipDiagnostics.currentRepetition,
+                moment,
+              );
+            }
+            if (bottomDetected) {
+              uploadedDipDiagnostics.currentRepetition ??=
+                createUploadedDipRepetitionMeasurement(
+                  uploadedDipDiagnostics,
+                  null,
+                  false,
+                );
+              uploadedDipDiagnostics.currentRepetition.bottom = moment;
+              updateUploadedDipRepetitionExtremes(
+                uploadedDipDiagnostics.currentRepetition,
+                moment,
+              );
+            }
+            if (returnDetected) {
+              uploadedDipDiagnostics.currentRepetition ??=
+                createUploadedDipRepetitionMeasurement(
+                  uploadedDipDiagnostics,
+                  null,
+                  false,
+                );
+              uploadedDipDiagnostics.currentRepetition.return = moment;
+              updateUploadedDipRepetitionExtremes(
+                uploadedDipDiagnostics.currentRepetition,
+                moment,
+              );
+              uploadedDipDiagnostics.currentRepetition.complete = true;
+              uploadedDipDiagnostics.repetitions.push(
+                uploadedDipDiagnostics.currentRepetition,
+              );
+              console.log(
+                `[medicion] ${JSON.stringify(uploadedDipDiagnostics.currentRepetition)}`,
+              );
+              uploadedDipDiagnostics.currentRepetition = null;
+            }
+          }
+        }
         const isUploadedStandardPushup = inputModeRef.current === 'video'
           && selectedExerciseForFrame === 'flexiones';
         const pushupActivationStarted = isUploadedStandardPushup
@@ -9975,6 +10425,39 @@ function Home() {
             || (selectedExerciseForFrame === 'press-hombros-maquina' && !shoulderMachinePressTechniqueReady)
         )
       ) {
+        const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
+        if (isUploadedDipVideo && uploadedDipDiagnostics) {
+          if (exerciseRepTrackerRef.current.phase !== 'esperando inicio') {
+            const moment = createUploadedDipDiagnosticMoment({
+              keypoints: pose?.keypoints,
+              countSide: measurementSide,
+              techniqueSide: nextDominantSide,
+              videoTimeSeconds: video.currentTime,
+              rawElbowAngle: repetitionAngle,
+              smoothedElbowAngle: uploadedDipDiagnostics.lastSmoothedElbowAngle,
+              atBottom: false,
+            });
+            console.log(
+              `[rep-event] video=${moment.videoTimeSeconds}s`
+              + ` | fase=${exerciseRepTrackerRef.current.phase}->esperando inicio`
+              + ` | lados: conteo=${moment.countSide ?? 'ninguno'}`
+              + ` técnica=${moment.techniqueSide ?? 'ninguno'}`
+              + ` | mira=${moment.facing.imageDirection}`
+              + ` | reinicio por bloqueo`,
+            );
+          }
+          if (uploadedDipDiagnostics.currentRepetition) {
+            uploadedDipDiagnostics.incompleteRepetitions += 1;
+            console.log(
+              `[medicion] ${JSON.stringify({
+                ...uploadedDipDiagnostics.currentRepetition,
+                incompleteAtTrackerReset: true,
+              })}`,
+            );
+          }
+          uploadedDipDiagnostics.currentRepetition = null;
+          uploadedDipDiagnostics.lastSmoothedElbowAngle = null;
+        }
         const resetTracker = createExerciseRepTracker();
         exerciseRepTrackerRef.current = resetTracker;
         setExerciseRepetitions(resetTracker.repetitions);
@@ -10648,6 +11131,59 @@ function Home() {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    if (inputMode !== 'video' || selectedExercise !== 'fondos') return;
+    const reportUploadedDipDiagnostics = () => {
+      if (
+        inputModeRef.current !== 'video'
+        || selectedExerciseRef.current !== 'fondos'
+        || !exerciseStartedRef.current
+      ) return;
+      const video = videoRef.current;
+      const diagnostics = uploadedDipDiagnosticsRef.current;
+      if (!video || video.paused || video.ended || !diagnostics) return;
+      const now = performance.now();
+      const elapsedWallSeconds = diagnostics.lastReportTimestamp === null
+        ? 1
+        : (now - diagnostics.lastReportTimestamp) / 1000;
+      const frames = diagnostics.windowFrames.splice(0);
+      const elbows = frames
+        .filter((frame) => !frame.moment.count.status.startsWith('no se pudo medir'))
+        .map((frame) => frame.moment.count.elbowRaw)
+        .filter((angle): angle is number => angle !== null);
+      const blockers = new Map<string, number>();
+      frames.forEach((frame) => frame.blockers.forEach((reason) => {
+        blockers.set(reason, (blockers.get(reason) ?? 0) + 1);
+      }));
+      const blockerSummary = [...blockers.entries()]
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(', ') || 'ninguno';
+      const tracker = exerciseRepTrackerRef.current;
+      const lastFrame = frames[frames.length - 1];
+      const readyFrames = frames.filter((frame) => frame.ready).length;
+      console.log(
+        `[rep] fase=${tracker.phase} | total=${tracker.repetitions}`
+        + ` | conteo.codo bruto=${formatUploadedDipAngle(lastFrame?.moment.count.elbowRaw ?? null)}`
+        + ` | suavizado último tracker=${formatUploadedDipAngle(diagnostics.lastSmoothedElbowAngle)}`
+        + ` | bruto min/max=${formatUploadedDipAngle(elbows.length ? Math.min(...elbows) : null)}`
+        + `/${formatUploadedDipAngle(elbows.length ? Math.max(...elbows) : null)}`
+        + ` | listos=${readyFrames}/${frames.length}`
+        + ` | bloqueos=${blockerSummary}`
+        + ` | muestras/s=${(frames.length / elapsedWallSeconds).toFixed(1)}`,
+      );
+      const elapsedVideoSeconds = diagnostics.lastFpsVideoTime === null
+        ? 0
+        : video.currentTime - diagnostics.lastFpsVideoTime;
+      if (elapsedVideoSeconds > 0) {
+        console.log(`[fps] ${(frames.length / elapsedVideoSeconds).toFixed(1)} muestras/s de video`);
+      }
+      diagnostics.lastReportTimestamp = now;
+      diagnostics.lastFpsVideoTime = video.currentTime;
+    };
+    const intervalId = window.setInterval(reportUploadedDipDiagnostics, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [inputMode, selectedExercise]);
+
   const startUploadedPushupPlayback = useCallback(async () => {
     const video = videoRef.current;
     if (
@@ -11252,6 +11788,9 @@ function Home() {
         setUploadedPushupCalibrationHintTimedOut(true);
       }, 15_000);
     }
+    if (file.type.startsWith('video/') && exercise === 'fondos') {
+      uploadedDipDiagnosticsRef.current = createUploadedDipDiagnostics();
+    }
     void startCamera(exercise, false, file);
   }, [startCamera]);
 
@@ -11332,6 +11871,60 @@ function Home() {
         setExerciseGoodRepetitions(reclassifiedTracker.goodRepetitions);
       }
       uploadedPushupLastCompletedRepRef.current = null;
+    }
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'fondos'
+      && videoRef.current?.ended
+    ) {
+      const diagnostics = uploadedDipDiagnosticsRef.current;
+      if (diagnostics) {
+        if (diagnostics.currentRepetition) {
+          diagnostics.incompleteRepetitions += 1;
+          console.log(
+            `[medicion] ${JSON.stringify({
+              ...diagnostics.currentRepetition,
+              incompleteAtVideoEnd: true,
+            })}`,
+          );
+          diagnostics.currentRepetition = null;
+        }
+        const completedRepetitions = diagnostics.repetitions;
+        const elbowMinima = completedRepetitions
+          .map((repetition) => repetition.elbowRawMinimum)
+          .filter((angle): angle is number => angle !== null);
+        const torsoMinima = completedRepetitions
+          .map((repetition) => repetition.torsoLeanMinimum)
+          .filter((angle): angle is number => angle !== null);
+        const torsoMaxima = completedRepetitions
+          .map((repetition) => repetition.torsoLeanMaximum)
+          .filter((angle): angle is number => angle !== null);
+        const tracker = exerciseRepTrackerRef.current;
+        console.log(
+          `[medicion-resumen] ${JSON.stringify({
+            angulos: {
+              codoConteo: summarizeUploadedDipAngles(diagnostics.angleSamples.elbowCount),
+              inclinacionTorso: summarizeUploadedDipAngles(diagnostics.angleSamples.torsoLean),
+              hombroRelativo: summarizeUploadedDipAngles(diagnostics.angleSamples.shoulderRelative),
+            },
+            extremosPorRepeticion: completedRepetitions.map((repetition) => ({
+              repetition: repetition.repetition,
+              elbowRawMinimum: repetition.elbowRawMinimum,
+              torsoLeanMinimum: repetition.torsoLeanMinimum,
+              torsoLeanMaximum: repetition.torsoLeanMaximum,
+            })),
+            resumenDeExtremos: {
+              minimoCodoBrutoPorRepeticion: summarizeUploadedDipAngles(elbowMinima),
+              minimoTorsoPorRepeticion: summarizeUploadedDipAngles(torsoMinima),
+              maximoTorsoPorRepeticion: summarizeUploadedDipAngles(torsoMaxima),
+            },
+            medicionesCompletas: completedRepetitions.length,
+            medicionesIncompletas: diagnostics.incompleteRepetitions,
+            repeticionesDetectadas: tracker.repetitions,
+          })}`,
+        );
+        console.log(`[fin] fase=${tracker.phase} | total=${tracker.repetitions}`);
+      }
     }
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     if (videoRef.current) videoRef.current.controls = true;
