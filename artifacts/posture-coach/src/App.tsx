@@ -645,6 +645,8 @@ type UploadedDipDiagnosticFrame = {
 type UploadedDipRepetitionMeasurement = {
   repetition: number;
   complete: boolean;
+  countedAsIncorrect?: boolean;
+  reason?: 'sin profundidad';
   start: UploadedDipDiagnosticMoment | null;
   bottom: UploadedDipDiagnosticMoment | null;
   return: UploadedDipDiagnosticMoment | null;
@@ -660,9 +662,11 @@ type UploadedDipDiagnostics = {
     shoulderRelative: number[];
   };
   repetitions: UploadedDipRepetitionMeasurement[];
+  noDepthRepetitions: UploadedDipRepetitionMeasurement[];
   currentRepetition: UploadedDipRepetitionMeasurement | null;
   nextRepetitionNumber: number;
   incompleteRepetitions: number;
+  lastIncorrectReason: string | null;
   lastSmoothedElbowAngle: number | null;
   lastReportTimestamp: number | null;
   lastFpsVideoTime: number | null;
@@ -1992,6 +1996,8 @@ const DIP_VALID_MAX_ANGLE = 95;
 const UPLOADED_DIP_VIDEO_START_MIN_ANGLE = 140;
 const UPLOADED_DIP_VIDEO_END_MIN_ANGLE = 65;
 const UPLOADED_DIP_VIDEO_END_MAX_ANGLE = 100;
+const UPLOADED_DIP_VIDEO_NO_DEPTH_MAX_RAW_ANGLE = 125;
+const UPLOADED_DIP_VIDEO_NO_DEPTH_REASON = 'sin profundidad';
 // Calibración derivada del video de referencia del usuario:
 // inicio con el codo flexionado y final con el brazo extendido arriba.
 const MILITARY_PRESS_START_MIN_ANGLE = 130;
@@ -8096,9 +8102,11 @@ function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
     windowFrames: [],
     angleSamples: { elbowCount: [], torsoLean: [], shoulderRelative: [] },
     repetitions: [],
+    noDepthRepetitions: [],
     currentRepetition: null,
     nextRepetitionNumber: 1,
     incompleteRepetitions: 0,
+    lastIncorrectReason: null,
     lastSmoothedElbowAngle: null,
     lastReportTimestamp: null,
     lastFpsVideoTime: null,
