@@ -1988,6 +1988,9 @@ const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
+const UPLOADED_DIP_VIDEO_START_MIN_ANGLE = 140;
+const UPLOADED_DIP_VIDEO_END_MIN_ANGLE = 65;
+const UPLOADED_DIP_VIDEO_END_MAX_ANGLE = 100;
 // Calibración derivada del video de referencia del usuario:
 // inicio con el codo flexionado y final con el brazo extendido arriba.
 const MILITARY_PRESS_START_MIN_ANGLE = 130;
@@ -10335,11 +10338,18 @@ function Home() {
         )
         && repetitionConfig
         && repetitionAngle !== null
-        && (isPushupExercise || repetitionTechniqueReady)
+        && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
         && (!frameMeasurementBlocked || uploadedPushupWristHeldException)
       ) {
         uploadedPushupTrackerGatePassed = true;
-        const trackerConfig = repetitionConfig.postBottomRawPeakForReturn
+        const trackerConfig = isUploadedDipVideo
+          ? {
+              ...repetitionConfig,
+              startMinAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
+              endMinAngle: UPLOADED_DIP_VIDEO_END_MIN_ANGLE,
+              endMaxAngle: UPLOADED_DIP_VIDEO_END_MAX_ANGLE,
+            }
+          : repetitionConfig.postBottomRawPeakForReturn
           ? {
               ...repetitionConfig,
               ...(inputModeRef.current === 'video'
