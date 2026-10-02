@@ -10353,6 +10353,7 @@ function Home() {
               activationAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
               endMinAngle: UPLOADED_DIP_VIDEO_END_MIN_ANGLE,
               endMaxAngle: UPLOADED_DIP_VIDEO_END_MAX_ANGLE,
+              countOnReturn: true,
             }
           : repetitionConfig.postBottomRawPeakForReturn
           ? {
@@ -10450,24 +10451,31 @@ function Home() {
               );
             }
             if (returnDetected) {
-              uploadedDipDiagnostics.currentRepetition ??=
-                createUploadedDipRepetitionMeasurement(
+              const currentRepetition = uploadedDipDiagnostics.currentRepetition
+                ?? createUploadedDipRepetitionMeasurement(
                   uploadedDipDiagnostics,
                   null,
                   false,
                 );
-              uploadedDipDiagnostics.currentRepetition.return = moment;
+              uploadedDipDiagnostics.currentRepetition = currentRepetition;
+              currentRepetition.return = moment;
               updateUploadedDipRepetitionExtremes(
-                uploadedDipDiagnostics.currentRepetition,
+                currentRepetition,
                 moment,
               );
-              uploadedDipDiagnostics.currentRepetition.complete = true;
-              uploadedDipDiagnostics.repetitions.push(
-                uploadedDipDiagnostics.currentRepetition,
-              );
-              console.log(
-                `[medicion] ${JSON.stringify(uploadedDipDiagnostics.currentRepetition)}`,
-              );
+              if (currentRepetition.bottom !== null) {
+                currentRepetition.complete = true;
+                uploadedDipDiagnostics.repetitions.push(currentRepetition);
+                console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
+              } else {
+                uploadedDipDiagnostics.incompleteRepetitions += 1;
+                console.log(
+                  `[medicion] ${JSON.stringify({
+                    ...currentRepetition,
+                    incompleteReturnWithoutBottom: true,
+                  })}`,
+                );
+              }
               uploadedDipDiagnostics.currentRepetition = null;
             }
           }
@@ -10638,6 +10646,10 @@ function Home() {
           uploadedDipDiagnostics.lastSmoothedElbowAngle = null;
         }
         const resetTracker = createExerciseRepTracker();
+        if (isUploadedDipVideo) {
+          resetTracker.repetitions = exerciseRepTrackerRef.current.repetitions;
+          resetTracker.goodRepetitions = exerciseRepTrackerRef.current.goodRepetitions;
+        }
         exerciseRepTrackerRef.current = resetTracker;
         setExerciseRepetitions(resetTracker.repetitions);
         setExerciseGoodRepetitions(resetTracker.goodRepetitions);
