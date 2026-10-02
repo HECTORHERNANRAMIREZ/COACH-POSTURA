@@ -10394,7 +10394,23 @@ function Home() {
         );
         const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
         if (isUploadedDipVideo && uploadedDipDiagnostics) {
+          if (uploadedDipDiagnostics.currentRepetition && repetitionAngle !== null) {
+            const currentRepetition = uploadedDipDiagnostics.currentRepetition;
+            currentRepetition.elbowRawMinimum = currentRepetition.elbowRawMinimum === null
+              ? repetitionAngle
+              : Math.min(currentRepetition.elbowRawMinimum, repetitionAngle);
+          }
           uploadedDipDiagnostics.lastSmoothedElbowAngle = exerciseRepUpdate.smoothedAngle;
+          const noDepthReturn = previousExerciseRepTracker.phase === 'en movimiento'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+            && (uploadedDipDiagnostics.currentRepetition?.elbowRawMinimum
+              ?? Number.POSITIVE_INFINITY) < UPLOADED_DIP_VIDEO_NO_DEPTH_MAX_RAW_ANGLE;
+          if (noDepthReturn) {
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              repetitions: exerciseRepUpdate.tracker.repetitions + 1,
+            };
+          }
           if (
             exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
             || exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
@@ -10474,6 +10490,13 @@ function Home() {
               if (currentRepetition.bottom !== null) {
                 currentRepetition.complete = true;
                 uploadedDipDiagnostics.repetitions.push(currentRepetition);
+                console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
+              } else if (noDepthReturn) {
+                currentRepetition.countedAsIncorrect = true;
+                currentRepetition.reason = UPLOADED_DIP_VIDEO_NO_DEPTH_REASON;
+                uploadedDipDiagnostics.lastIncorrectReason =
+                  UPLOADED_DIP_VIDEO_NO_DEPTH_REASON;
+                uploadedDipDiagnostics.noDepthRepetitions.push(currentRepetition);
                 console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
               } else {
                 uploadedDipDiagnostics.incompleteRepetitions += 1;
@@ -11427,6 +11450,8 @@ function Home() {
       });
       console.log(
         `[rep] fase=${tracker.phase} | total=${tracker.repetitions}`
+        + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
+        + ` | motivo=${diagnostics.lastIncorrectReason ?? '—'}`
         + ` | conteo.codo bruto=${formatUploadedDipAngle(lastFrame?.moment.count.elbowRaw ?? null)}`
         + ` | suavizado último tracker=${formatUploadedDipAngle(diagnostics.lastSmoothedElbowAngle)}`
         + ` | bruto min/max=${formatUploadedDipAngle(elbows.length ? Math.min(...elbows) : null)}`
@@ -12224,13 +12249,17 @@ function Home() {
           diagnostics.currentRepetition = null;
         }
         const completedRepetitions = diagnostics.repetitions;
-        const elbowMinima = completedRepetitions
+        const repetitionsWithNoDepth = [
+          ...completedRepetitions,
+          ...diagnostics.noDepthRepetitions,
+        ];
+        const elbowMinima = repetitionsWithNoDepth
           .map((repetition) => repetition.elbowRawMinimum)
           .filter((angle): angle is number => angle !== null);
-        const torsoMinima = completedRepetitions
+        const torsoMinima = repetitionsWithNoDepth
           .map((repetition) => repetition.torsoLeanMinimum)
           .filter((angle): angle is number => angle !== null);
-        const torsoMaxima = completedRepetitions
+        const torsoMaxima = repetitionsWithNoDepth
           .map((repetition) => repetition.torsoLeanMaximum)
           .filter((angle): angle is number => angle !== null);
         const tracker = exerciseRepTrackerRef.current;
@@ -12241,11 +12270,14 @@ function Home() {
               inclinacionTorso: summarizeUploadedDipAngles(diagnostics.angleSamples.torsoLean),
               hombroRelativo: summarizeUploadedDipAngles(diagnostics.angleSamples.shoulderRelative),
             },
-            extremosPorRepeticion: completedRepetitions.map((repetition) => ({
+            extremosPorRepeticion: repetitionsWithNoDepth.map((repetition) => ({
               repetition: repetition.repetition,
               elbowRawMinimum: repetition.elbowRawMinimum,
               torsoLeanMinimum: repetition.torsoLeanMinimum,
               torsoLeanMaximum: repetition.torsoLeanMaximum,
+              complete: repetition.complete,
+              countedAsIncorrect: repetition.countedAsIncorrect ?? false,
+              reason: repetition.reason ?? null,
             })),
             resumenDeExtremos: {
               minimoCodoBrutoPorRepeticion: summarizeUploadedDipAngles(elbowMinima),
@@ -12254,10 +12286,20 @@ function Home() {
             },
             medicionesCompletas: completedRepetitions.length,
             medicionesIncompletas: diagnostics.incompleteRepetitions,
+            repeticionesSinProfundidad: diagnostics.noDepthRepetitions.length,
             repeticionesDetectadas: tracker.repetitions,
+            repeticionesIncorrectas: Math.max(
+              0,
+              tracker.repetitions - tracker.goodRepetitions,
+            ),
+            motivoUltimaIncorrecta: diagnostics.lastIncorrectReason,
           })}`,
         );
-        console.log(`[fin] fase=${tracker.phase} | total=${tracker.repetitions}`);
+        console.log(
+          `[fin] fase=${tracker.phase} | total=${tracker.repetitions}`
+          + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
+          + ` | motivo=${diagnostics.lastIncorrectReason ?? '—'}`,
+        );
       }
     }
     uploadedPushupFpsDiagnosticsRef.current.active = false;
@@ -13104,6 +13146,11 @@ function Home() {
                         ? `Solo cuenta si extiendes ambos codos entre ${PALLOF_END_MIN_ANGLE}° y ${PALLOF_END_MAX_ANGLE}° y mantienes hombros, codos y muñecas alineados; la repetición se cierra al regresar al pecho.`
                       : `Solo cuenta cuando completas el recorrido y llegas al rango de ${getRepetitionConfig(selectedExercise)?.endLabel}.`}
                   </p>
+                  {inputMode === 'video'
+                    && selectedExercise === 'fondos'
+                    && uploadedDipDiagnosticsRef.current?.lastIncorrectReason && (
+                      <p>Última incorrecta: {uploadedDipDiagnosticsRef.current.lastIncorrectReason}.</p>
+                    )}
                 </div>
               )}
               {selectedExercise === 'fondos' && (
