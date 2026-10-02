@@ -1,0 +1,1 @@
+- [Anclaje persistente de pose](pose-anchor-tracking.md) — tras calibrar el cuerpo, la retención debe seguir activa mientras el cuerpo ancla permanezca dentro del encuadre.

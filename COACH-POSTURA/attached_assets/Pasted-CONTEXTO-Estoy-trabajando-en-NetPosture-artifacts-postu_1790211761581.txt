@@ -1,0 +1,49 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas las Fases 1 a 4. El flujo actual en processFrame es: pose cruda de MediaPipe -> SideConsistencyFilter -> BoneConstraintFilter -> PoseOneEuroFilter -> ángulos, overlay, feedback y contadores. Esta es la FASE 5: modelo más preciso (heavy) con fallback automático, y cámara de mayor resolución. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño, el catálogo de ejercicios, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Haz solo los cambios mínimos para conectar la lógica nueva.
+- No cambies la firma pública de Pose ni PoseDetector salvo para añadir campos o métodos opcionales.
+- Todos los parámetros ajustables van como constantes con nombre al inicio del archivo, con un comentario que explique qué hacen.
+- El flujo de detección (Fases 1 a 4) no debe cambiar su lógica.
+
+TAREA A: selección de modelo en src/pose3d.ts
+1. Define las dos URLs de modelo como constantes:
+   - MODEL_URL_FULL (la actual): https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task
+   - MODEL_URL_HEAVY: https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
+2. Permite crear el detector eligiendo modelo y delegate: createPoseDetector({ model: 'heavy' | 'full', delegate: 'GPU' | 'CPU' }). El valor por defecto es heavy con GPU.
+3. Cadena de fallback en la inicialización, sin bloquear la sesión:
+   heavy GPU -> heavy CPU (solo si el fallo fue del delegate GPU) -> full GPU -> full CPU.
+   Si un intento falla, prueba el siguiente y registra con console.warn cuál falló y por qué.
+4. Expón en el detector, como campos opcionales, el modelo y el delegate en uso (por ejemplo activeModel y activeDelegate), para poder mostrarlos más adelante en depuración.
+5. Mantén los umbrales actuales de detección (0.45 / 0.45 / 0.4) sin cambios.
+
+TAREA B: fallback dinámico por rendimiento
+1. Mide el FPS real del bucle de detección con una media móvil (no un valor instantáneo), calculada sobre las últimas FPS_WINDOW_FRAMES (valor inicial 45).
+2. Si el modelo activo es heavy y el FPS medio se mantiene por debajo de MIN_FPS (valor inicial 15) durante FPS_LOW_SECONDS seguidos (valor inicial 4), cambia automáticamente a full con el mismo delegate.
+3. Al cambiar de modelo en caliente:
+   - Cierra el landmarker anterior con close() y crea el nuevo sin detener la cámara ni la sesión.
+   - Los timestamps que se pasan a detectForVideo deben seguir siendo estrictamente crecientes tras el cambio (MediaPipe falla si retroceden). Comprueba que el timestamp del primer frame del detector nuevo es mayor que el último usado.
+   - Reinicia los filtros de las Fases 1 a 4 (One Euro, retención, huesos, lados) porque el nuevo modelo puede producir landmarks ligeramente distintos.
+   - Evita llamadas concurrentes: no llames a detectForVideo mientras se está creando o cerrando el detector.
+4. Una vez degradado a full, no vuelvas a heavy durante esa sesión (para evitar oscilaciones). Se reinicia la preferencia al iniciar una nueva sesión de cámara.
+5. No muestres mensajes nuevos al usuario final por este cambio; solo console.warn.
+
+TAREA C: cámara de mayor resolución
+1. En la llamada a getUserMedia solicita:
+   - width: { ideal: 1280 }
+   - height: { ideal: 720 }
+   - frameRate: { ideal: 30 }
+   Usa siempre "ideal", nunca "exact". Mantén el facingMode que ya se use.
+2. Si el navegador entrega otra resolución, la app debe seguir funcionando: usa las dimensiones reales del vídeo (videoWidth y videoHeight), no las solicitadas.
+3. Verifica que el canvas del overlay conserva su alineación con el vídeo tras este cambio: mismas dimensiones internas que el vídeo real, mismo object-fit, y correcto comportamiento con cámara frontal espejada y con cambio de orientación del dispositivo.
+4. Comprueba que ninguna constante o cálculo dependa de una resolución fija (por ejemplo, márgenes de encuadre en píxeles). Si hay alguna, conviértela a proporción del tamaño real del vídeo y dime cuál era.
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH) y que el flujo cámara -> modelo -> tracking arranca.
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones y dando feedback con normalidad.
+- No instales dependencias nuevas salvo que sea imprescindible.
+
+ENTREGA
+Al terminar dame un resumen con: archivos modificados, la cadena de fallback final, valores iniciales de cada constante, cómo evitaste timestamps no crecientes al cambiar de modelo, si encontraste dependencias de resolución fija y qué debo probar en cámara real (por ejemplo, un móvil de gama media, para ver si cae a full por FPS, y comprobar que el esqueleto sigue alineado con el cuerpo).

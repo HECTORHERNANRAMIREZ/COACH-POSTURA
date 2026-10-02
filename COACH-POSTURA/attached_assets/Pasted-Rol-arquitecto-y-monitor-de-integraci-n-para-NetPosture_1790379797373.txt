@@ -1,0 +1,15 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado con datos reales: en timestamp 84067 de una sesión real, ambos codos estaban perfectamente en rango de "abajo" (izq. 178°, der. 173°, smoothedAngle 174, dentro de bottomEffective [140,180]), frameStable=true, measurementBlocked=false, sin blockingReasons. Sin embargo, conditions.atBottom fue FALSE.
+
+En ese mismo frame, overBothWrists=true (la cabeza está por encima de ambas muñecas) — que intuitivamente es la señal de posición "arriba", no "abajo".
+
+Necesito que investigues, SIN implementar nada todavía:
+
+1. Muéstrame la función getPullupExtremityValidation() completa, citando archivo y línea, y confirma exactamente qué condiciones (además del ángulo de codo) se requieren para que atBottom sea true. ¿Requiere específicamente underBothWrists (cabeza bajo muñecas) o alguna otra condición de cabeza/hombro?
+
+2. Si atBottom requiere underBothWrists: ¿es una condición biomecánicamente correcta para "brazos extendidos, colgado"? ¿O puede estar fallando por un problema de perspectiva de cámara (por ejemplo, si la cámara está muy alta o muy baja respecto al usuario, la relación vertical cabeza-muñecas en la imagen 2D puede no reflejar la posición 3D real)?
+
+3. Dame 3-5 ejemplos más de frames de esta misma sesión donde el ángulo de codo esté en rango de "abajo" (140-180) y muéstrame en cada uno el valor de overBothWrists/underBothWrists, para ver si el patrón se repite (cabeza sobre muñecas incluso con brazos extendidos) o si fue un caso aislado.
+
+4. No implementes ningún cambio todavía. Solo necesito entender si esta condición de cabeza-muñecas está bien calibrada o es la causa real de que atBottom nunca se confirme.

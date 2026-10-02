@@ -1,0 +1,25 @@
+Revisé tu propuesta de fondos en barra. Antes de aplicar nada, responde y corrige. Rama nueva a partir de prueba-fondo-inestable. Sin commit.
+
+REGLAS DE PROTECCIÓN (obligatorias)
+A. El diff solo puede AGREGAR líneas. Ninguna línea existente se borra, se edita ni se reordena. Si algo requiere modificar una línea existente, no lo hagas: detente y dime por qué.
+B. Todo código nuevo que se ejecute en tiempo de ejecución debe estar dentro de una condición que lo limite a video subido + ejercicio fondos. Para cada bloque nuevo, indica la línea de esa condición.
+C. No cambies ninguna función, constante ni tipo existente que usen otros ejercicios. Las funciones y tipos nuevos deben tener nombres exclusivos de fondos.
+D. Los bloques que tocan código compartido (reinicio del tracker, fin de video, inicio de carga de video, cálculo de repetitionTechniqueReady) lístalos aparte y demuestra que con un ejercicio distinto de fondos no ejecutan nada nuevo.
+E. No agregues dependencias ni cambies configuración.
+F. No toques lógica, constantes, rangos ni el tracker de ningún ejercicio, incluidas las flexiones.
+
+VERIFICACIONES Y CORRECCIONES A TU PROPUESTA
+1. Confirma con ruta y línea que existen DIP_TORSO_MIN_ANGLE, DIP_TORSO_MAX_ANGLE, DIP_VALID_MIN_ANGLE, DIP_VALID_MAX_ANGLE, isHeldPoint, isWithinAngle, CAMERA_POINT_MIN_SCORE, selectedExerciseRef y hasFreshPose. Corrige los que no existan con ese nombre exacto.
+2. Cuando el tracker se reinicia por bloqueo, limpia currentRepetition para que un inicio viejo no se pegue a la siguiente repetición.
+3. En [rep-event] y [medicion] imprime qué lado usa el conteo (measurementSide) y cuál la técnica (nextDominantSide), por si no coinciden.
+4. Para el desplazamiento hombro-codo, registra también hacia qué lado mira la persona, porque el signo de dx depende de eso.
+5. Si el tracker pasa de inicio a final sin pasar por en movimiento, registra igual el fondo en [medicion].
+6. Confirma que [fin] corre solo al terminar el video, no al detenerlo ni al reiniciarlo.
+7. Explica qué hace hoy el tracker de fondos si el codo baja de 85° (más profundo que la banda 85-95°).
+
+ENTREGA
+- Muestra el diff corregido.
+- Muestra git diff --stat. Las líneas borradas deben ser 0.
+- Para cada bloque nuevo, indica la condición que lo limita a fondos con video subido.
+- Detente y no apliques hasta que yo lo revise.
+- Después de que yo apruebe y apliques, corre el typecheck/build y reporta cualquier error.

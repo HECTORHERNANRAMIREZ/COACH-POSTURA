@@ -1,0 +1,20 @@
+Rol: arquitecto y monitor de integración para NetPosture, una app web de seguimiento de ejercicio con detección de pose por cámara (React + TypeScript, archivo principal artifacts/posture-coach/src/App.tsx, lógica de diagnóstico en pullup-diagnostics.ts).
+
+CONTEXTO DE LA APP:
+- Ejercicio actual bajo prueba: "dominadas" (pull-ups).
+- La app usa un modelo de pose (MediaPipe o similar, delegate GPU) para detectar keypoints en tiempo real: muñecas, codos, hombros, caderas, cabeza.
+- Existe un snapshot de diagnóstico (ExerciseDiagnosticSnapshot) que expone por frame: ángulos de codo y hombro (izq/der), confianza, si están en rango "abajo" o "arriba", condiciones (atBottom, atTop), razones de bloqueo (blockingReasons), y estado de vista/cámara (estimatedView, yawDeg, etc.).
+- Función clave: getPullupExtremityValidation() en App.tsx (~línea 3061-3121). Confirmado por código: atBottom=true EXIGE que tanto hombro (rango ~120°-180°) COMO codo (rango ~140°-180°) estén dentro de rango, en ambos lados (izquierdo y derecho). No depende de la posición de la cabeza respecto a las muñecas (eso fue una hipótesis descartada).
+- Rangos actuales confirmados: bottomEffective codo [140,180], topEffective codo [65,140].
+
+HISTORIAL DEL PROBLEMA (varias sesiones de debugging):
+1. Al inicio, atBottom nunca se confirmaba aunque el ángulo de codo se veía "perfecto" (ej. 178°/173°). Se sospechó que la condición dependía de la posición cabeza-muñecas (overBothWrists/underBothWrists) — esto se descartó al revisar el código real.
+2. Se confirmó que la condición real usa hombro+codo, pero el diagnóstico (Etapa 2) no exponía el ángulo de hombro. Se implementó (sin tocar lógica ni rangos) un nuevo bloque "shoulders" en el snapshot, igual estructura que "elbows", leyendo el mismo cálculo (cadera-hombro-codo) que ya usa getPullupExtremityValidation(). Verificado con typecheck y git diff --check, sin errores.
+3. Se grabaron 2 sesiones de prueba nuevas para ver el bloque "shoulders" en acción. Resultado: en ambas sesiones, "shoulders.left.angle" y "shoulders.right.angle" fueron NULL en el 100% de los frames — el ángulo de hombro nunca llegó a calcularse, ni siquiera en frames donde el codo sí tenía ángulo válido. Además, en esas sesiones: frameStable=false y cameraReady=false en TODOS los frames, "muñeca derecha no visible" en el 100% de los frames, y estimatedView="back" a pesar de usar cámara FRONTAL (posible bug de mirroring/etiquetado, o simplemente mala detección).
+4. Conclusión actual (no confirmada aún): el problema ya no parece ser de calibración de rangos ni de lógica de código, sino de DETECCIÓN — el modelo de pose no está identificando con suficiente confianza los keypoints necesarios (probablemente cadera y/o muñeca derecha) para calcular el ángulo de hombro, posiblemente por encuadre, distancia a la cámara, iluminación, o un problema real de mirroring en cómo se etiquetan los lados izq/der.
+
+BIOMECÁNICA DE REFERENCIA (confirmada por fuentes externas):
+En el dead hang (posición "abajo") correcto de una dominada, no solo el codo está extendido — el hombro también debe estar en flexión/extensión casi completa, con el brazo prácticamente alineado con el torso. Esto respalda que la lógica de exigir hombro+codo en rango alto (~140-180°) para "abajo" es biomecánicamente razonable, NO es un bug de diseño.
+
+LO QUE NECESITO AHORA (sin implementar nada todavía):
+[Aquí completa tu pregunta específica]

@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "MxJfzHCoEZBn9Ju74xWds"
+uri = "file://exports/puntos-corporales-y-ejercicios.pdf"
+type = "pdf"
+title = "Puntos corporales y seguimiento por ejercicio"
+description = "PDF en español con los 33 puntos detectados por la cámara y las articulaciones utilizadas en cada ejercicio del coach."
+logical_id = "27ad803e-3415-4cd3-abac-1321f8de325f"
+content_hash = "sha256:dde0505eff36ba25a404d2bf91f6a98a83b1b8491faac9194b0e401e0a74d47b"
+size = 112256
+mtime_ms = 1789515137282
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:bdcad056-085f-45b6-848b-07bbd9466be5/27ad803e-3415-4cd3-abac-1321f8de325f/8e32eeb1-2fba-4f1e-b005-02b6ae5feaa0"
+storage_version_token = "1789515141288469"
+content_type = "application/pdf"

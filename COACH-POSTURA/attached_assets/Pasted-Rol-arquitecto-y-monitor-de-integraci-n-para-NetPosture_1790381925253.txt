@@ -1,0 +1,27 @@
+Rol: arquitecto y monitor de integración para NetPosture, una app web de seguimiento de ejercicio con detección de pose por cámara (React + TypeScript). Archivo principal: artifacts/posture-coach/src/App.tsx. Lógica de diagnóstico: pullup-diagnostics.ts. Estimación de vista: view-estimation.ts. Consistencia de lados: side-consistency.ts.
+
+CONTEXTO DE LA APP:
+Ejercicio bajo prueba: "dominadas" (pull-ups). Usa un modelo de pose (delegate GPU) que detecta keypoints en tiempo real: nariz, muñecas, codos, hombros, caderas. Existe un ExerciseDiagnosticSnapshot que expone por frame: ángulos de codo, hombro y ahora cadera (score/held/heldReason/coords world), condiciones (atBottom, atTop), blockingReasons, y estado de vista/cámara (estimatedView, yawDeg).
+
+LÓGICA CONFIRMADA POR CÓDIGO:
+- getPullupExtremityValidation() en App.tsx (~línea 3061-3121): atBottom=true exige hombro (~120°-180°) Y codo (~140°-180°) en rango, ambos lados. No depende de posición cabeza-muñecas (hipótesis descartada).
+- calculateAngle(hip, shoulder, elbow) para hombro; calculateAngle(shoulder, elbow, wrist) para codo. calculateAngle() en App.tsx:4008-4040 devuelve null si: falta algún punto, score < 0.2, falta coords world, o segmento de longitud cero.
+- getCameraGuidance() (App.tsx:516-528) para dominadas solo exige ver shoulder/elbow/wrist como trackedJoints — las CADERAS NO están incluidas ahí, aunque sí son necesarias para el ángulo de hombro. Esto es una desalineación real en el código (no arreglada aún, solo documentada).
+- getPullupDiagnosticBlockingReasons() (App.tsx:6537-6610) originalmente no revisaba caderas; ya se agregó de forma aditiva (ver instrumentación abajo).
+
+INSTRUMENTACIÓN YA IMPLEMENTADA (verificada con typecheck, sin cambiar lógica de negocio):
+1. Bloque "shoulders" en el snapshot (pullup-diagnostics.ts:26-41, App.tsx:3046-3055, 3072-3121, 8217-8252): angle, confidence, valid, inBottomRange, inTopRange por lado.
+2. Bloque "hips" en el snapshot (pullup-diagnostics.ts:42-57, App.tsx:8184-8189, 8276-8291): score, held, heldReason, hasWorldCoords, worldCoords por lado, leído del mismo helper getAngleMeasurementCoordinates() que usa calculateAngle().
+3. Razones aditivas "cadera izquierda/derecha no visible" en blockingReasons (App.tsx:6604-6621), activadas si score < 0.2 o faltan coords world.
+
+HISTORIAL DE SESIONES DE PRUEBA:
+- Sesión 1 (timestamp ~84067): codos perfectos (178°/173°) pero atBottom=false. Llevó a descubrir que faltaba exponer el ángulo de hombro.
+- Sesión 2 (200 frames, timestamps 150160-158145, cámara FRONTAL confirmada por el usuario): frameStable=false y cameraReady=false en el 100% de los frames. "muñeca derecha no visible" en el 100%. shoulders.angle NULL en el 100%, incluso en frames con codo izquierdo válido (92°). estimatedView reportó "back" pese a ser cámara frontal — posible bug de mirroring/orden de landmarks en view-estimation.ts (leftShoulderX < rightShoulderX se espera para "front" en modo user, no confirmado si se cumple o se invierte). Cero frames con ambos codos en rango "abajo" — nunca se probó realmente la condición completa.
+- Diagnóstico de causa raíz (ya confirmado por análisis de código, no aún por datos reales de cadera): el patrón "codo válido + hombro null" apunta a que la CADERA es el punto faltante/inválido (score bajo, sin coords world, o descartada por filtro), no a la muñeca ni a la cabeza.
+- Aún PENDIENTE de confirmar con una sesión real: los valores de hips.left/right.score, hasWorldCoords y heldReason en un frame donde el codo sea válido.
+
+BIOMECÁNICA DE REFERENCIA:
+En el dead hang correcto, no solo el codo está extendido — el hombro también debe estar en flexión casi completa, brazo casi alineado con el torso. Esto respalda que exigir hombro+codo en rango alto para "abajo" es biomecánicamente razonable, no un error de diseño.
+
+LO QUE NECESITO AHORA:
+[Completa aquí tu pregunta o tarea específica del momento]

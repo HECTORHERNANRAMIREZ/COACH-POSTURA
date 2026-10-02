@@ -1,0 +1,21 @@
+Ahora implementa la lógica de corrección de técnica, sobre lo ya construido, manteniendo el mismo diseño Liquid Glass.
+
+1. Máquina de estados para detectar las fases del movimiento (arriba/abajo) en "Fondos en barra" y "Sentadillas", usando el ángulo ya calculado:
+   - Fase "arriba": ángulo mayor a un umbral (ej. 155°-160°).
+   - Fase "abajo": ángulo menor a un umbral (ej. 130°-140°), con margen de histéresis entre ambos umbrales para evitar que una sola repetición se cuente varias veces por ruido en la detección.
+   - Cada vez que se completa un ciclo abajo→arriba, cuenta una repetición y evalúa el ángulo mínimo alcanzado contra un rango ideal (80°-100° para ambos ejercicios por ahora).
+
+2. Alertas visuales en tiempo real según el ángulo, no solo al final de la repetición sino MIENTRAS la persona se mueve:
+   - Si el ángulo está bajando y ya pasó por debajo del límite ideal (menos de 80°): alerta inmediata en pantalla "Ángulo muy cerrado — cuidado con la articulación", con borde/color rojo.
+   - Si el ángulo se quedó arriba del rango ideal en el punto más bajo de la repetición (no bajó de 100°): alerta "No bajaste lo suficiente — ángulo muy abierto", con borde/color ámbar.
+   - Si el ángulo mínimo cayó dentro del rango ideal (80°-100°): mensaje "Ángulo correcto ✓", borde/color verde neón.
+
+3. Para "Plancha" (ejercicio isométrico, sin repeticiones): mide continuamente el desvío de la cadera respecto a la línea recta hombro-tobillo. Si la cadera cae por debajo de esa línea más de un margen, alerta "Sube la cadera"; si sube demasiado por encima, "Baja la cadera, no la subas tanto"; si está alineada, "Postura correcta ✓".
+
+4. Muestra en la pantalla de sesión, en paneles de vidrio tipo HUD:
+   - Arriba: contador de repeticiones (o cronómetro en plancha) y contador de repeticiones con buena técnica.
+   - Abajo, sobre el video: un banner de vidrio con la alerta/mensaje actual, con el color de borde correspondiente (verde / ámbar / rojo) según lo descrito arriba.
+
+5. Guarda en memoria (variables JS) el registro de cada repetición (correcta / muy profunda / muy superficial) para usarlo después en el resumen final.
+
+Agrega también al panel de diagnóstico ya existente: el estado actual de la máquina de estados (arriba/abajo) y el ángulo mínimo/máximo registrado en la repetición en curso.

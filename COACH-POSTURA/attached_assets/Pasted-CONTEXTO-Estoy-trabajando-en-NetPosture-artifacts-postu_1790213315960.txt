@@ -1,0 +1,38 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Ya están hechas las Fases 1 a 6. El flujo en processFrame es: pose cruda -> SideConsistencyFilter -> BoneConstraintFilter -> PoseOneEuroFilter -> ángulos, overlay, feedback y contadores. Esta es la FASE 8: modo de depuración visual para calibrar la detección de extremidades. Haz SOLO esta fase.
+
+REGLAS
+- No cambies el diseño, el catálogo, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Pon la lógica de depuración en un archivo nuevo (src/debug-overlay.ts) y conéctala con cambios mínimos.
+- Con el modo desactivado NO debe haber coste de rendimiento, elementos visuales extra ni cambios de comportamiento: no guardes copias de la pose cruda, no calcules métricas y no dibujes nada extra.
+- Todos los parámetros ajustables van como constantes con nombre, con comentario.
+
+TAREA
+1. Define la constante DEBUG_LIMB_TRACKING = false. Además, permite activarlo sin tocar código añadiendo ?debug=limbs a la URL (así puedo probarlo en el móvil). La activación por URL solo cambia el valor en memoria durante esa sesión y no se guarda en ningún sitio.
+2. Con el modo activo, guarda por frame una referencia a la pose cruda (antes de SideConsistencyFilter) para poder compararla con la pose filtrada final. Con el modo inactivo no guardes nada.
+3. Dibuja en el overlay, solo para muñecas (15/16), tobillos (27/28), talones (29/30) y puntas (31/32):
+   - Punto crudo: círculo pequeño rojo (#ff6b6b).
+   - Punto filtrado: el que ya se dibuja normalmente.
+   - Una línea fina entre el crudo y el filtrado cuando la distancia supera DEBUG_MIN_DIFF_PX (valor inicial 3 píxeles), para ver cuánto corrige el filtro.
+4. Diferencia de color según el motivo de retención (usa heldReason de las Fases 2 y 3):
+   - 'low-score': amarillo (#ffd166), como ya está.
+   - 'bone-length': naranja (#ff9f43).
+   - Puntos con swapped = true en ese frame: contorno cian (#4dd0e1).
+5. Panel de texto pequeño en una esquina del vídeo, semitransparente, con estas líneas y actualizado como máximo DEBUG_PANEL_UPDATE_MS (valor inicial 250 ms) para no saturar React:
+   - Modelo y delegate activos (activeModel y activeDelegate).
+   - FPS medio actual (la misma media móvil de la Fase 5).
+   - Número de puntos retenidos ahora, separados por low-score y bone-length.
+   - Rechazos por longitud de hueso acumulados por segmento (usa getDebugInfo() de BoneConstraintFilter).
+   - Swaps confirmados en la sesión (contador acumulado).
+   - Resolución real del vídeo (videoWidth x videoHeight).
+6. El panel y los dibujos deben ser puramente visuales: pointer-events: none y sin afectar al layout, al tamaño del vídeo ni al canvas principal.
+7. Conecta las constantes DEBUG_BONE_CONSTRAINTS y DEBUG_SIDE_CONSISTENCY de las fases anteriores: cuando el modo de depuración esté activo (por constante o por URL), también deben activarse sus salidas por console.debug. Con el modo inactivo, siguen en false.
+8. Añade un contador simple de "retraso aparente": mide la diferencia media entre el punto crudo y el filtrado de muñecas y tobillos (en píxeles) durante la última ventana de 60 frames y muéstralo en el panel como "Corrección media filtro". Sirve para saber si LIMB_FILTER suaviza demasiado.
+
+VERIFICACIÓN
+- Confirma que compila (typecheck y build de posture-coach con PORT y BASE_PATH).
+- Confirma que con el modo desactivado la app se comporta exactamente igual que antes (sin panel ni dibujos extra) y que con ?debug=limbs aparecen el panel y los puntos de depuración.
+- No instales dependencias nuevas.
+
+ENTREGA
+Al terminar dame un resumen con: archivos creados y modificados, cómo se activa el modo (constante y URL), qué se muestra exactamente en el panel, qué garantiza que no haya coste con el modo desactivado, y cómo debo interpretar cada color en cámara real.
