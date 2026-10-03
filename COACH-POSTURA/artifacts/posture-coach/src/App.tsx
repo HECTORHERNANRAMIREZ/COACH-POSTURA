@@ -555,6 +555,8 @@ type ExerciseRepConfig = {
   endMinAngle: number;
   endMaxAngle: number;
   endLabel: string;
+  noDepthMaxRawAngle?: number;
+  noDepthReason?: 'sin profundidad';
   countOnReturn?: boolean;
   countOnlyWhenCorrect?: boolean;
   techniqueStartsOnActivation?: boolean;
@@ -1994,11 +1996,6 @@ const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
-const UPLOADED_DIP_VIDEO_START_MIN_ANGLE = 140;
-const UPLOADED_DIP_VIDEO_END_MIN_ANGLE = 65;
-const UPLOADED_DIP_VIDEO_END_MAX_ANGLE = 100;
-const UPLOADED_DIP_VIDEO_NO_DEPTH_MAX_RAW_ANGLE = 125;
-const UPLOADED_DIP_VIDEO_NO_DEPTH_REASON = 'sin profundidad';
 // Calibración derivada del video de referencia del usuario:
 // inicio con el codo flexionado y final con el brazo extendido arriba.
 const MILITARY_PRESS_START_MIN_ANGLE = 130;
@@ -2364,12 +2361,15 @@ function calculateMuscleUpAngles(keypoints: PosePoint[] | undefined): MuscleUpAn
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
   fondos: {
     direction: 'decrease',
-    startMinAngle: 150,
+    startMinAngle: 140,
     startMaxAngle: 180,
-    activationAngle: 135,
-    endMinAngle: DIP_VALID_MIN_ANGLE,
-    endMaxAngle: DIP_VALID_MAX_ANGLE,
-    endLabel: `codo entre ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°`,
+    activationAngle: 140,
+    endMinAngle: 65,
+    endMaxAngle: 100,
+    endLabel: 'codo entre 65–100°',
+    noDepthMaxRawAngle: 125,
+    noDepthReason: 'sin profundidad',
+    countOnReturn: true,
   },
   jalon: {
     direction: 'decrease',
@@ -2892,6 +2892,7 @@ function getRepetitionConfig(exercise: ExerciseId | null) {
 
 function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
   if (!exercise) return ['Esperando ejercicio'];
+  const dipConfig = repetitionConfigs.fondos!;
 
   switch (exercise) {
     case 'sentadillas':
@@ -2969,8 +2970,8 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       ];
     case 'fondos':
       return [
-        `Inicio / regreso: codo 150–180°`,
-        `Profundidad: codo ${DIP_VALID_MIN_ANGLE}–${DIP_VALID_MAX_ANGLE}°`,
+        `Inicio / regreso: codo ${dipConfig.startMinAngle}–${dipConfig.startMaxAngle}°`,
+        `Profundidad: codo ${dipConfig.endMinAngle}–${dipConfig.endMaxAngle}°`,
         `Torso durante el recorrido: ${DIP_TORSO_MIN_ANGLE}–${DIP_TORSO_MAX_ANGLE}°`,
       ];
     case 'jalon':
@@ -8470,6 +8471,7 @@ function Home() {
   const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
   const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
+  const [dipLiveNoDepthNotice, setDipLiveNoDepthNotice] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [diagnosticCopyMessage, setDiagnosticCopyMessage] = useState<string | null>(null);
   const [previewExercise, setPreviewExercise] = useState<ExerciseDefinition | null>(null);
@@ -8529,6 +8531,7 @@ function Home() {
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const dipLiveRawElbowMinimumRef = useRef<number | null>(null);
   const uploadedPushupTechniqueActivationSampleRef = useRef<{
     videoTimeSeconds: number;
     techniqueValid: boolean;
@@ -10475,14 +10478,7 @@ function Home() {
       ) {
         uploadedPushupTrackerGatePassed = true;
         const trackerConfig = isUploadedDipVideo
-          ? {
-              ...repetitionConfig,
-              startMinAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
-              activationAngle: UPLOADED_DIP_VIDEO_START_MIN_ANGLE,
-              endMinAngle: UPLOADED_DIP_VIDEO_END_MIN_ANGLE,
-              endMaxAngle: UPLOADED_DIP_VIDEO_END_MAX_ANGLE,
-              countOnReturn: true,
-            }
+          ? repetitionConfig
           : repetitionConfig.postBottomRawPeakForReturn
           ? {
               ...repetitionConfig,
@@ -10512,6 +10508,46 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        if (isLiveDipCameraFrame && repetitionAngle !== null) {
+          const dipRepStarted = previousExerciseRepTracker.phase === 'inicio'
+            && (
+              exerciseRepUpdate.tracker.phase === 'en movimiento'
+              || exerciseRepUpdate.tracker.phase === 'final'
+            );
+          if (dipRepStarted) {
+            dipLiveRawElbowMinimumRef.current = repetitionAngle;
+          } else if (
+            previousExerciseRepTracker.phase === 'en movimiento'
+            || previousExerciseRepTracker.phase === 'final'
+          ) {
+            dipLiveRawElbowMinimumRef.current = Math.min(
+              dipLiveRawElbowMinimumRef.current ?? repetitionAngle,
+              repetitionAngle,
+            );
+          }
+          const noDepthReturn = previousExerciseRepTracker.phase === 'en movimiento'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+            && repetitionConfig.noDepthMaxRawAngle !== undefined
+            && (dipLiveRawElbowMinimumRef.current ?? Number.POSITIVE_INFINITY)
+              < repetitionConfig.noDepthMaxRawAngle;
+          if (noDepthReturn) {
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              repetitions: exerciseRepUpdate.tracker.repetitions + 1,
+            };
+            setDipLiveNoDepthNotice(true);
+          } else if (
+            exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
+          ) {
+            setDipLiveNoDepthNotice(false);
+          }
+          if (
+            previousExerciseRepTracker.phase !== 'inicio'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+          ) {
+            dipLiveRawElbowMinimumRef.current = null;
+          }
+        }
         const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
         if (isUploadedDipVideo && uploadedDipDiagnostics) {
           if (uploadedDipDiagnostics.currentRepetition && repetitionAngle !== null) {
@@ -10523,8 +10559,9 @@ function Home() {
           uploadedDipDiagnostics.lastSmoothedElbowAngle = exerciseRepUpdate.smoothedAngle;
           const noDepthReturn = previousExerciseRepTracker.phase === 'en movimiento'
             && exerciseRepUpdate.tracker.phase === 'inicio'
+            && repetitionConfig.noDepthMaxRawAngle !== undefined
             && (uploadedDipDiagnostics.currentRepetition?.elbowRawMinimum
-              ?? Number.POSITIVE_INFINITY) < UPLOADED_DIP_VIDEO_NO_DEPTH_MAX_RAW_ANGLE;
+              ?? Number.POSITIVE_INFINITY) < repetitionConfig.noDepthMaxRawAngle;
           if (noDepthReturn) {
             exerciseRepUpdate.tracker = {
               ...exerciseRepUpdate.tracker,
@@ -10613,9 +10650,9 @@ function Home() {
                 console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
               } else if (noDepthReturn) {
                 currentRepetition.countedAsIncorrect = true;
-                currentRepetition.reason = UPLOADED_DIP_VIDEO_NO_DEPTH_REASON;
+                currentRepetition.reason = repetitionConfig.noDepthReason!;
                 uploadedDipDiagnostics.lastIncorrectReason =
-                  UPLOADED_DIP_VIDEO_NO_DEPTH_REASON;
+                  repetitionConfig.noDepthReason!;
                 uploadedDipDiagnostics.noDepthRepetitions.push(currentRepetition);
                 console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
               } else {
@@ -10800,6 +10837,10 @@ function Home() {
         if (isUploadedDipVideo) {
           resetTracker.repetitions = exerciseRepTrackerRef.current.repetitions;
           resetTracker.goodRepetitions = exerciseRepTrackerRef.current.goodRepetitions;
+        }
+        if (selectedExerciseForFrame === 'fondos' && inputModeRef.current === 'camera') {
+          dipLiveRawElbowMinimumRef.current = null;
+          setDipLiveNoDepthNotice(false);
         }
         exerciseRepTrackerRef.current = resetTracker;
         setExerciseRepetitions(resetTracker.repetitions);
@@ -12004,6 +12045,8 @@ function Home() {
     setPullupMinimumAngle(null);
     setPullupFeedback(defaultTechniqueFeedback);
     exerciseRepTrackerRef.current = createExerciseRepTracker();
+    dipLiveRawElbowMinimumRef.current = null;
+    setDipLiveNoDepthNotice(false);
     setExerciseRepetitions(0);
     setExerciseGoodRepetitions(0);
     setExerciseRepPhase('esperando inicio');
@@ -12563,6 +12606,8 @@ function Home() {
     setPullupMinimumAngle(null);
     setPullupFeedback(defaultTechniqueFeedback);
     exerciseRepTrackerRef.current = createExerciseRepTracker();
+    dipLiveRawElbowMinimumRef.current = null;
+    setDipLiveNoDepthNotice(false);
     setExerciseRepetitions(0);
     setExerciseGoodRepetitions(0);
     setExerciseRepPhase('esperando inicio');
@@ -13345,6 +13390,11 @@ function Home() {
                     && selectedExercise === 'fondos'
                     && uploadedDipDiagnosticsRef.current?.lastIncorrectReason && (
                       <p>Última incorrecta: {uploadedDipDiagnosticsRef.current.lastIncorrectReason}.</p>
+                    )}
+                  {inputMode === 'camera'
+                    && selectedExercise === 'fondos'
+                    && dipLiveNoDepthNotice && (
+                      <p role="status">Sin profundidad</p>
                     )}
                 </div>
               )}
