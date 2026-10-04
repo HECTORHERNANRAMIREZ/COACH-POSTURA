@@ -167,6 +167,7 @@ const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS
 // Las flexiones subidas usan más muestras por segundo de video en el fondo de cada repetición.
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
+const UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS = 0.6;
 const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.35;
 const UPLOADED_DIP_VIDEO_PLAYBACK_RATE = 0.5;
 const DETECTOR_MAX_FRAME_WIDTH = 1280;
@@ -8385,6 +8386,13 @@ function Home() {
   const uploadedPushupTrackerBlockedLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPushupTrackerFirstCallLoggedRef = useRef(false);
   const uploadedPushupLastCalibrationAccumulatedMsRef = useRef(0);
+  const uploadedPushupCalibrationRunBaseMsRef = useRef(0);
+  const uploadedPushupCalibrationRunStartVideoTimeRef = useRef<number | null>(null);
+  const uploadedPushupSearchGapRef = useRef<{
+    startedAtVideoTime: number;
+    invalidReason: string;
+    reset: boolean;
+  } | null>(null);
   const [uploadedPushupSearchOverlay, setUploadedPushupSearchOverlay] =
     useState<{ visible: boolean; progressSeconds: number } | null>(null);
   const uploadedPushupSearchOverlayActiveRef = useRef(false);
@@ -9641,8 +9649,20 @@ function Home() {
           let calibrationElapsed: number;
           if (uploadedPushupPreflight) {
             const videoTime = video.currentTime;
-            const readySinceVideoTime = pushupCalibrationReadyVideoTimeRef.current;
-            if (readySinceVideoTime !== null && videoTime < readySinceVideoTime) {
+            let runStartVideoTime = uploadedPushupCalibrationRunStartVideoTimeRef.current;
+            const searchDetectionStartVideoTime = pushupCalibrationReadyVideoTimeRef.current;
+            const activeSearchGap = uploadedPushupSearchGapRef.current;
+            const seekDetected = (
+              runStartVideoTime !== null
+              && videoTime < runStartVideoTime
+            ) || (
+              searchDetectionStartVideoTime !== null
+              && videoTime < searchDetectionStartVideoTime
+            ) || (
+              activeSearchGap !== null
+              && videoTime < activeSearchGap.startedAtVideoTime
+            );
+            if (seekDetected) {
               const accumulatedBeforeSeekMs =
                 uploadedPushupLastCalibrationAccumulatedMsRef.current;
               const seekSecond = Math.floor(videoTime);
@@ -9655,13 +9675,58 @@ function Home() {
                 );
               }
               uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+              uploadedPushupCalibrationRunBaseMsRef.current = 0;
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+              pushupCalibrationReadyVideoTimeRef.current = null;
+              uploadedPushupSearchGapRef.current = null;
+              runStartVideoTime = null;
             }
-            if (readySinceVideoTime === null || videoTime < readySinceVideoTime) {
-              pushupCalibrationReadyVideoTimeRef.current = videoTime;
+            const closedSearchGap = uploadedPushupSearchGapRef.current;
+            if (closedSearchGap) {
+              const gapDurationSeconds = videoTime - closedSearchGap.startedAtVideoTime;
+              if (gapDurationSeconds > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS) {
+                if (!closedSearchGap.reset) {
+                  const accumulatedBeforeGapMs =
+                    uploadedPushupLastCalibrationAccumulatedMsRef.current;
+                  uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+                  uploadedPushupCalibrationRunBaseMsRef.current = 0;
+                  uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+                  pushupCalibrationReadyVideoTimeRef.current = null;
+                  closedSearchGap.reset = true;
+                  console.log(
+                    `[flexiones-video] t=${videoTime.toFixed(2)}s reinicio de cuenta `
+                    + `motivo=hueco continuo > ${UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s `
+                    + `sin cuadro válido (${closedSearchGap.invalidReason}) `
+                    + `duraciónHueco=${gapDurationSeconds.toFixed(2)}s `
+                    + `segundosVálidosAntes=${(accumulatedBeforeGapMs / 1000).toFixed(2)} `
+                    + `segundosVálidosDespués=0.00`,
+                  );
+                }
+              } else if (!closedSearchGap.reset) {
+                console.log(
+                  `[flexiones-video] t=${videoTime.toFixed(2)}s hueco tolerado `
+                  + `duración=${gapDurationSeconds.toFixed(2)}s `
+                  + `segundosVálidos=${(uploadedPushupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
+                  + `motivo=${closedSearchGap.invalidReason}`,
+                );
+              }
+              uploadedPushupSearchGapRef.current = null;
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = videoTime;
+              uploadedPushupCalibrationRunBaseMsRef.current =
+                uploadedPushupLastCalibrationAccumulatedMsRef.current;
+              runStartVideoTime = videoTime;
             }
-            calibrationElapsed = (
-              videoTime - (pushupCalibrationReadyVideoTimeRef.current ?? videoTime)
-            ) * 1000;
+            pushupCalibrationReadyVideoTimeRef.current ??= videoTime;
+            if (runStartVideoTime === null) {
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = videoTime;
+              uploadedPushupCalibrationRunBaseMsRef.current =
+                uploadedPushupLastCalibrationAccumulatedMsRef.current;
+              runStartVideoTime = videoTime;
+            }
+            calibrationElapsed = uploadedPushupCalibrationRunBaseMsRef.current + Math.max(
+              0,
+              (videoTime - (runStartVideoTime ?? videoTime)) * 1000,
+            );
             uploadedPushupLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
             updateUploadedPushupSearchOverlayProgress(videoTime, calibrationElapsed);
             const searchSecond = Math.floor(videoTime);
@@ -9696,6 +9761,9 @@ function Home() {
             pushupCalibrationReadySinceRef.current = null;
             if (uploadedPushupPreflight) {
               uploadedPushupLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
+              uploadedPushupCalibrationRunBaseMsRef.current = 0;
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+              uploadedPushupSearchGapRef.current = null;
               hideUploadedPushupSearchOverlay(calibrationElapsed);
               console.log(
                 `[flexiones-video] t=${video.currentTime.toFixed(2)}s reinicio de cuenta `
@@ -9796,11 +9864,11 @@ function Home() {
           }
         } else {
           const failedFrameVideoTime = video.currentTime;
-          const readySinceVideoTime = pushupCalibrationReadyVideoTimeRef.current;
+          const runStartVideoTime = uploadedPushupCalibrationRunStartVideoTimeRef.current;
+          const searchDetectionStartVideoTime = pushupCalibrationReadyVideoTimeRef.current;
+          const activeSearchGap = uploadedPushupSearchGapRef.current;
           const accumulatedBeforeInvalidFrameMs = uploadedPushupPreflight
-            ? readySinceVideoTime === null
-              ? uploadedPushupLastCalibrationAccumulatedMsRef.current
-              : Math.max(0, (failedFrameVideoTime - readySinceVideoTime) * 1000)
+            ? uploadedPushupLastCalibrationAccumulatedMsRef.current
             : 0;
           if (uploadedPushupPreflight) {
             const searchSecond = Math.floor(failedFrameVideoTime);
@@ -9820,20 +9888,74 @@ function Home() {
                 + `motivo=${invalidReasons.join('; ') || 'condición de calibración no satisfecha'}`,
               );
             }
-            if (uploadedPushupResetLastLoggedSecondRef.current !== searchSecond) {
-              uploadedPushupResetLastLoggedSecondRef.current = searchSecond;
+            const seekDetected = (
+              runStartVideoTime !== null
+              && failedFrameVideoTime < runStartVideoTime
+            ) || (
+              searchDetectionStartVideoTime !== null
+              && failedFrameVideoTime < searchDetectionStartVideoTime
+            ) || (
+              activeSearchGap !== null
+              && failedFrameVideoTime < activeSearchGap.startedAtVideoTime
+            );
+            if (seekDetected) {
+              if (uploadedPushupResetLastLoggedSecondRef.current !== searchSecond) {
+                uploadedPushupResetLastLoggedSecondRef.current = searchSecond;
+                console.log(
+                  `[flexiones-video] t=${failedFrameVideoTime.toFixed(2)}s reinicio de cuenta `
+                  + `motivo=seek segundosVálidosAntes=${(accumulatedBeforeInvalidFrameMs / 1000).toFixed(2)} `
+                  + `segundosVálidosDespués=0.00`,
+                );
+              }
+              uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+              uploadedPushupCalibrationRunBaseMsRef.current = 0;
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+              pushupCalibrationReadyVideoTimeRef.current = null;
+              uploadedPushupSearchGapRef.current = null;
+            }
+            let currentSearchGap = uploadedPushupSearchGapRef.current;
+            if (!currentSearchGap) {
+              currentSearchGap = {
+                startedAtVideoTime: failedFrameVideoTime,
+                invalidReason: invalidReasons.join('; ')
+                  || 'condición de calibración no satisfecha',
+                reset: false,
+              };
+              uploadedPushupSearchGapRef.current = currentSearchGap;
+            }
+            const gapDurationSeconds =
+              failedFrameVideoTime - currentSearchGap.startedAtVideoTime;
+            if (
+              gapDurationSeconds > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS
+              && !currentSearchGap.reset
+            ) {
+              const accumulatedBeforeGapMs =
+                uploadedPushupLastCalibrationAccumulatedMsRef.current;
+              uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+              uploadedPushupCalibrationRunBaseMsRef.current = 0;
+              uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+              pushupCalibrationReadyVideoTimeRef.current = null;
+              currentSearchGap.reset = true;
               console.log(
                 `[flexiones-video] t=${failedFrameVideoTime.toFixed(2)}s reinicio de cuenta `
-                + `motivo=cuadro inválido (${invalidReasons.join('; ') || 'condición de calibración no satisfecha'}) `
-                + `segundosVálidosAntes=${(accumulatedBeforeInvalidFrameMs / 1000).toFixed(2)} `
+                + `motivo=hueco continuo > ${UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s `
+                + `sin cuadro válido (${currentSearchGap.invalidReason}) `
+                + `duraciónHueco=${gapDurationSeconds.toFixed(2)}s `
+                + `segundosVálidosAntes=${(accumulatedBeforeGapMs / 1000).toFixed(2)} `
                 + `segundosVálidosDespués=0.00`,
               );
             }
-            uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
-            updateUploadedPushupSearchOverlayProgress(failedFrameVideoTime, 0);
+            updateUploadedPushupSearchOverlayProgress(
+              failedFrameVideoTime,
+              uploadedPushupLastCalibrationAccumulatedMsRef.current,
+            );
           }
           pushupCalibrationReadySinceRef.current = null;
-          pushupCalibrationReadyVideoTimeRef.current = null;
+          if (uploadedPushupPreflight) {
+            uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+          } else {
+            pushupCalibrationReadyVideoTimeRef.current = null;
+          }
           updatePushupCalibrationStatus('pending');
           if (pushupPreparationStageRef.current === 'body-detection') {
             updatePushupPreparationCountdown(null);
@@ -11625,6 +11747,9 @@ function Home() {
             );
           }
           uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+          uploadedPushupCalibrationRunBaseMsRef.current = 0;
+          uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+          uploadedPushupSearchGapRef.current = null;
           updateUploadedPushupSearchOverlayProgress(failedFrameVideoTime, 0);
           pushupCalibrationReadySinceRef.current = null;
           pushupCalibrationReadyVideoTimeRef.current = null;
@@ -12321,6 +12446,9 @@ function Home() {
       uploadedPushupTrackerBlockedLastLoggedSecondRef.current = null;
       uploadedPushupTrackerFirstCallLoggedRef.current = false;
       uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+      uploadedPushupCalibrationRunBaseMsRef.current = 0;
+      uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+      uploadedPushupSearchGapRef.current = null;
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
@@ -12348,6 +12476,7 @@ function Home() {
       pushupCalibrationSuccessfulRef.current = false;
       pushupCalibrationReadySinceRef.current = null;
       pushupCalibrationReadyVideoTimeRef.current = null;
+      uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
       uploadedPushupDetectionStartVideoTimeRef.current = null;
       uploadedPushupStartsAtBottomRef.current = false;
       pushupLockedMeasurementSideRef.current = null;
@@ -12720,6 +12849,9 @@ function Home() {
             );
           }
           uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+          uploadedPushupCalibrationRunBaseMsRef.current = 0;
+          uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+          uploadedPushupSearchGapRef.current = null;
         }
         poseFilterRef.current.reset();
         sideConsistencyRef.current.reset();
