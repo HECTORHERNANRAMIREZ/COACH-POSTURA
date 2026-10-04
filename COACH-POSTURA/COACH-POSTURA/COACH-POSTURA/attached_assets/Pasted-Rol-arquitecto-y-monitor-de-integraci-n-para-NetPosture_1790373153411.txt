@@ -1,0 +1,23 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado: estimateFrontBack() en view-estimation.ts clasifica la vista como 'front' en el 100% de una sesión real donde el usuario estaba de espaldas, con yawDeg excelente (8.6°-26.3°). La causa es que frontShoulderOrder (leftShoulder.x > rightShoulder.x) probablemente está evaluando la convención invertida respecto al setup real de cámara, forzando la rama 'front' aunque la cara tenga baja confianza real.
+
+Tarea en dos partes:
+
+PARTE A — Confirmar la dirección exacta (instrumentación mínima, sin cambiar lógica):
+1. Agrega temporalmente al log [view-diagnostics] estos 3 campos crudos: leftShoulderX, rightShoulderX (los valores world.x usados en frontShoulderOrder), faceScore, earScore, y cameraFacingMode (el valor real usado en el <video>, no el CSS transform).
+2. Pide al usuario una sesión corta de 10-15 seg de espaldas (ya sabe cómo exportar [view-diagnostics]).
+
+PARTE B — Aplicar el fix condicionado al resultado de A (impleméntalo ya, listo para probar):
+3. Si en los logs de esa sesión leftShoulderX > rightShoulderX de forma consistente mientras el usuario está de espaldas (confirmando que la convención está invertida en este pipeline), invierte la asignación en estimateFrontBack():
+   const frontShoulderOrder = leftShoulder.x < rightShoulder.x;
+   const backShoulderOrder = leftShoulder.x > rightShoulder.x;
+4. Si en cambio el orden de hombros resulta correcto pero es faceScore >= earScore + VIEW_FACE_MARGIN lo que fuerza 'front' (cara con score alto pese a estar de espaldas, por ejemplo por predicción/oclusión de MediaPipe), entonces NO toques el orden de hombros — en su lugar, dame solo el diagnóstico de por qué faceScore sale alto de espaldas, sin implementar el fix todavía, porque ese caso es distinto y hay que decidir el umbral con más cuidado.
+5. No toques nada de bottomBase, topBase, tolerancias, umbrales de yaw (30°/50°), ni la lógica de conteo.
+
+Verificación obligatoria:
+- pnpm --filter @workspace/posture-coach run typecheck
+- Nueva sesión real de espaldas después del fix: pégame el export [view-diagnostics] completo. Debe mostrar estimatedView = 'back' y status = 'good' o 'acceptable' en la mayoría de los frames si el fix fue correcto.
+- Confirma en tu respuesta cuál de los dos escenarios (A/orden invertido, o B/faceScore alto) fue el que causó el problema, con los 3 campos crudos como evidencia.
+
+Dame la respuesta completa antes de que yo decida si mandamos a probar en la app o hay que ajustar algo más.

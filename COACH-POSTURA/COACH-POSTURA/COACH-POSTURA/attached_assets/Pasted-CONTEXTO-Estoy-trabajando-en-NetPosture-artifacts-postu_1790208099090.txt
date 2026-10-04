@@ -1,0 +1,31 @@
+CONTEXTO
+Estoy trabajando en NetPosture (artifacts/posture-coach/). Usa MediaPipe Pose Landmarker en src/pose3d.ts y la lógica principal está en src/App.tsx. Voy a mejorar la precisión de la detección de extremidades por fases. Esta es la FASE 1: filtro One Euro por landmark. Haz SOLO esta fase, nada más.
+
+REGLAS
+- No cambies el diseño, el catálogo de ejercicios, Clerk ni Lemon Squeezy (AUTH_AND_BILLING_ENABLED se queda en false).
+- No reescribas App.tsx entero. Pon la lógica nueva en un archivo nuevo y haz en App.tsx / pose3d.ts solo los cambios mínimos para conectarla.
+- No cambies la firma pública de Pose, PosePoint ni PoseDetector. Si necesitas campos nuevos, añádelos como opcionales.
+- Todos los parámetros ajustables van como constantes con nombre al inicio del archivo, con un comentario que explique qué hace cada una.
+
+TAREA
+1. Crea src/pose-filters.ts con una implementación del filtro One Euro (parámetros: minCutoff, beta, dCutoff). Debe usar el timestamp real entre frames para calcular dt (no un dt fijo) y proteger contra dt = 0 o negativo.
+2. Aplica un filtro independiente por cada landmark (0 a 32) y por cada eje:
+   - x, y, z de pantalla
+   - x, y, z de coordenadas world 3D
+3. Define dos perfiles de parámetros como constantes:
+   - LIMB_FILTER (más suavizado en reposo): para muñecas (15, 16), tobillos (27, 28), talones (29, 30) y puntas de pie (31, 32). Valores iniciales: minCutoff 0.8, beta 0.02, dCutoff 1.0.
+   - BODY_FILTER (más ligero): para el resto de landmarks. Valores iniciales: minCutoff 1.5, beta 0.05, dCutoff 1.0.
+4. Reinicia todos los filtros cuando:
+   - se pierde la pose durante más de 10 frames seguidos
+   - el usuario cambia de ejercicio
+   - se inicia o reinicia la sesión de cámara
+5. Revisa el suavizado que ya existe en el proyecto. Si duplica el efecto del filtro nuevo, elimínalo o desactívalo para no añadir retraso doble, y dime cuál era y qué hiciste con él.
+6. El filtro debe aplicarse antes del cálculo de ángulos, del contador de repeticiones y del dibujo del overlay, para que todos usen los puntos ya filtrados.
+
+VERIFICACIÓN
+- Confirma que la app compila y que el flujo cámara -> carga del modelo -> tracking sigue funcionando.
+- Confirma que dominadas, sentadillas y un ejercicio de brazo siguen contando repeticiones igual que antes.
+- No instales dependencias nuevas salvo que sea imprescindible; si lo haces, dime cuál y por qué.
+
+ENTREGA
+Al terminar dame un resumen con: archivos creados y modificados, qué suavizado anterior encontraste y qué hiciste con él, los valores iniciales de cada constante y qué debo probar en cámara real para ajustarlos.

@@ -1,0 +1,20 @@
+Necesito que agregues a mi proyecto un fondo animado controlado por scroll. No cambies el contenido ni el diseño existente, solo agrega esto.
+
+Recursos: en la carpeta frames/ tengo 11 imágenes PNG (frame_01.png a frame_11.png). Muestran un personaje dibujado con líneas de neón verde, en vista trasera, colgado de una barra de dominadas sobre fondo negro. El frame 01 es colgado con los brazos estirados y el frame 11 es el punto más alto de la dominada. Lee la cantidad de frames desde una constante TOTAL_FRAMES = 11 para poder cambiarla fácilmente.
+
+Comportamiento:
+
+Un <canvas> con position: fixed, a pantalla completa y z-index: -1, detrás del contenido, con fondo negro (#000).
+El frame que se muestra depende del progreso del scroll de toda la página (0 al inicio, 1 al final).
+La animación va y vuelve: al hacer scroll hacia abajo el personaje sube y baja repetidamente, como dominadas consecutivas. Define una constante REPETICIONES = 4 (número de dominadas completas en toda la página). Usa una onda triangular, no seno, para que la velocidad sea constante. Al inicio de la página (scroll 0) debe mostrarse el frame 01.
+Interpola entre frames vecinos: si la posición cae entre el frame 4 y el 5, dibuja ambos con globalAlpha para hacer un fundido suave.
+Precarga todas las imágenes antes de iniciar. Mientras cargan, muestra solo el fondo negro.
+Las imágenes NO tienen todas exactamente el mismo tamaño en píxeles. Dibuja cada una escalada para que su altura ocupe la altura del canvas, manteniendo la proporción y centrada horizontalmente. Usa el mismo factor de escala y la misma posición para todos los frames (calcúlalo una sola vez a partir del frame 01), así la barra queda fija y no tiembla entre frames. Nunca deformes las imágenes.
+Ajusta el canvas al redimensionar la ventana, usando devicePixelRatio para que se vea nítido.
+Usa requestAnimationFrame y suaviza el movimiento con una pequeña inercia (lerp con factor 0.15 hacia el valor objetivo), para que no sea brusco con scroll rápido.
+Debe funcionar bien en celular con scroll táctil.
+Si el contenido de la página es corto, asegura que haya al menos 400vh de altura para poder hacer scroll.
+Solo HTML, CSS y JavaScript, sin librerías externas.
+Si el texto o los elementos de mi página se pierden sobre el neón, baja la opacidad del canvas a 0.5 y avísame.
+
+Al terminar, dime qué archivos creaste o modificaste y qué constantes puedo ajustar.
