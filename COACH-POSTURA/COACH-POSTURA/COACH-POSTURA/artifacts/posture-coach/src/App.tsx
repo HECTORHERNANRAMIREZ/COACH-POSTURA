@@ -12225,8 +12225,14 @@ function Home() {
         boneConstraintRef.current.reset();
         stabilityFramesRef.current = 0;
         uploadedPushupPostSeekFilterStageRef.current = 'awaiting-stable-frames';
+        const initialTracker = createExerciseRepTracker();
+        if (uploadedPushupStartsAtBottomRef.current) {
+          initialTracker.phase = 'final';
+          initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
+          initialTracker.currentRepCorrect = true;
+        }
         uploadedPushupStartsAtBottomRef.current = false;
-        exerciseRepTrackerRef.current = createExerciseRepTracker();
+        exerciseRepTrackerRef.current = initialTracker;
         setExerciseRepetitions(0);
         setExerciseGoodRepetitions(0);
         setExerciseRepPhase('esperando inicio');
