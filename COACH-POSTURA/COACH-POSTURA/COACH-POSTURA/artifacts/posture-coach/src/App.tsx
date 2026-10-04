@@ -8654,6 +8654,7 @@ function Home() {
   const pushupCalibrationSuccessfulRef = useRef(false);
   const uploadedPushupDetectionStartVideoTimeRef = useRef<number | null>(null);
   const uploadedPushupStartsAtBottomRef = useRef(false);
+  const uploadedPushupInitialPositionDecidedRef = useRef(false);
   const pushupLockedMeasurementSideRef = useRef<PoseSide | null>(null);
   const uploadedPushupPostSeekFilterStageRef = useRef<
     'awaiting-seek' | 'awaiting-stable-frames' | null
@@ -9821,17 +9822,24 @@ function Home() {
               pose?.keypoints,
               measurementSide,
             );
-            uploadedPushupStartsAtBottomRef.current =
-              uploadedPushupStartsAtBottomRef.current
-              || Boolean(
-                uploadedPushupPreflightRef.current
-                && calibrationRepetitionAngle !== null
-                && isWithinAngle(
-                  calibrationRepetitionAngle,
-                  PUSHUP_REP_END_MIN_ANGLE,
-                  PUSHUP_REP_END_MAX_ANGLE,
-                ),
+            if (
+              uploadedPushupPreflightRef.current
+              && !uploadedPushupInitialPositionDecidedRef.current
+              && calibrationRepetitionAngle !== null
+            ) {
+              const startsAtBottom = isWithinAngle(
+                calibrationRepetitionAngle,
+                PUSHUP_REP_END_MIN_ANGLE,
+                PUSHUP_REP_END_MAX_ANGLE,
               );
+              uploadedPushupStartsAtBottomRef.current = startsAtBottom;
+              uploadedPushupInitialPositionDecidedRef.current = true;
+              console.log(
+                `[inicio-video] arranca abajo=${startsAtBottom} `
+                + `| ángulo=${calibrationRepetitionAngle.toFixed(2)}° `
+                + `| t=${video.currentTime.toFixed(3)}s`,
+              );
+            }
             pushupLockedMeasurementSideRef.current = measurementSide;
             if (uploadedPushupPreflight) {
               poseFilterRef.current.reset();
@@ -10127,13 +10135,20 @@ function Home() {
         && uploadedPushupPreflightRef.current
         && !pushupCalibrationSuccessfulRef.current
         && repetitionAngle !== null
-        && isWithinAngle(
+        && !uploadedPushupInitialPositionDecidedRef.current
+      ) {
+        const startsAtBottom = isWithinAngle(
           repetitionAngle,
           PUSHUP_REP_END_MIN_ANGLE,
           PUSHUP_REP_END_MAX_ANGLE,
-        )
-      ) {
-        uploadedPushupStartsAtBottomRef.current = true;
+        );
+        uploadedPushupStartsAtBottomRef.current = startsAtBottom;
+        uploadedPushupInitialPositionDecidedRef.current = true;
+        console.log(
+          `[inicio-video] arranca abajo=${startsAtBottom} `
+          + `| ángulo=${repetitionAngle.toFixed(2)}° `
+          + `| t=${video.currentTime.toFixed(3)}s`,
+        );
       }
       const heldPushupMeasurementPoints = selectedExerciseForFrame === 'flexiones'
         ? getPushupHeldMeasurementPoints(
@@ -12320,6 +12335,7 @@ function Home() {
       uploadedPushupTransitionPauseRef.current = false;
       setUploadedPushupTransitionPaused(false);
       resetUploadedPushupAfterSeek(seekedEventFired);
+      uploadedPushupInitialPositionDecidedRef.current = false;
       console.log(
         `[flexiones-video] transición: pausa terminada, conteo desde t=0.00s `
         + `ventanaDeteccionInicio=${detectedStartVideoTime?.toFixed(2) ?? 'no disponible'}s`,
@@ -12539,6 +12555,7 @@ function Home() {
       uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
       uploadedPushupDetectionStartVideoTimeRef.current = null;
       uploadedPushupStartsAtBottomRef.current = false;
+      uploadedPushupInitialPositionDecidedRef.current = false;
       pushupLockedMeasurementSideRef.current = null;
       updatePushupCalibrationStatus('pending');
     }
@@ -12925,6 +12942,7 @@ function Home() {
         pushupCalibrationReadyVideoTimeRef.current = null;
         uploadedPushupDetectionStartVideoTimeRef.current = null;
         uploadedPushupStartsAtBottomRef.current = false;
+        uploadedPushupInitialPositionDecidedRef.current = false;
         pushupLockedMeasurementSideRef.current = null;
         updatePushupCalibrationStatus('pending');
         pushupPreparationStageRef.current = 'body-detection';
