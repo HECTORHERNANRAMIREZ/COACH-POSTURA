@@ -8387,6 +8387,7 @@ function Home() {
   const uploadedPushupLastCalibrationAccumulatedMsRef = useRef(0);
   const [uploadedVideoName, setUploadedVideoName] = useState('');
   const [videoExportStatus, setVideoExportStatus] = useState('');
+  const [uploadedPushupSearchBlurred, setUploadedPushupSearchBlurred] = useState(false);
   const [showUploadedPushupCalibrationNotice, setShowUploadedPushupCalibrationNotice] = useState(false);
   const [uploadedPushupCalibrationHintTimedOut, setUploadedPushupCalibrationHintTimedOut] = useState(false);
   const uploadedPushupCalibrationHintTimerRef = useRef<number | null>(null);
@@ -8800,6 +8801,7 @@ function Home() {
     uploadedPushupAnalysisStartingRef.current = false;
     uploadedPushupPreflightRef.current = false;
     uploadedPushupPostSeekFilterStageRef.current = null;
+    setUploadedPushupSearchBlurred(false);
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -12011,6 +12013,7 @@ function Home() {
         + `contadoresDespués={"total":0,"correctas":0,"incorrectas":0}`,
       );
       uploadedPushupPreflightRef.current = false;
+      setUploadedPushupSearchBlurred(false);
       uploadedPushupAnalysisStartingRef.current = false;
       updatePushupPreparationStage('active');
       updatePushupPreparationCountdown(null);
@@ -12132,6 +12135,7 @@ function Home() {
         exerciseStartedRef.current = false;
         setExerciseStarted(false);
         uploadedPushupPreflightRef.current = true;
+        setUploadedPushupSearchBlurred(false);
         video.controls = true;
         setVideoExportStatus('No se pudo completar el análisis del video. Revisa el archivo e inténtalo otra vez.');
       }
@@ -12316,6 +12320,7 @@ function Home() {
     setPushupPreparationCountdown(null);
     stopResources();
     uploadedPushupPreflightRef.current = isUploadedPushupVideo;
+    setUploadedPushupSearchBlurred(isUploadedPushupVideo);
     setPoseDetected(false);
     setFaceDetected(false);
     setDetectionStable(false);
@@ -12655,6 +12660,7 @@ function Home() {
         setPullupPreparationCountdown(null);
       } else if (selectedExerciseRef.current === 'flexiones') {
         uploadedPushupPostSeekFilterStageRef.current = null;
+        setUploadedPushupSearchBlurred(false);
         if (inputModeRef.current === 'video') {
           const videoTime = videoRef.current?.currentTime ?? 0;
           const resetSecond = Math.floor(videoTime);
@@ -12795,6 +12801,7 @@ function Home() {
     if (isUploadedStandardPushup) {
       if (uploadedPushupVideoEndedRef.current) return;
       uploadedPushupVideoEndedRef.current = true;
+        setUploadedPushupSearchBlurred(false);
       const video = videoRef.current;
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -14256,6 +14263,12 @@ function Home() {
                     transform: inputMode === 'camera' && cameraFacingMode === 'user'
                       ? 'scaleX(-1)'
                       : 'none',
+                    filter: uploadedPushupSearchBlurred
+                      && inputMode === 'video'
+                      && selectedExercise === 'flexiones'
+                      ? 'blur(16px)'
+                      : 'blur(0px)',
+                    transition: 'filter 200ms ease',
                   }}
                   onLoadedMetadata={syncVideoSize}
                   onPlay={handleVideoPlay}
@@ -14406,6 +14419,39 @@ function Home() {
                 <span className="stage-corner stage-corner--tr" aria-hidden="true" />
                 <span className="stage-corner stage-corner--bl" aria-hidden="true" />
                 <span className="stage-corner stage-corner--br" aria-hidden="true" />
+                {uploadedPushupSearchBlurred
+                  && inputMode === 'video'
+                  && selectedExercise === 'flexiones' && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        zIndex: 5,
+                        display: 'grid',
+                        placeContent: 'center',
+                        gap: '0.5rem',
+                        background: 'rgba(5, 12, 22, 0.42)',
+                        color: '#fff',
+                        textAlign: 'center',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <strong>Buscando cuerpo…</strong>
+                      {uploadedPushupLastCalibrationAccumulatedMsRef.current > 0 && (
+                        <small>
+                          {(
+                            Math.min(
+                              PUSHUP_BODY_DETECTION_HOLD_MS,
+                              uploadedPushupLastCalibrationAccumulatedMsRef.current,
+                            ) / 1000
+                          ).toFixed(1)} / {(PUSHUP_BODY_DETECTION_HOLD_MS / 1000).toFixed(0)} s
+                        </small>
+                      )}
+                    </div>
+                  )}
                 {(exerciseStarted || !isStandardPullupSelected) && (
                   <button
                     type="button"
