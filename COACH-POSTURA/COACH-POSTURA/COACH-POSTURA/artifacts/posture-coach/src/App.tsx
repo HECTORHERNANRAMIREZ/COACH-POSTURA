@@ -652,7 +652,7 @@ type UploadedDipRepetitionMeasurement = {
   repetition: number;
   complete: boolean;
   countedAsIncorrect?: boolean;
-  reason?: 'sin profundidad';
+  reason?: 'sin profundidad' | 'rango incompleto: bajó pero no regresó arriba';
   start: UploadedDipDiagnosticMoment | null;
   bottom: UploadedDipDiagnosticMoment | null;
   return: UploadedDipDiagnosticMoment | null;
@@ -14131,41 +14131,35 @@ function Home() {
       const video = videoRef.current;
       uploadedDipConfirmationFramesRef.current = [];
       const trackerAtEnd = exerciseRepTrackerRef.current;
-      const repetitionConfig = getRepetitionConfig('fondos');
+      const diagnosticsAtEnd = uploadedDipDiagnosticsRef.current;
+      const incompleteBottomRepetition = diagnosticsAtEnd?.currentRepetition;
       if (
         !uploadedDipBottomRepCountedAtEndRef.current
         && trackerAtEnd.phase === 'final'
-        && repetitionConfig?.countOnReturn === true
-        && (
-          repetitionConfig.countOnlyWhenCorrect !== true
-          || trackerAtEnd.currentRepCorrect
-        )
+        && incompleteBottomRepetition
+        && incompleteBottomRepetition.bottom !== null
+        && incompleteBottomRepetition.return === null
       ) {
-        const completedTracker = {
+        const incorrectReason = 'rango incompleto: bajó pero no regresó arriba' as const;
+        const incorrectTracker = {
           ...trackerAtEnd,
-          event: 'valid' as const,
           repetitions: trackerAtEnd.repetitions + 1,
-          goodRepetitions: trackerAtEnd.goodRepetitions
-            + Number(trackerAtEnd.currentRepCorrect),
         };
-        exerciseRepTrackerRef.current = completedTracker;
-        setExerciseRepetitions(completedTracker.repetitions);
-        setExerciseGoodRepetitions(completedTracker.goodRepetitions);
-        setExerciseRepPhase(completedTracker.phase);
-        setExerciseMinimumAngle(completedTracker.endpointAngle);
+        exerciseRepTrackerRef.current = incorrectTracker;
+        setExerciseRepetitions(incorrectTracker.repetitions);
+        setExerciseGoodRepetitions(incorrectTracker.goodRepetitions);
+        setExerciseRepPhase(incorrectTracker.phase);
+        setExerciseMinimumAngle(incorrectTracker.endpointAngle);
+        incompleteBottomRepetition.countedAsIncorrect = true;
+        incompleteBottomRepetition.reason = incorrectReason;
+        diagnosticsAtEnd.lastIncorrectReason = incorrectReason;
+        diagnosticsAtEnd.repetitions.push(incompleteBottomRepetition);
+        diagnosticsAtEnd.incompleteRepetitions += 1;
+        console.log(`[medicion] ${JSON.stringify(incompleteBottomRepetition)}`);
+        diagnosticsAtEnd.currentRepetition = null;
         uploadedDipBottomRepCountedAtEndRef.current = true;
-        const diagnostics = uploadedDipDiagnosticsRef.current;
-        if (diagnostics?.currentRepetition) {
-          diagnostics.currentRepetition.complete = true;
-          diagnostics.repetitions.push(diagnostics.currentRepetition);
-          console.log(
-            `[medicion] ${JSON.stringify(diagnostics.currentRepetition)}`,
-          );
-          diagnostics.currentRepetition = null;
-        }
         console.log(
-          `[fondos-video] repetición contada al terminar `
-          + `motivo=terminó en el fondo total=${completedTracker.repetitions}`,
+          `[fondos-video] repetición incompleta al terminar → incorrecta motivo=rango incompleto`,
         );
       }
       if (video && !uploadedDipStopLoggedRef.current) {
@@ -14195,17 +14189,17 @@ function Home() {
           diagnostics.currentRepetition = null;
         }
         const completedRepetitions = diagnostics.repetitions;
-        const repetitionsWithNoDepth = [
+        const measuredRepetitions = [
           ...completedRepetitions,
           ...diagnostics.noDepthRepetitions,
         ];
-        const elbowMinima = repetitionsWithNoDepth
+        const elbowMinima = measuredRepetitions
           .map((repetition) => repetition.elbowRawMinimum)
           .filter((angle): angle is number => angle !== null);
-        const torsoMinima = repetitionsWithNoDepth
+        const torsoMinima = measuredRepetitions
           .map((repetition) => repetition.torsoLeanMinimum)
           .filter((angle): angle is number => angle !== null);
-        const torsoMaxima = repetitionsWithNoDepth
+        const torsoMaxima = measuredRepetitions
           .map((repetition) => repetition.torsoLeanMaximum)
           .filter((angle): angle is number => angle !== null);
         const tracker = exerciseRepTrackerRef.current;
@@ -14216,7 +14210,7 @@ function Home() {
               inclinacionTorso: summarizeUploadedDipAngles(diagnostics.angleSamples.torsoLean),
               hombroRelativo: summarizeUploadedDipAngles(diagnostics.angleSamples.shoulderRelative),
             },
-            extremosPorRepeticion: repetitionsWithNoDepth.map((repetition) => ({
+            extremosPorRepeticion: measuredRepetitions.map((repetition) => ({
               repetition: repetition.repetition,
               elbowRawMinimum: repetition.elbowRawMinimum,
               torsoLeanMinimum: repetition.torsoLeanMinimum,
@@ -14230,7 +14224,9 @@ function Home() {
               minimoTorsoPorRepeticion: summarizeUploadedDipAngles(torsoMinima),
               maximoTorsoPorRepeticion: summarizeUploadedDipAngles(torsoMaxima),
             },
-            medicionesCompletas: completedRepetitions.length,
+            medicionesCompletas: completedRepetitions.filter(
+              (repetition) => repetition.complete,
+            ).length,
             medicionesIncompletas: diagnostics.incompleteRepetitions,
             repeticionesSinProfundidad: diagnostics.noDepthRepetitions.length,
             repeticionesDetectadas: tracker.repetitions,
@@ -14243,6 +14239,7 @@ function Home() {
         );
         console.log(
           `[fin] fase=${tracker.phase} | total=${tracker.repetitions}`
+          + ` | correctas=${tracker.goodRepetitions}`
           + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
           + ` | motivo=${diagnostics.lastIncorrectReason ?? '—'}`,
         );
