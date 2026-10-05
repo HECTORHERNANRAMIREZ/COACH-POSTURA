@@ -1,0 +1,21 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado con datos reales tras el fix de vista (200 frames, [pullup-diagnostics], sesión con dominadas reales):
+- frameStable ahora es true en 44/200 frames (antes 0/200) — mejora real.
+- measurementBlocked bajó a 78/200 (antes 197/200) — mejora real.
+- Sin embargo, phase sigue en "esperando abajo" el 100% del tiempo, repetitions=0.
+- Los únicos 4 frames donde atBottom o atTop llegaron a true coinciden TODOS con frameStable=false y measurementBlocked=true, con blockingReasons incluyendo "vista incorrecta" y "punto retenido por filtro: muñeca/codo (bone-length)".
+
+Esto sugiere que el movimiento real de la dominada (a diferencia de estar quieto de espaldas) dispara vista incorrecta y/o filtros de bone-length justo en los extremos del movimiento (arriba/abajo), que es cuando más importa que el sistema mida bien.
+
+Necesito que investigues, SIN implementar nada todavía:
+
+1. Exporta [view-diagnostics] de esta misma sesión de dominadas reales (no de estar solo parado de espaldas) y dime: ¿estimatedView sigue siendo 'back' durante el movimiento, o cambia a 'front'/'side'/'unknown' en los momentos de mayor flexión de brazo (arriba de la dominada)? Correlaciona por timestamp con los momentos atTop=true del pullup-diagnostics.
+
+2. Para los frames donde aparece "punto retenido por filtro: muñeca/codo (bone-length)" durante el movimiento real: ¿qué condición dispara ese filtro? ¿Es una distancia de hueso que se sale de un rango esperado, y ese rango fue calibrado con la persona quieta o en movimiento?
+
+3. ¿Es posible que el filtro de bone-length sea demasiado estricto para el momento de mayor flexión del codo (ángulos bajos, ~20-30°), donde la geometría del brazo cambia más rápido entre frames?
+
+4. Dame el porcentaje de frames bloqueados por "vista incorrecta" vs por "punto retenido por filtro" por separado, para saber cuál de las dos causas pesa más en este movimiento real.
+
+No implementes ninguna corrección todavía. Solo necesito entender cuál de las dos causas (vista o filtro bone-length) está bloqueando los momentos críticos de arriba/abajo durante el movimiento real.

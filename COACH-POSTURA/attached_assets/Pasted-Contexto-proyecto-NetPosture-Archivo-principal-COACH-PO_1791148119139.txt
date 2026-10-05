@@ -1,0 +1,16 @@
+Contexto: proyecto NetPosture. Archivo principal: COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx (más de 600 KB; ubica la carpeta correcta). Ya hay trabajo hecho: la capa «Buscando cuerpo…», la tolerancia de huecos y los logs «[flexiones-video]». No lo toques.
+
+FASE 1F: salto atrás a t=0 con pausa de transición. SOLO flexiones estándar (id «flexiones») con video subido. No toques fondos, otros ejercicios, cámara en vivo, rangos, tracker, filtros de pose, la lógica de detección ni la tolerancia de huecos.
+
+Reglas: no git, no Preview, no servidores, no mates procesos, no capturas. Verifica solo con «pnpm exec tsc --noEmit» desde artifacts/posture-coach (si falla por TS6305 de api-client-react, dímelo sin compilar el monorepo).
+
+Evidencia de consola: al completarse la detección, el salto atrás vuelve al primer cuadro válido de la búsqueda (t=2.53 en una corrida, t=0.99 en otra) y el conteo arranca de inmediato. Las repeticiones anteriores a ese cuadro se pierden (8 contadas contra 10).
+
+Cambio:
+1. Al completarse la detección, el salto atrás vuelve a t=0.00 del video, no a la ventana de detección.
+2. Tras el seek (seeked=true), mantén el video PAUSADO durante 1.5 s de tiempo real. En esa pausa muestra la misma capa existente con el texto «Cuerpo detectado. Preparando conteo…» (reutiliza el mismo estado de la capa, solo cambia el texto). No analices ni cuentes durante la pausa.
+3. Al terminar la pausa: reinicia los filtros, deja el tracker en «esperando inicio» y los contadores en 0, quita la capa (transición ~200 ms) y reanuda la reproducción a 0.35×. El conteo arranca solo desde ese momento.
+4. Si durante la pausa el usuario detiene, sube otro video o cambia de ejercicio, cancela la pausa y limpia el temporizador sin reanudar.
+5. Logs: «transición: pausa iniciada t=0.00s», «transición: pausa terminada, conteo desde t=0.00s», y deja el valor original de la ventana de detección como dato aparte.
+
+Al terminar: líneas cambiadas, confirmación de que no tocaste el <video> (salvo currentTime, pausa y reproducción ya existentes), la detección ni la lógica de conteo, y resultado de tsc.

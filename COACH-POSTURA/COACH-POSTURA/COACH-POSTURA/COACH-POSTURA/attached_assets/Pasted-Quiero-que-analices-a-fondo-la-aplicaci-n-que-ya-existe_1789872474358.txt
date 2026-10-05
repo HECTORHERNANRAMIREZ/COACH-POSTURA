@@ -1,0 +1,89 @@
+Quiero que analices a fondo la aplicación que ya existe en este proyecto. NO quiero que la reconstruyas desde cero ni que elimines funcionalidades existentes.
+
+La aplicación es una plataforma de entrenamiento físico que utiliza la cámara del usuario para detectar su cuerpo y sus articulaciones (por ejemplo: hombros, codos, muñecas, cadera, rodillas, tobillos, etc.) con el objetivo de ayudarle a realizar ejercicios de forma más precisa.
+
+Quiero que primero hagas una auditoría completa del proyecto actual antes de modificar cualquier cosa.
+
+Analiza:
+
+1. Tecnología utilizada
+    * Framework.
+    * Lenguaje.
+    * Librerías.
+    * Sistema de detección corporal/pose estimation.
+    * Cómo se procesa actualmente la cámara.
+    * Cómo se calcula el movimiento.
+    * Cómo se cuentan las repeticiones.
+2. Funcionalidades actuales
+    * Qué puede hacer actualmente la aplicación.
+    * Qué ejercicios tiene.
+    * Qué articulaciones detecta.
+    * Qué métricas calcula.
+    * Qué retroalimentación recibe el usuario.
+    * Qué funciona correctamente y qué presenta errores.
+3. Detección del cuerpo
+    Analiza qué tan confiable es actualmente la detección de:
+    * Cabeza.
+    * Hombros.
+    * Codos.
+    * Muñecas.
+    * Cadera.
+    * Rodillas.
+    * Tobillos.
+    También revisa problemas con iluminación, distancia de la cámara, orientación del cuerpo y pérdida temporal de puntos.
+4. Análisis de ejercicios
+    Revisa cómo la aplicación determina si una repetición está bien o mal ejecutada.
+    Quiero que identifiques si es posible implementar correcciones como:
+    * “Baja un poco más.”
+    * “Sube más el brazo.”
+    * “Mantén la espalda más recta.”
+    * “Tus rodillas están entrando hacia dentro.”
+    * “Extiende completamente el brazo.”
+    * “Mantén una postura más estable.”
+5. Experiencia de usuario
+    Analiza la interfaz y dime:
+    * Qué está bien.
+    * Qué resulta confuso.
+    * Qué debería mejorarse.
+    * Qué elementos faltan para que parezca una aplicación profesional de entrenamiento.
+6. Rendimiento
+    Revisa si el procesamiento de cámara y detección corporal puede funcionar fluidamente en:
+    * Celulares.
+    * Computadores.
+    * Diferentes navegadores.
+    Identifica posibles problemas de FPS, consumo de CPU/GPU, latencia y batería.
+7. Seguridad y privacidad
+    Revisa cómo se maneja actualmente la cámara y si existen riesgos o mejoras necesarias para proteger los datos del usuario.
+8. Potencial del producto
+    Analiza la aplicación pensando en convertirla en un producto comercial de suscripción económica.
+    Quiero que determines qué funcionalidades podrían hacer que una persona prefiera pagar por esta aplicación en lugar de simplemente mirar videos de ejercicios en YouTube.
+9. Competencia y diferenciación
+    Identifica qué característica de la aplicación podría convertirse en nuestro principal diferencial.
+10. Problemas prioritarios
+    Clasifica los problemas encontrados en:
+
+* CRÍTICO: debe solucionarse.
+* IMPORTANTE: debería mejorarse.
+* SECUNDARIO: puede esperar.
+
+MUY IMPORTANTE
+
+No modifiques el código todavía.
+
+Primero quiero que me entregues un informe técnico completo de la aplicación existente, incluyendo:
+
+* Arquitectura actual.
+* Tecnologías utilizadas.
+* Funcionalidades existentes.
+* Qué funciona.
+* Qué no funciona.
+* Problemas encontrados.
+* Posibles mejoras.
+* Mejoras de inteligencia/detección corporal.
+* Mejoras de experiencia de usuario.
+* Mejoras de rendimiento.
+* Qué debería hacerse para convertirla en un producto comercial.
+
+Después del informe, propón un plan de mejoras por fases, empezando por las mejoras que tengan mayor impacto y menor riesgo.
+
+No reconstruyas la aplicación desde cero. Quiero mejorar y aprovechar al máximo lo que ya está construido.

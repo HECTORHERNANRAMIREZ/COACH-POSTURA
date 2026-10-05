@@ -1,0 +1,32 @@
+chunk-T5SAAQIP.js?v=ab0ff6ec:17987 Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
+vision_wasm_internal.js:4660 I1001 06:38:26.217999 2196592 gl_context.cc:407] GL version: 3.0 (OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))), renderer: WebKit WebGL
+vision_wasm_internal.js:8363 W1001 06:38:26.227000 2196592 gl_context.cc:1119] OpenGL error checking is disabled
+custom_dbg @ vision_wasm_internal.js:8363
+vision_wasm_internal.js:1360 Graph successfully started running.
+vision_wasm_internal.js:8363 W1001 06:38:28.683000 2196592 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+custom_dbg @ vision_wasm_internal.js:8363
+vision_wasm_internal.js:4660 I1001 06:38:33.599000 2196592 gl_context.cc:407] GL version: 3.0 (OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))), renderer: WebKit WebGL
+vision_wasm_internal.js:8363 W1001 06:38:33.600000 2196592 gl_context.cc:1119] OpenGL error checking is disabled
+custom_dbg @ vision_wasm_internal.js:8363
+vision_wasm_internal.js:1360 Graph successfully started running.
+vision_wasm_internal.js:1360 Graph finished closing successfully.
+vision_wasm_internal.js:4660 I1001 06:38:33.651000 2196592 gl_context_webgl.cc:140] Successfully destroyed WebGL context with handle 1
+App.tsx:10407 [pose3d] FPS medio inferior a 15 durante 4s; cambiando de heavy a full con GPU.
+(anonymous) @ App.tsx:10407
+vision_wasm_internal.js:8363 W1001 06:38:35.544000 2196592 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+custom_dbg @ vision_wasm_internal.js:8363
+vision_wasm_internal.js:1360 Graph finished closing successfully.
+vision_wasm_internal.js:4660 I1001 06:38:35.585999 2196592 gl_context_webgl.cc:140] Successfully destroyed WebGL context with handle 1
+(index):162 [pose3d] No se pudo cargar full con GPU: ModuleFactory not set.
+createPoseDetector @ (index):162
+(index):162 [pose3d] No se pudo cargar full con CPU: ModuleFactory not set.
+createPoseDetector @ (index):162
+App.tsx:10971 [pose3d] No se pudo iniciar el análisis en segundo plano; se intentará cargar el modelo en el hilo principal. Error: No se pudo cargar ningún modelo de pose. full/GPU: ModuleFactory not set. | full/CPU: ModuleFactory not set.
+    at Worker.<anonymous> (pose3d-worker-client.ts:36:22)
+(anonymous) @ App.tsx:10971
+vision_wasm_internal.js:4660 I1001 06:38:36.932999 2196592 gl_context.cc:407] GL version: 3.0 (OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))), renderer: WebKit WebGL
+vision_wasm_internal.js:8363 W1001 06:38:36.932999 2196592 gl_context.cc:1119] OpenGL error checking is disabled
+custom_dbg @ vision_wasm_internal.js:8363
+vision_wasm_internal.js:1360 Graph successfully started running.
+vision_wasm_internal.js:8363 W1001 06:38:38.324999 2196592 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+custom_dbg @ vision_wasm_internal.js:8363
