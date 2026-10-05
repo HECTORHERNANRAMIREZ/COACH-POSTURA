@@ -12468,7 +12468,26 @@ function Home() {
           + `fase=${exerciseRepTrackerRef.current.phase} `
           + `estado=${uploadedDipTrackerWasCalledForFrame
             ? 'válido'
-            : `bloqueado:${blockedReason}`}`,
+            : `bloqueado:${blockedReason}`}`
+          + (uploadedDipTrackerWasCalledForFrame
+            ? ''
+            : ` motivo=codo:${(measurementSide
+                ? pose?.keypoints?.[sideKeypoints[measurementSide].elbow]?.heldReason
+                : null) ?? '—'}`
+              + `,muñeca:${(measurementSide
+                ? pose?.keypoints?.[sideKeypoints[measurementSide].wrist]?.heldReason
+                : null) ?? '—'}`
+              + ` scoreCodo=${(measurementSide
+                ? pose?.keypoints?.[sideKeypoints[measurementSide].elbow]?.score
+                : null) ?? '—'}`
+              + ` heldFrames=${Math.max(
+                (measurementSide
+                  ? pose?.keypoints?.[sideKeypoints[measurementSide].elbow]?.heldFrames
+                  : null) ?? 0,
+                (measurementSide
+                  ? pose?.keypoints?.[sideKeypoints[measurementSide].wrist]?.heldFrames
+                  : null) ?? 0,
+              )}`),
         );
       }
     } catch {
