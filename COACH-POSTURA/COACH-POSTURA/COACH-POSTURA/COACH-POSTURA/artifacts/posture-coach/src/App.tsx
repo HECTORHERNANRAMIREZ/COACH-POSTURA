@@ -10626,6 +10626,8 @@ function Home() {
         : null;
       const isUploadedDipVideo = inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'fondos';
+      let uploadedDipTrackerWasCalledForFrame = false;
+      let uploadedDipTrackerSmoothedAngleForFrame: number | null = null;
       if (isUploadedDipVideo && uploadedDipSearchActiveRef.current) {
         const uploadedDipSearchSidePoints = measurementSide
           ? [
@@ -11601,6 +11603,10 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        if (isUploadedDipVideo) {
+          uploadedDipTrackerWasCalledForFrame = true;
+          uploadedDipTrackerSmoothedAngleForFrame = exerciseRepUpdate.smoothedAngle;
+        }
         if (isLiveDipCameraFrame && repetitionAngle !== null) {
           const dipRepStarted = previousExerciseRepTracker.phase === 'inicio'
             && (
@@ -12329,8 +12335,50 @@ function Home() {
           lowFpsSinceRef.current = null;
         }
       }
+      if (isUploadedDipVideo) {
+        const blockedReason = !hasFreshPose
+          ? 'pose no fresca'
+          : !frameCameraReady
+            ? 'cámara no lista'
+            : frameMeasurementBlocked
+              ? effectiveViewBlocksFrame
+                ? 'vista incorrecta'
+                : 'puntos retenidos'
+              : uploadedPushupAnalysisStartingRef.current
+                ? 'análisis iniciando'
+                : !exerciseStartedRef.current
+                  ? uploadedDipSearchActiveRef.current
+                    ? 'búsqueda de cuerpo'
+                    : 'ejercicio no iniciado'
+                  : !repetitionConfig
+                    ? 'configuración ausente'
+                    : repetitionAngle === null
+                      ? 'ángulo no calculable'
+                      : !countFrameReady
+                        ? 'conteo no listo'
+                        : 'tracker no actualizado';
+        console.log(
+          `[fondos-curva] t=${video.currentTime.toFixed(2)} `
+          + `bruto=${formatUploadedDipAngle(repetitionAngle)} `
+          + `suav=${formatUploadedDipAngle(uploadedDipTrackerSmoothedAngleForFrame)} `
+          + `fase=${exerciseRepTrackerRef.current.phase} `
+          + `estado=${uploadedDipTrackerWasCalledForFrame
+            ? 'válido'
+            : `bloqueado:${blockedReason}`}`,
+        );
+      }
     } catch {
       if (activeRef.current) {
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseRef.current === 'fondos'
+        ) {
+          console.log(
+            `[fondos-curva] t=${video.currentTime.toFixed(2)} bruto=— suav=— `
+            + `fase=${exerciseRepTrackerRef.current.phase} `
+            + 'estado=bloqueado:error de procesamiento',
+          );
+        }
         incrementErrorCount();
         setPoseDetected(false);
         setDetectionStable(false);
