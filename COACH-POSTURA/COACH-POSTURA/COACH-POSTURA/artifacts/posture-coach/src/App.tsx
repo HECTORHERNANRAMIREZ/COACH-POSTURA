@@ -678,6 +678,13 @@ type UploadedDipDiagnostics = {
   lastFpsVideoTime: number | null;
   latestLiveSnapshot?: UploadedDipLiveSnapshot;
 };
+type UploadedDipConfirmationFrame = {
+  rawElbowAngle: number;
+  videoTimeSeconds: number;
+  keypoints: PosePoint[] | undefined;
+  countSide: PoseSide | null;
+  techniqueSide: PoseSide | null;
+};
 type AngleDiagnosticPoint = {
   label: string;
   x: number | null;
@@ -8323,6 +8330,141 @@ function updateUploadedDipRepetitionExtremes(
   }
 }
 
+function applyUploadedDipTrackerDiagnostics({
+  diagnostics,
+  previousTracker,
+  trackerUpdate,
+  keypoints,
+  countSide,
+  techniqueSide,
+  videoTimeSeconds,
+  rawElbowAngle,
+  repetitionConfig,
+}: {
+  diagnostics: UploadedDipDiagnostics;
+  previousTracker: ExerciseRepTracker;
+  trackerUpdate: ExerciseRepTrackerUpdate;
+  keypoints: PosePoint[] | undefined;
+  countSide: PoseSide | null;
+  techniqueSide: PoseSide | null;
+  videoTimeSeconds: number;
+  rawElbowAngle: number;
+  repetitionConfig: ExerciseRepConfig;
+}) {
+  if (diagnostics.currentRepetition) {
+    const currentRepetition = diagnostics.currentRepetition;
+    currentRepetition.elbowRawMinimum = currentRepetition.elbowRawMinimum === null
+      ? rawElbowAngle
+      : Math.min(currentRepetition.elbowRawMinimum, rawElbowAngle);
+  }
+  diagnostics.lastSmoothedElbowAngle = trackerUpdate.smoothedAngle;
+  const noDepthReturn = previousTracker.phase === 'en movimiento'
+    && trackerUpdate.tracker.phase === 'inicio'
+    && repetitionConfig.noDepthMaxRawAngle !== undefined
+    && (diagnostics.currentRepetition?.elbowRawMinimum
+      ?? Number.POSITIVE_INFINITY) < repetitionConfig.noDepthMaxRawAngle;
+  if (noDepthReturn) {
+    trackerUpdate.tracker = {
+      ...trackerUpdate.tracker,
+      repetitions: trackerUpdate.tracker.repetitions + 1,
+    };
+  }
+  if (
+    trackerUpdate.tracker.phase !== previousTracker.phase
+    || trackerUpdate.tracker.repetitions > previousTracker.repetitions
+  ) {
+    const bottomDetected = trackerUpdate.tracker.phase === 'final'
+      && previousTracker.phase !== 'final';
+    const returnDetected = previousTracker.phase !== 'esperando inicio'
+      && previousTracker.phase !== 'inicio'
+      && trackerUpdate.tracker.phase === 'inicio';
+    const moment = createUploadedDipDiagnosticMoment({
+      keypoints,
+      countSide,
+      techniqueSide,
+      videoTimeSeconds,
+      rawElbowAngle,
+      smoothedElbowAngle: trackerUpdate.smoothedAngle,
+      atBottom: bottomDetected,
+    });
+    console.log(
+      `[rep-event] video=${moment.videoTimeSeconds}s`
+      + ` | fase=${previousTracker.phase}->${trackerUpdate.tracker.phase}`
+      + ` | lados: conteo=${moment.countSide ?? 'ninguno'}`
+      + ` técnica=${moment.techniqueSide ?? 'ninguno'}`
+      + ` | mira=${moment.facing.imageDirection}`
+      + ` | conteo.codo bruto=${formatUploadedDipAngle(moment.count.elbowRaw)}`
+      + ` suavizado=${formatUploadedDipAngle(moment.count.elbowSmoothed)}`
+      + ` (${moment.count.status})`
+      + ` | técnica.torso=${formatUploadedDipAngle(moment.technique.torsoLean.angle)}`
+      + ` (${moment.technique.torsoLean.status})`
+      + ` | técnica.fondo-codo=${formatUploadedDipAngle(moment.technique.elbowDepth.angle)}`
+      + ` (${moment.technique.elbowDepth.status})`
+      + ` | técnica.hombro-relativo=${formatUploadedDipAngle(moment.technique.shoulderRelative.angle)}`
+      + ` (${moment.technique.shoulderRelative.status})`,
+    );
+    const started = previousTracker.phase === 'inicio'
+      && (
+        trackerUpdate.tracker.phase === 'en movimiento'
+        || trackerUpdate.tracker.phase === 'final'
+      );
+    if (started) {
+      diagnostics.currentRepetition = createUploadedDipRepetitionMeasurement(
+        diagnostics,
+        moment,
+        true,
+      );
+      updateUploadedDipRepetitionExtremes(
+        diagnostics.currentRepetition,
+        moment,
+      );
+    }
+    if (bottomDetected) {
+      diagnostics.currentRepetition ??= createUploadedDipRepetitionMeasurement(
+        diagnostics,
+        null,
+        false,
+      );
+      diagnostics.currentRepetition.bottom = moment;
+      updateUploadedDipRepetitionExtremes(
+        diagnostics.currentRepetition,
+        moment,
+      );
+    }
+    if (returnDetected) {
+      const currentRepetition = diagnostics.currentRepetition
+        ?? createUploadedDipRepetitionMeasurement(
+          diagnostics,
+          null,
+          false,
+        );
+      diagnostics.currentRepetition = currentRepetition;
+      currentRepetition.return = moment;
+      updateUploadedDipRepetitionExtremes(currentRepetition, moment);
+      if (currentRepetition.bottom !== null) {
+        currentRepetition.complete = true;
+        diagnostics.repetitions.push(currentRepetition);
+        console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
+      } else if (noDepthReturn) {
+        currentRepetition.countedAsIncorrect = true;
+        currentRepetition.reason = repetitionConfig.noDepthReason!;
+        diagnostics.lastIncorrectReason = repetitionConfig.noDepthReason!;
+        diagnostics.noDepthRepetitions.push(currentRepetition);
+        console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
+      } else {
+        diagnostics.incompleteRepetitions += 1;
+        console.log(
+          `[medicion] ${JSON.stringify({
+            ...currentRepetition,
+            incompleteReturnWithoutBottom: true,
+          })}`,
+        );
+      }
+      diagnostics.currentRepetition = null;
+    }
+  }
+}
+
 function formatUploadedDipAngle(angle: number | null) {
   return angle === null ? '—' : `${angle.toFixed(1)}°`;
 }
@@ -8351,6 +8493,44 @@ function summarizeUploadedDipAngles(values: number[]) {
   };
 }
 
+function logUploadedDipVideoPlay(video: HTMLVideoElement, detector: PoseDetector | null) {
+  console.log(
+    `[fondos-video] play t=${video.currentTime} `
+    + `modeloListo=${Boolean(detector)} `
+    + `workerListo=${Boolean(detector?.detectForVideoAsync)}`,
+  );
+}
+
+function logUploadedDipVideoStop(
+  reason: 'ended' | 'error' | 'otro',
+  video: HTMLVideoElement,
+  tracker: ExerciseRepTracker,
+  event?: string,
+) {
+  const repetitionInProgress = (
+    tracker.phase === 'en movimiento'
+    || tracker.phase === 'final'
+  );
+  console.log(
+    `[fondos-video] fin de video duration=${video.duration} `
+    + `currentTime=${video.currentTime} fase=${tracker.phase} `
+    + `repEnCurso=${repetitionInProgress ? 'sí' : 'no'} motivo=${reason}`
+    + (event ? ` evento=${event}` : ''),
+  );
+}
+
+function logUploadedDipVideoDomEvent(
+  event: 'play' | 'playing' | 'pause',
+  video: HTMLVideoElement,
+  active: boolean,
+  origin: 'código' | 'controles nativos' | 'fin del video',
+) {
+  console.log(
+    `[fondos-video] evento=${event} t=${video.currentTime} `
+    + `activeRef=${active} origen=${origin}`,
+  );
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -8359,6 +8539,13 @@ function Home() {
   const streamRef = useRef<MediaStream | null>(null);
   const uploadedVideoUrlRef = useRef<string | null>(null);
   const uploadedDipDiagnosticsRef = useRef<UploadedDipDiagnostics | null>(null);
+  const uploadedDipFirstPoseLoggedRef = useRef(false);
+  const uploadedDipStopLoggedRef = useRef(false);
+  const uploadedDipCodePlayPendingRef = useRef(false);
+  const uploadedDipCodePausePendingRef = useRef(false);
+  const uploadedDipPlayOriginRef = useRef<
+    'código' | 'controles nativos' | null
+  >(null);
   const uploadedDipPlaybackRateManualOverrideRef = useRef(false);
   const uploadedDipPlaybackRateExpectedRef = useRef<number | null>(null);
   const uploadedDipPlaybackRateInitializedRef = useRef(false);
@@ -8388,6 +8575,8 @@ function Home() {
   const uploadedPullupVideoEndedRef = useRef(false);
   const uploadedDipSearchActiveRef = useRef(false);
   const uploadedDipSearchConsecutiveFramesRef = useRef(0);
+  const uploadedDipConfirmationFramesRef = useRef<UploadedDipConfirmationFrame[]>([]);
+  const uploadedDipBottomRepCountedAtEndRef = useRef(false);
   const uploadedDipSearchLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPullupSearchLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPullupLastCalibrationAccumulatedMsRef = useRef(0);
@@ -9077,6 +9266,17 @@ function Home() {
 
   const stopResources = useCallback(() => {
     cancelUploadedPushupTransitionPause();
+    const video = videoRef.current;
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'fondos'
+      && activeRef.current
+      && video
+      && !uploadedDipStopLoggedRef.current
+    ) {
+      uploadedDipStopLoggedRef.current = true;
+      logUploadedDipVideoStop('otro', video, exerciseRepTrackerRef.current);
+    }
     activeRef.current = false;
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     uploadedPushupAnalysisGenerationRef.current += 1;
@@ -9098,7 +9298,6 @@ function Home() {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    const video = videoRef.current;
     if (videoFrameCallbackRef.current !== null && video?.cancelVideoFrameCallback) {
       video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
       videoFrameCallbackRef.current = null;
@@ -9110,6 +9309,13 @@ function Home() {
     detectorRef.current?.close();
     detectorRef.current = null;
     if (videoRef.current) {
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'fondos'
+        && !videoRef.current.paused
+      ) {
+        uploadedDipCodePausePendingRef.current = true;
+      }
       videoRef.current.pause();
       videoRef.current.srcObject = null;
       videoRef.current.removeAttribute('src');
@@ -9260,6 +9466,17 @@ function Home() {
           );
       if (detectedResult === undefined) {
         throw new Error('El detector de pose no tiene un método de análisis disponible.');
+      }
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'fondos'
+        && detectedResult
+        && !uploadedDipFirstPoseLoggedRef.current
+      ) {
+        uploadedDipFirstPoseLoggedRef.current = true;
+        console.log(
+          `[fondos-video] primer resultado de pose t=${video.currentTime}`,
+        );
       }
       if (measureUploadedPushupDetector && uploadedPushupFpsMetrics.active) {
         uploadedPushupFpsMetrics.analyzedSamples += 1;
@@ -10429,10 +10646,25 @@ function Home() {
           && frameCameraReady
           && uploadedDipSearchPointsReady
           && !frameMeasurementBlocked;
+        const uploadedDipSearchCounterFrameReady = uploadedDipSearchFrameReady
+          && countFrameReady
+          && repetitionConfig !== undefined
+          && repetitionAngle !== null
+          && !frameMeasurementBlocked;
         if (uploadedDipSearchFrameReady) {
           uploadedDipSearchConsecutiveFramesRef.current += 1;
+          if (uploadedDipSearchCounterFrameReady) {
+            uploadedDipConfirmationFramesRef.current.push({
+              rawElbowAngle: repetitionAngle,
+              videoTimeSeconds: video.currentTime,
+              keypoints: pose?.keypoints,
+              countSide: measurementSide,
+              techniqueSide: nextDominantSide,
+            });
+          }
         } else {
           uploadedDipSearchConsecutiveFramesRef.current = 0;
+          uploadedDipConfirmationFramesRef.current = [];
         }
         const uploadedDipSearchInvalidReasons = [
           !hasFreshPose ? 'pose no fresca' : null,
@@ -10467,6 +10699,57 @@ function Home() {
           uploadedDipSearchConsecutiveFramesRef.current
           >= UPLOADED_DIP_BODY_DETECTION_CONSECUTIVE_FRAMES
         ) {
+          const confirmationFrames = uploadedDipConfirmationFramesRef.current;
+          const framesToReplay = confirmationFrames.slice(
+            0,
+            Math.max(
+              0,
+              confirmationFrames.length
+                - Number(uploadedDipSearchCounterFrameReady),
+            ),
+          );
+          let replayCompletedEndpointAngle: number | null = null;
+          if (repetitionConfig) {
+            for (const confirmationFrame of framesToReplay) {
+              const previousTracker = exerciseRepTrackerRef.current;
+              const trackerUpdate = advanceExerciseRepTracker(
+                previousTracker,
+                confirmationFrame.rawElbowAngle,
+                repetitionConfig,
+                true,
+              );
+              const diagnostics = uploadedDipDiagnosticsRef.current;
+              if (diagnostics) {
+                applyUploadedDipTrackerDiagnostics({
+                  diagnostics,
+                  previousTracker,
+                  trackerUpdate,
+                  keypoints: confirmationFrame.keypoints,
+                  countSide: confirmationFrame.countSide,
+                  techniqueSide: confirmationFrame.techniqueSide,
+                  videoTimeSeconds: confirmationFrame.videoTimeSeconds,
+                  rawElbowAngle: confirmationFrame.rawElbowAngle,
+                  repetitionConfig,
+                });
+              }
+              exerciseRepTrackerRef.current = trackerUpdate.tracker;
+              replayCompletedEndpointAngle = trackerUpdate.tracker.endpointAngle
+                ?? trackerUpdate.completedEndpointAngle;
+            }
+          }
+          if (framesToReplay.length > 0) {
+            const replayedTracker = exerciseRepTrackerRef.current;
+            setExerciseRepetitions(replayedTracker.repetitions);
+            setExerciseGoodRepetitions(replayedTracker.goodRepetitions);
+            setExerciseRepPhase(replayedTracker.phase);
+            setExerciseMinimumAngle(
+              replayedTracker.endpointAngle ?? replayCompletedEndpointAngle,
+            );
+          }
+          console.log(
+            `[fondos-video] cuadros de confirmación enviados n=${confirmationFrames.length}`,
+          );
+          uploadedDipConfirmationFramesRef.current = [];
           uploadedDipSearchActiveRef.current = false;
           uploadedDipSearchConsecutiveFramesRef.current = 0;
           uploadedDipSearchLastLoggedSecondRef.current = null;
@@ -11360,123 +11643,17 @@ function Home() {
         }
         const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
         if (isUploadedDipVideo && uploadedDipDiagnostics) {
-          if (uploadedDipDiagnostics.currentRepetition && repetitionAngle !== null) {
-            const currentRepetition = uploadedDipDiagnostics.currentRepetition;
-            currentRepetition.elbowRawMinimum = currentRepetition.elbowRawMinimum === null
-              ? repetitionAngle
-              : Math.min(currentRepetition.elbowRawMinimum, repetitionAngle);
-          }
-          uploadedDipDiagnostics.lastSmoothedElbowAngle = exerciseRepUpdate.smoothedAngle;
-          const noDepthReturn = previousExerciseRepTracker.phase === 'en movimiento'
-            && exerciseRepUpdate.tracker.phase === 'inicio'
-            && repetitionConfig.noDepthMaxRawAngle !== undefined
-            && (uploadedDipDiagnostics.currentRepetition?.elbowRawMinimum
-              ?? Number.POSITIVE_INFINITY) < repetitionConfig.noDepthMaxRawAngle;
-          if (noDepthReturn) {
-            exerciseRepUpdate.tracker = {
-              ...exerciseRepUpdate.tracker,
-              repetitions: exerciseRepUpdate.tracker.repetitions + 1,
-            };
-          }
-          if (
-            exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
-            || exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
-          ) {
-            const bottomDetected = exerciseRepUpdate.tracker.phase === 'final'
-              && previousExerciseRepTracker.phase !== 'final';
-            const returnDetected = previousExerciseRepTracker.phase !== 'esperando inicio'
-              && previousExerciseRepTracker.phase !== 'inicio'
-              && exerciseRepUpdate.tracker.phase === 'inicio';
-            const moment = createUploadedDipDiagnosticMoment({
-              keypoints: pose?.keypoints,
-              countSide: measurementSide,
-              techniqueSide: nextDominantSide,
-              videoTimeSeconds: video.currentTime,
-              rawElbowAngle: repetitionAngle,
-              smoothedElbowAngle: exerciseRepUpdate.smoothedAngle,
-              atBottom: bottomDetected,
-            });
-            console.log(
-              `[rep-event] video=${moment.videoTimeSeconds}s`
-              + ` | fase=${previousExerciseRepTracker.phase}->${exerciseRepUpdate.tracker.phase}`
-              + ` | lados: conteo=${moment.countSide ?? 'ninguno'}`
-              + ` técnica=${moment.techniqueSide ?? 'ninguno'}`
-              + ` | mira=${moment.facing.imageDirection}`
-              + ` | conteo.codo bruto=${formatUploadedDipAngle(moment.count.elbowRaw)}`
-              + ` suavizado=${formatUploadedDipAngle(moment.count.elbowSmoothed)}`
-              + ` (${moment.count.status})`
-              + ` | técnica.torso=${formatUploadedDipAngle(moment.technique.torsoLean.angle)}`
-              + ` (${moment.technique.torsoLean.status})`
-              + ` | técnica.fondo-codo=${formatUploadedDipAngle(moment.technique.elbowDepth.angle)}`
-              + ` (${moment.technique.elbowDepth.status})`
-              + ` | técnica.hombro-relativo=${formatUploadedDipAngle(moment.technique.shoulderRelative.angle)}`
-              + ` (${moment.technique.shoulderRelative.status})`,
-            );
-            const started = previousExerciseRepTracker.phase === 'inicio'
-              && (
-                exerciseRepUpdate.tracker.phase === 'en movimiento'
-                || exerciseRepUpdate.tracker.phase === 'final'
-              );
-            if (started) {
-              uploadedDipDiagnostics.currentRepetition = createUploadedDipRepetitionMeasurement(
-                uploadedDipDiagnostics,
-                moment,
-                true,
-              );
-              updateUploadedDipRepetitionExtremes(
-                uploadedDipDiagnostics.currentRepetition,
-                moment,
-              );
-            }
-            if (bottomDetected) {
-              uploadedDipDiagnostics.currentRepetition ??=
-                createUploadedDipRepetitionMeasurement(
-                  uploadedDipDiagnostics,
-                  null,
-                  false,
-                );
-              uploadedDipDiagnostics.currentRepetition.bottom = moment;
-              updateUploadedDipRepetitionExtremes(
-                uploadedDipDiagnostics.currentRepetition,
-                moment,
-              );
-            }
-            if (returnDetected) {
-              const currentRepetition = uploadedDipDiagnostics.currentRepetition
-                ?? createUploadedDipRepetitionMeasurement(
-                  uploadedDipDiagnostics,
-                  null,
-                  false,
-                );
-              uploadedDipDiagnostics.currentRepetition = currentRepetition;
-              currentRepetition.return = moment;
-              updateUploadedDipRepetitionExtremes(
-                currentRepetition,
-                moment,
-              );
-              if (currentRepetition.bottom !== null) {
-                currentRepetition.complete = true;
-                uploadedDipDiagnostics.repetitions.push(currentRepetition);
-                console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
-              } else if (noDepthReturn) {
-                currentRepetition.countedAsIncorrect = true;
-                currentRepetition.reason = repetitionConfig.noDepthReason!;
-                uploadedDipDiagnostics.lastIncorrectReason =
-                  repetitionConfig.noDepthReason!;
-                uploadedDipDiagnostics.noDepthRepetitions.push(currentRepetition);
-                console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
-              } else {
-                uploadedDipDiagnostics.incompleteRepetitions += 1;
-                console.log(
-                  `[medicion] ${JSON.stringify({
-                    ...currentRepetition,
-                    incompleteReturnWithoutBottom: true,
-                  })}`,
-                );
-              }
-              uploadedDipDiagnostics.currentRepetition = null;
-            }
-          }
+          applyUploadedDipTrackerDiagnostics({
+            diagnostics: uploadedDipDiagnostics,
+            previousTracker: previousExerciseRepTracker,
+            trackerUpdate: exerciseRepUpdate,
+            keypoints: pose?.keypoints,
+            countSide: measurementSide,
+            techniqueSide: nextDominantSide,
+            videoTimeSeconds: video.currentTime,
+            rawElbowAngle: repetitionAngle,
+            repetitionConfig,
+          });
         }
         const isUploadedStandardPushup = inputModeRef.current === 'video'
           && selectedExerciseForFrame === 'flexiones';
@@ -12850,6 +13027,14 @@ function Home() {
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video') return;
     const video = videoRef.current;
+    if (selectedExerciseRef.current === 'fondos' && video) {
+      const origin = uploadedDipCodePlayPendingRef.current
+        ? 'código'
+        : 'controles nativos';
+      uploadedDipCodePlayPendingRef.current = false;
+      uploadedDipPlayOriginRef.current = origin;
+      logUploadedDipVideoDomEvent('play', video, activeRef.current, origin);
+    }
     if (
       uploadedPushupTransitionPauseRef.current
     ) {
@@ -12887,8 +13072,53 @@ function Home() {
     scheduleNextFrame,
     startUploadedPushupPlayback,
   ]);
+  const handleVideoPlaying = useCallback(() => {
+    const video = videoRef.current;
+    if (
+      inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'fondos'
+      || !video
+    ) {
+      return;
+    }
+    logUploadedDipVideoDomEvent(
+      'playing',
+      video,
+      activeRef.current,
+      uploadedDipPlayOriginRef.current ?? 'controles nativos',
+    );
+  }, []);
   const handleVideoPause = useCallback(() => {
     const video = videoRef.current;
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'fondos'
+      && video
+    ) {
+      const origin = video.ended
+        ? 'fin del video'
+        : uploadedDipCodePausePendingRef.current
+          ? 'código'
+          : 'controles nativos';
+      uploadedDipCodePausePendingRef.current = false;
+      uploadedDipPlayOriginRef.current = null;
+      logUploadedDipVideoDomEvent('pause', video, activeRef.current, origin);
+    }
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'fondos'
+      && activeRef.current
+      && video
+      && !video.ended
+    ) {
+      logUploadedDipVideoStop(
+        'otro',
+        video,
+        exerciseRepTrackerRef.current,
+        'pause',
+      );
+      return;
+    }
     if (
       inputModeRef.current !== 'video'
       || selectedExerciseRef.current !== 'dominadas'
@@ -12916,6 +13146,27 @@ function Home() {
     });
     setVideoExportStatus('Búsqueda pausada. Pulsa Reanudar búsqueda para continuar.');
   }, [resetUploadedPullupSearch]);
+
+  const handleUploadedDipVideoError = useCallback(
+    (event: { currentTarget: HTMLVideoElement }) => {
+      if (
+        inputModeRef.current !== 'video'
+        || selectedExerciseRef.current !== 'fondos'
+        || !activeRef.current
+        || uploadedDipStopLoggedRef.current
+      ) {
+        return;
+      }
+      uploadedDipStopLoggedRef.current = true;
+      logUploadedDipVideoStop(
+        'error',
+        event.currentTarget,
+        exerciseRepTrackerRef.current,
+        'media',
+      );
+    },
+    [],
+  );
 
   const loadDetector = useCallback(async (preferFastVideoModel = false) => {
     let timeoutId: number | null = null;
@@ -12993,6 +13244,8 @@ function Home() {
     if (isUploadedDipVideo) {
       uploadedDipSearchActiveRef.current = true;
       uploadedDipSearchConsecutiveFramesRef.current = 0;
+      uploadedDipConfirmationFramesRef.current = [];
+      uploadedDipBottomRepCountedAtEndRef.current = false;
       uploadedDipSearchLastLoggedSecondRef.current = null;
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
@@ -13030,7 +13283,16 @@ function Home() {
     pushupPreparationCountdownRef.current = null;
     setPushupPreparationStage('body-detection');
     setPushupPreparationCountdown(null);
+    if (isUploadedDipVideo) {
+      uploadedDipCodePlayPendingRef.current = false;
+      uploadedDipCodePausePendingRef.current = false;
+      uploadedDipPlayOriginRef.current = null;
+    }
     stopResources();
+    if (isUploadedDipVideo) {
+      uploadedDipFirstPoseLoggedRef.current = false;
+      uploadedDipStopLoggedRef.current = false;
+    }
     uploadedPushupPreflightRef.current = isUploadedPushupVideo;
     uploadedPullupPreflightRef.current = isUploadedPullupVideo;
     uploadedPullupSearchPausedRef.current = false;
@@ -13163,6 +13425,9 @@ function Home() {
         setVideoExportStatus('Cargando el video en este dispositivo…');
         const sourceUrl = URL.createObjectURL(videoFile);
         uploadedVideoUrlRef.current = sourceUrl;
+        if (isUploadedDipVideo && !video.paused) {
+          uploadedDipCodePausePendingRef.current = true;
+        }
         video.pause();
         video.srcObject = null;
         video.controls = !isUploadedPushupVideo && !isUploadedPullupVideo
@@ -13233,6 +13498,9 @@ function Home() {
             + 'segundosVálidosDespués=0.00',
           );
         }
+        if (isUploadedDipVideo && !video.paused) {
+          uploadedDipCodePausePendingRef.current = true;
+        }
         video.pause();
         const firstMillisecond = Math.min(
           0.001,
@@ -13291,8 +13559,89 @@ function Home() {
           }
         } else {
           try {
+            if (isUploadedDipVideo) {
+              const dipDetector = detectorRef.current;
+              if (!video.paused) {
+                console.log(
+                  `[fondos-video] calentamiento omitido motivo=video-no-pausado `
+                  + `t=${video.currentTime.toFixed(3)}s; reproducción normal`,
+                );
+              } else if (
+                video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+                || video.videoWidth <= 0
+                || video.videoHeight <= 0
+              ) {
+                console.log(
+                  `[fondos-video] calentamiento omitido motivo=cuadro-no-disponible `
+                  + `t=${video.currentTime.toFixed(3)}s; reproducción normal`,
+                );
+              } else if (!dipDetector) {
+                console.log(
+                  `[fondos-video] calentamiento omitido motivo=detector-no-disponible `
+                  + `t=${video.currentTime.toFixed(3)}s; reproducción normal`,
+                );
+              } else {
+                try {
+                  const warmupTimestamp = Math.max(
+                    performance.now(),
+                    lastDetectorTimestampRef.current + 0.001,
+                  );
+                  lastDetectorTimestampRef.current = warmupTimestamp;
+                  const warmupResult = dipDetector.detectForVideoAsync
+                    ? await dipDetector.detectForVideoAsync(
+                        prepareDetectorFrame(video),
+                        warmupTimestamp,
+                        { width: video.videoWidth, height: video.videoHeight },
+                      )
+                    : dipDetector.detectForVideo?.(
+                        prepareDetectorFrame(video),
+                        warmupTimestamp,
+                        { width: video.videoWidth, height: video.videoHeight },
+                      );
+                  if (warmupResult === undefined) {
+                    throw new Error('El detector no expone un método de análisis.');
+                  }
+                  if (warmupResult) {
+                    uploadedDipFirstPoseLoggedRef.current = true;
+                    console.log(
+                      `[fondos-video] primer resultado de pose t=${video.currentTime}`,
+                    );
+                    console.log(
+                      `[fondos-video] calentamiento listo t=${video.currentTime.toFixed(3)}s`,
+                    );
+                  } else {
+                    console.log(
+                      `[fondos-video] calentamiento omitido motivo=sin-pose `
+                      + `t=${video.currentTime.toFixed(3)}s; reproducción normal`,
+                    );
+                  }
+                } catch (warmupError) {
+                  console.log(
+                    `[fondos-video] calentamiento omitido motivo=fallo-de-inspección `
+                    + `t=${video.currentTime.toFixed(3)}s `
+                    + `detalle=${warmupError instanceof Error ? warmupError.message : String(warmupError)}; `
+                    + 'reproducción normal',
+                  );
+                }
+              }
+              uploadedDipStopLoggedRef.current = false;
+              logUploadedDipVideoPlay(video, detectorRef.current);
+              uploadedDipCodePlayPendingRef.current = video.paused;
+            }
             await video.play();
           } catch {
+            if (isUploadedDipVideo) {
+              uploadedDipCodePlayPendingRef.current = false;
+            }
+            if (isUploadedDipVideo && !uploadedDipStopLoggedRef.current) {
+              uploadedDipStopLoggedRef.current = true;
+              logUploadedDipVideoStop(
+                'error',
+                video,
+                exerciseRepTrackerRef.current,
+                'play',
+              );
+            }
             setVideoExportStatus('Pulsa reproducir en el video para iniciar el análisis.');
           }
         }
@@ -13301,6 +13650,20 @@ function Home() {
       setPhase('tracking');
       scheduleNextFrame();
     } catch (error) {
+      const video = videoRef.current;
+      if (
+        isUploadedDipVideo
+        && video
+        && !uploadedDipStopLoggedRef.current
+      ) {
+        uploadedDipStopLoggedRef.current = true;
+        logUploadedDipVideoStop(
+          'error',
+          video,
+          exerciseRepTrackerRef.current,
+          error instanceof Error ? error.message : 'inicio',
+        );
+      }
       stopResources();
       const name = error instanceof DOMException ? error.name : '';
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
@@ -13320,6 +13683,7 @@ function Home() {
   }, [
     applyUploadedDipPlaybackRate,
     loadDetector,
+    prepareDetectorFrame,
     resetDipPreparation,
     scheduleNextFrame,
     showUploadedPushupSearchOverlay,
@@ -13383,8 +13747,30 @@ function Home() {
           uploadedPushupAnalysisStartingRef.current = false;
         }
         const video = videoRef.current;
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseRef.current === 'fondos'
+          && video
+          && !uploadedDipStopLoggedRef.current
+        ) {
+          uploadedDipStopLoggedRef.current = true;
+          logUploadedDipVideoStop(
+            'otro',
+            video,
+            exerciseRepTrackerRef.current,
+            'detener',
+          );
+        }
         if (selectedExerciseRef.current === 'dominadas') {
           activeRef.current = false;
+        }
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseRef.current === 'fondos'
+          && video
+          && !video.paused
+        ) {
+          uploadedDipCodePausePendingRef.current = true;
         }
         video?.pause();
         if (video) video.controls = true;
@@ -13514,7 +13900,27 @@ function Home() {
 
       exerciseStartedRef.current = true;
       setExerciseStarted(true);
+      if (selectedExerciseRef.current === 'fondos') {
+        uploadedDipStopLoggedRef.current = false;
+        logUploadedDipVideoPlay(video, detectorRef.current);
+        uploadedDipCodePlayPendingRef.current = video.paused;
+      }
       void video.play().catch(() => {
+        if (selectedExerciseRef.current === 'fondos') {
+          uploadedDipCodePlayPendingRef.current = false;
+        }
+        if (
+          selectedExerciseRef.current === 'fondos'
+          && !uploadedDipStopLoggedRef.current
+        ) {
+          uploadedDipStopLoggedRef.current = true;
+          logUploadedDipVideoStop(
+            'error',
+            video,
+            exerciseRepTrackerRef.current,
+            'play',
+          );
+        }
         setVideoExportStatus('Pulsa Reproducir video para iniciar el análisis.');
       });
       activeRef.current = true;
@@ -13722,6 +14128,54 @@ function Home() {
       && selectedExerciseRef.current === 'fondos'
       && videoRef.current?.ended
     ) {
+      const video = videoRef.current;
+      uploadedDipConfirmationFramesRef.current = [];
+      const trackerAtEnd = exerciseRepTrackerRef.current;
+      const repetitionConfig = getRepetitionConfig('fondos');
+      if (
+        !uploadedDipBottomRepCountedAtEndRef.current
+        && trackerAtEnd.phase === 'final'
+        && repetitionConfig?.countOnReturn === true
+        && (
+          repetitionConfig.countOnlyWhenCorrect !== true
+          || trackerAtEnd.currentRepCorrect
+        )
+      ) {
+        const completedTracker = {
+          ...trackerAtEnd,
+          event: 'valid' as const,
+          repetitions: trackerAtEnd.repetitions + 1,
+          goodRepetitions: trackerAtEnd.goodRepetitions
+            + Number(trackerAtEnd.currentRepCorrect),
+        };
+        exerciseRepTrackerRef.current = completedTracker;
+        setExerciseRepetitions(completedTracker.repetitions);
+        setExerciseGoodRepetitions(completedTracker.goodRepetitions);
+        setExerciseRepPhase(completedTracker.phase);
+        setExerciseMinimumAngle(completedTracker.endpointAngle);
+        uploadedDipBottomRepCountedAtEndRef.current = true;
+        const diagnostics = uploadedDipDiagnosticsRef.current;
+        if (diagnostics?.currentRepetition) {
+          diagnostics.currentRepetition.complete = true;
+          diagnostics.repetitions.push(diagnostics.currentRepetition);
+          console.log(
+            `[medicion] ${JSON.stringify(diagnostics.currentRepetition)}`,
+          );
+          diagnostics.currentRepetition = null;
+        }
+        console.log(
+          `[fondos-video] repetición contada al terminar `
+          + `motivo=terminó en el fondo total=${completedTracker.repetitions}`,
+        );
+      }
+      if (video && !uploadedDipStopLoggedRef.current) {
+        uploadedDipStopLoggedRef.current = true;
+        logUploadedDipVideoStop(
+          'ended',
+          video,
+          exerciseRepTrackerRef.current,
+        );
+      }
       const diagnostics = uploadedDipDiagnosticsRef.current;
       if (uploadedDipSearchActiveRef.current) {
         uploadedDipSearchActiveRef.current = false;
@@ -15127,9 +15581,17 @@ function Home() {
                   }}
                   onLoadedMetadata={syncVideoSize}
                   onPlay={handleVideoPlay}
+                  onPlaying={
+                    inputMode === 'video' && selectedExercise === 'fondos'
+                      ? handleVideoPlaying
+                      : undefined
+                  }
                   onPause={inputMode === 'video' ? handleVideoPause : undefined}
                   onRateChange={handleUploadedDipPlaybackRateChange}
                   onEnded={inputMode === 'video' ? handleUploadedVideoEnded : undefined}
+                  onError={inputMode === 'video' && selectedExercise === 'fondos'
+                    ? handleUploadedDipVideoError
+                    : undefined}
                   data-testid="video-camera-preview"
                   aria-label={`Vista previa de la cámara ${
                     selectedExercise === 'flexiones'
