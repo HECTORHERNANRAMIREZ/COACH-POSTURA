@@ -113,6 +113,8 @@ import {
 } from '@/pose3d';
 import { createPoseWorkerDetector } from '@/pose3d-worker-client';
 import {
+  // TEMP-DIAGNOSTICO: umbral existente para identificar cuándo se aprende una referencia.
+  BONE_MIN_SAMPLES,
   createBoneConstraintFilter,
   setDebugBoneConstraintsEnabled,
 } from '@/bone-constraints';
@@ -10023,6 +10025,16 @@ function Home() {
     poseFilterRef.current.setTemporalJumpGuard(false);
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
+    // TEMP-DIAGNOSTICO: deja constancia de las referencias óseas vacías al iniciar la pasada 2.
+    const resetBoneReferences = boneConstraintRef.current.getDebugInfo();
+    logUploadedDipDiagnostic(
+      `[fondos-hueso-ref] reinicio pasada=2 referencias=${JSON.stringify({
+        brazoSuperiorIzq: resetBoneReferences['left-upper-arm'],
+        brazoSuperiorDer: resetBoneReferences['right-upper-arm'],
+        antebrazoIzq: resetBoneReferences['left-forearm'],
+        antebrazoDer: resetBoneReferences['right-forearm'],
+      })}`,
+    );
     primaryPoseTrackRef.current = null;
     stabilityFramesRef.current = 0;
 
@@ -10253,9 +10265,45 @@ function Home() {
         });
         boneConstraintRef.current.reassignForSideSwaps(confirmedSideSwaps);
       }
+      // TEMP-DIAGNOSTICO: captura cambios de referencia solo en videos subidos de fondos.
+      const isUploadedDipVideoFrame = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'fondos';
+      const boneDebugBeforeFilter = isUploadedDipVideoFrame
+        ? boneConstraintRef.current.getDebugInfo()
+        : null;
       const constrainedPose = sideConsistentPose
         ? boneConstraintRef.current.filter(sideConsistentPose)
         : undefined;
+      if (isUploadedDipVideoFrame && boneDebugBeforeFilter) {
+        const boneDebugAfterFilter = boneConstraintRef.current.getDebugInfo();
+        const newlyLearnedReferences = (
+          [
+            ['brazoSuperiorIzq', 'left-upper-arm'],
+            ['brazoSuperiorDer', 'right-upper-arm'],
+            ['antebrazoIzq', 'left-forearm'],
+            ['antebrazoDer', 'right-forearm'],
+          ] as const
+        ).flatMap(([label, id]) => {
+          const before = boneDebugBeforeFilter[id];
+          const after = boneDebugAfterFilter[id];
+          return before.referenceLength === null
+            && after.referenceLength !== null
+            && after.validSamples >= BONE_MIN_SAMPLES
+            ? [{
+                hueso: label,
+                referencia: after.referenceLength,
+                muestras: after.validSamples,
+                bloqueada: after.referencesLocked,
+              }]
+            : [];
+        });
+        if (newlyLearnedReferences.length) {
+          // TEMP-DIAGNOSTICO: registra referencias justo cuando alcanzan el mínimo de aprendizaje.
+          logUploadedDipDiagnostic(
+            `[fondos-hueso-ref] referencias aprendidas=${JSON.stringify(newlyLearnedReferences)}`,
+          );
+        }
+      }
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : pullupSessionActive || pushupTrackingLocked
@@ -12471,6 +12519,22 @@ function Home() {
               && segmentation.postBottomMaximumAngle - repetitionAngle
                 >= UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES
             );
+            const returnCompletedThisFrame = returnCompleted
+              && previousExerciseRepTracker.phase !== 'inicio';
+            if (returnCompletedThisFrame || partialReturnReversed) {
+              // TEMP-DIAGNOSTICO: registra el máximo y el veredicto de cada subida desde el fondo.
+              logUploadedDipDiagnostic(
+                `[fondos-cima] t=${video.currentTime.toFixed(3)}s `
+                + `maxBrutoAlcanzado=${formatUploadedDipAngle(segmentation.postBottomMaximumAngle)} `
+                + `umbralRetorno=${repetitionConfig.startMinAngle.toFixed(1)}° `
+                + `umbralSubidaRelativa=${UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES.toFixed(1)}° `
+                + `decision=${returnCompletedThisFrame
+                  ? uploadedDipReturnForcedForFrame
+                    ? 'retorno-forzado-completado'
+                    : 'retorno-completado'
+                  : 'subida-revertida-sin-extensión-completa'}`,
+              );
+            }
             if (partialReturnReversed) {
               uploadedDipIncorrectReturnReason = 'no extendió arriba';
               // TEMP-DIAGNOSTICO: conserva el evento de retorno parcial no completado.
@@ -12504,6 +12568,13 @@ function Home() {
         if (isUploadedDipVideo) {
           uploadedDipTrackerWasCalledForFrame = true;
           uploadedDipTrackerSmoothedAngleForFrame = exerciseRepUpdate.smoothedAngle;
+          // TEMP-DIAGNOSTICO: expone la ventana exacta que recibió la mediana del tracker.
+          logUploadedDipDiagnostic(
+            `[fondos-suavizado] t=${video.currentTime.toFixed(3)}s `
+            + `ventana=${JSON.stringify(exerciseRepUpdate.tracker.samples)} `
+            + `resultado=${formatUploadedDipAngle(exerciseRepUpdate.smoothedAngle)} `
+            + `fase=${exerciseRepUpdate.tracker.phase}`,
+          );
           // TEMP-DIAGNOSTICO: registra la primera llamada efectiva al tracker de conteo.
           logUploadedDipStartupStageOnce(
             'primera-llamada-tracker',
@@ -13256,6 +13327,54 @@ function Home() {
         const diagnosticIndexes = measurementSide
           ? sideKeypoints[measurementSide]
           : null;
+        // TEMP-DIAGNOSTICO: ángulo 2D desde el resultado MediaPipe anterior a filtro óseo y retención.
+        const rawMediaPipeElbowAngle2D = calculateRepetitionAngle(
+          'fondos',
+          detectedPose?.keypoints,
+          measurementSide,
+        );
+        // TEMP-DIAGNOSTICO: obtiene las coordenadas 3D MediaPipe sin retención ni filtro óseo.
+        const rawMediaPipeLandmark = (key: 'shoulder' | 'elbow' | 'wrist') => {
+          const index = diagnosticIndexes?.[key];
+          const point = index === undefined ? undefined : detectedPose?.keypoints[index];
+          const worldPoint = index === undefined
+            ? undefined
+            : detectedPose?.worldLandmarks[index]?.world;
+          const world = point?.world
+            ?? worldPoint
+            ?? (point?.z === undefined
+              ? null
+              : { x: point.x, y: point.y, z: point.z });
+          return world && [world.x, world.y, world.z].every(Number.isFinite)
+            ? world
+            : null;
+        };
+        const rawShoulder3D = rawMediaPipeLandmark('shoulder');
+        const rawElbow3D = rawMediaPipeLandmark('elbow');
+        const rawWrist3D = rawMediaPipeLandmark('wrist');
+        const rawMediaPipeElbowAngle3D = (
+          rawShoulder3D && rawElbow3D && rawWrist3D
+        )
+          ? (() => {
+              const first = {
+                x: rawShoulder3D.x - rawElbow3D.x,
+                y: rawShoulder3D.y - rawElbow3D.y,
+                z: rawShoulder3D.z - rawElbow3D.z,
+              };
+              const second = {
+                x: rawWrist3D.x - rawElbow3D.x,
+                y: rawWrist3D.y - rawElbow3D.y,
+                z: rawWrist3D.z - rawElbow3D.z,
+              };
+              const firstLength = Math.hypot(first.x, first.y, first.z);
+              const secondLength = Math.hypot(second.x, second.y, second.z);
+              if (!(firstLength > 0) || !(secondLength > 0)) return null;
+              const cosine = (
+                first.x * second.x + first.y * second.y + first.z * second.z
+              ) / (firstLength * secondLength);
+              return Math.acos(Math.max(-1, Math.min(1, cosine))) * (180 / Math.PI);
+            })()
+          : null;
         const diagnosticPoint = (key: UploadedDipPointKey) => (
           diagnosticIndexes
             ? pose?.keypoints?.[diagnosticIndexes[key]]
@@ -13286,6 +13405,90 @@ function Home() {
           : null;
         const boneLengthHeld = diagnosticElbowHeldReason === 'bone-length'
           || diagnosticWristHeldReason === 'bone-length';
+        // TEMP-DIAGNOSTICO: detalla medición, referencia y puntos cuando bone-length retiene codo/muñeca.
+        if (
+          measurementSide
+          && sideConsistentPose
+          && diagnosticIndexes
+        ) {
+          const coordinates = {
+            hombro: diagnosticIndexes.shoulder,
+            codo: diagnosticIndexes.elbow,
+            muñeca: diagnosticIndexes.wrist,
+          };
+          const coordinateDetails = Object.fromEntries(
+            Object.entries(coordinates).map(([name, index]) => {
+              const point = sideConsistentPose.keypoints[index];
+              const world = point?.world
+                ?? sideConsistentPose.worldLandmarks[index]?.world
+                ?? null;
+              return [
+                name,
+                {
+                  p2: point ? { x: point.x, y: point.y } : null,
+                  p3: world
+                    ? { x: world.x, y: world.y, z: world.z }
+                    : null,
+                },
+              ];
+            }),
+          );
+          const getPreConstraintWorld = (index: number) => (
+            sideConsistentPose.keypoints[index]?.world
+            ?? sideConsistentPose.worldLandmarks[index]?.world
+            ?? null
+          );
+          const logHeldBone = (
+            boneName: string,
+            distalName: string,
+            bone: typeof diagnosticBoneDebug['left-upper-arm'],
+            proximalIndex: number,
+            distalIndex: number,
+          ) => {
+            const proximal = getPreConstraintWorld(proximalIndex);
+            const distal = getPreConstraintWorld(distalIndex);
+            const measuredLength = proximal && distal
+              ? Math.hypot(
+                  proximal.x - distal.x,
+                  proximal.y - distal.y,
+                  proximal.z - distal.z,
+                )
+              : null;
+            const relativeDifference = measuredLength !== null
+              && bone.referenceLength !== null
+              && bone.referenceLength > 0
+              ? `${(((measuredLength - bone.referenceLength) / bone.referenceLength) * 100).toFixed(1)}%`
+              : '—';
+            logUploadedDipDiagnostic(
+              `[fondos-hueso] lado=${measurementSide} hueso=${boneName} `
+              + `resultado=rechazado-y-retenido-${distalName} `
+              + `longitud=${measuredLength?.toFixed(4) ?? '—'} `
+              + `referencia=${bone.referenceLength?.toFixed(4) ?? '—'} `
+              + `diferenciaRelativa=${relativeDifference} `
+              + `muestrasReferencia=${bone.validSamples} `
+              + `referenciaEstado=${bone.referencesLocked ? 'bloqueada' : 'actualizándose'} `
+              + `coordenadas=${JSON.stringify(coordinateDetails)}`,
+            );
+          };
+          if (diagnosticElbowHeldReason === 'bone-length') {
+            logHeldBone(
+              'brazo-superior',
+              'codo',
+              diagnosticUpperArmDebug!,
+              diagnosticIndexes.shoulder,
+              diagnosticIndexes.elbow,
+            );
+          }
+          if (diagnosticWristHeldReason === 'bone-length') {
+            logHeldBone(
+              'antebrazo',
+              'muñeca',
+              diagnosticForearmDebug!,
+              diagnosticIndexes.elbow,
+              diagnosticIndexes.wrist,
+            );
+          }
+        }
         const lowConfidence = Boolean(diagnosticIndexes) && [
           diagnosticPoint('shoulder'),
           diagnosticPoint('hip'),
@@ -13333,6 +13536,8 @@ function Home() {
         logUploadedDipDiagnostic(
           `[fondos-curva] t=${video.currentTime.toFixed(2)} `
           + `bruto=${formatUploadedDipAngle(repetitionAngle)} `
+          + `brutoMediaPipe2D=${formatUploadedDipAngle(rawMediaPipeElbowAngle2D)} `
+          + `brutoMediaPipe3D=${formatUploadedDipAngle(rawMediaPipeElbowAngle3D)} `
           + `suav=${formatUploadedDipAngle(uploadedDipTrackerSmoothedAngleForFrame)} `
           + `lado=${measurementSide ?? 'ninguno'} `
           + `vista=${nextViewAlignment.status}`
@@ -13384,7 +13589,8 @@ function Home() {
           // TEMP-DIAGNOSTICO: registra bloqueos por excepción con tiempo y pasada.
           recordUploadedDipBlockedFrame('other');
           logUploadedDipDiagnostic(
-            `[fondos-curva] t=${video.currentTime.toFixed(2)} bruto=— suav=— `
+            `[fondos-curva] t=${video.currentTime.toFixed(2)} bruto=— `
+            + `brutoMediaPipe2D=— brutoMediaPipe3D=— suav=— `
             + `fase=${exerciseRepTrackerRef.current.phase} `
             + 'estado=bloqueado:error de procesamiento',
           );
