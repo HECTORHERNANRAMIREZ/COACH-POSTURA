@@ -1,0 +1,14 @@
+FASE 1H: la bandera uploadedPushupStartsAtBottomRef debe decidirse con el ángulo del PRIMER cuadro válido del video, no con cualquier lectura de la ventana de detección. Proyecto NetPosture, archivo COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx. SOLO flexiones estándar (id «flexiones») con video subido. No toques fondos, otros ejercicios, cámara en vivo, rangos, filtros de pose, la capa «Buscando cuerpo…», la lógica de conteo ni el bloque de resetUploadedPushupAfterSeek que lee la bandera.
+
+Reglas: no git, no Preview, no servidores, no mates procesos, no capturas. Verifica con «pnpm exec tsc --noEmit» desde artifacts/posture-coach (si falla por TS6305 de api-client-react, dímelo sin compilar el monorepo).
+
+Evidencia: la bandera se pone a true en dos sitios: (a) alrededor de las líneas 9824-9830, al cerrar la calibración, con «bandera || ángulo dentro del rango»; (b) alrededor de las líneas 10120-10136, donde cualquier lectura fresca dentro de [PUSHUP_REP_END_MIN_ANGLE, PUSHUP_REP_END_MAX_ANGLE] mientras uploadedPushupPreflightRef está activo y la calibración no ha terminado la pone en true. Como es acumulativa, un video que empieza a ~130° y baja durante la ventana de detección activa la bandera aunque en t=0 no esté abajo, y el tracker arranca en «final» y cuenta una repetición inexistente (12 en lugar de 11). Un video que sí empieza abajo (1001.mp4) debe seguir dando 6.
+
+Cambio:
+1. Añade un ref que guarde si ya se decidió la posición inicial (se limpia donde se limpia la bandera).
+2. En el primer cuadro con ángulo de repetición no nulo del preflight, decide una sola vez: bandera = ángulo dentro del rango «abajo». Después de decidir, ninguna lectura posterior puede cambiarla.
+3. Elimina el OR acumulativo de los dos sitios (a) y (b), de modo que la bandera solo se escriba en esa decisión única. Si al cerrar la calibración todavía no se decidió (nunca hubo ángulo), deja la bandera en false.
+4. Antes de cambiar nada, revisa si el preflight lee cuadros desde t≈0 o desde otro tiempo. Si el primer ángulo disponible llega más tarde que t=0, dímelo y dime con qué tiempo de video se tomaría.
+5. Añade un log «[inicio-video] arranca abajo=<true|false> | ángulo=<valor> | t=<tiempo de video>» en el momento de la decisión.
+
+Al terminar: líneas cambiadas, confirmación de que no tocaste el bloque de resetUploadedPushupAfterSeek ni la lógica de conteo, y resultado de tsc.

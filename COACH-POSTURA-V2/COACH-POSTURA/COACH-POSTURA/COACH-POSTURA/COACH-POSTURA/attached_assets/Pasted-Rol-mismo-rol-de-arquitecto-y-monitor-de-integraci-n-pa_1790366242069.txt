@@ -1,0 +1,106 @@
+Rol: mismo rol de arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto de la auditoría ya realizada (Etapa 1):
+- Todo vive en artifacts/posture-coach/src/App.tsx
+- Máquina de fases: PullupPhase ('esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando'), manejada en advancePullupTracker()
+- calculatePullupBilateralElbowAngle() devuelve solo el PROMEDIO de ambos codos (rawAngle); no existen hoy leftElbowAngle/rightElbowAngle separados en el tracker
+- isHeadOverBothWrists() compara la nariz con el promedio vertical de ambas muñecas (descarta muñecas con confianza < 0.2)
+- getPullupExtremityValidation() ya calcula atBottom y atTop, pero esos valores NO llegan al estado de React ni a la interfaz
+- Rangos reales encontrados en código:
+  - codo abajo: 145–180°, umbral de inicio de tracción <155°
+  - hombro abajo: 125–180°, hombro arriba: 70–125°
+  - codo arriba: 70–135°
+  - tolerancia declarada en código: ±5°
+- Detector de pose: MediaPipe Tasks Vision, Pose Landmarker (BlazePose 3D), inicializado en pose3d.ts, corre en cliente (navegador)
+- La "confianza" (score) NO es nativa de MediaPipe: se deriva en landmarkScore() como max(visibility, presence)
+- El pipeline de filtros ya agrega metadatos held / heldFrames / heldReason a cada punto retenido
+
+Tarea de esta etapa — ETAPA 2: SNAPSHOT DE DIAGNÓSTICO. Todavía NO construyas ningún panel visual, solo la estructura de datos y su llenado con valores reales.
+
+1. Crea, idealmente en un archivo nuevo artifacts/posture-coach/src/pullup-diagnostics.ts (para no seguir engordando App.tsx, que ya supera las 10 000 líneas), un tipo ExerciseDiagnosticSnapshot con al menos estos campos, usando SIEMPRE valores reales de la implementación (nunca inventados, nunca `true` como fallback silencioso; usa `null` cuando el dato no exista):
+
+type ExerciseDiagnosticSnapshot = {
+  timestamp: number;
+  exercise: string;
+  exerciseStarted: boolean;
+  phase: string;
+  cameraReady: boolean;
+  poseDetected: boolean;
+  frameStable: boolean;
+  measurementBlocked: boolean;
+  modelInfo: { model: string; delegate: string };
+  head: {
+    noseY: number | null;
+    leftWristY: number | null;
+    rightWristY: number | null;
+    noseConfidence: number | null;
+    leftWristConfidence: number | null;
+    rightWristConfidence: number | null;
+    leftWristRelation: 'above' | 'below' | 'unknown';
+    rightWristRelation: 'above' | 'below' | 'unknown';
+    overBothWrists: boolean | null;
+    underBothWrists: boolean | null;
+  };
+  elbows: {
+    left: {
+      angle: number | null;
+      confidence: number | null;
+      valid: boolean;
+      inBottomRange: boolean;
+      inTopRange: boolean;
+    };
+    right: {
+      angle: number | null;
+      confidence: number | null;
+      valid: boolean;
+      inBottomRange: boolean;
+      inTopRange: boolean;
+    };
+    averagedRawAngle: number | null; // el que usa hoy el tracker
+  };
+  ranges: {
+    bottomBase: [number, number];
+    bottomTolerance: number;
+    bottomEffective: [number, number];
+    topBase: [number, number];
+    topTolerance: number;
+    topEffective: [number, number];
+  };
+  conditions: {
+    atBottom: boolean;
+    atTop: boolean;
+    isAtBottom: boolean;
+    hasReachedTop: boolean;
+  };
+  smoothedAngle: number | null;
+  minimumAngle: number | null;
+  topFrames: number;
+  repetitions: number;
+  goodRepetitions: number;
+  event: string | null;
+  blockingReasons: string[];
+};
+
+2. blockingReasons debe poder incluir, como mínimo: nariz no visible, muñeca izquierda no visible, muñeca derecha no visible, codo izquierdo con confianza baja, codo derecho con confianza baja, hombro izquierdo con confianza baja, hombro derecho con confianza baja, punto retenido por filtro (usando el heldReason ya existente, no una lógica nueva), vista incorrecta, pose inestable, pocos puntos visibles, ángulo no calculable, ejercicio no iniciado.
+
+3. El snapshot debe leer los mismos valores que ya usan advancePullupTracker(), getPullupExtremityValidation() e isHeadOverBothWrists(). No crees una lógica paralela ni reimplementes esos cálculos.
+
+4. confidence en el snapshot debe corresponder al score derivado (landmarkScore), no a visibility o presence por separado — acláramelo en la respuesta.
+
+5. Todavía no lo muestres en la interfaz. Por ahora:
+   - constrúyelo en cada processFrame();
+   - imprímelo por console.log (temporal, solo para esta etapa) para confirmar que cambia correctamente en vivo.
+
+Verificación obligatoria:
+- pnpm --filter @workspace/posture-coach run typecheck
+- Confirma que construir el snapshot no afecta el rendimiento del loop de cámara.
+
+Entrégame:
+- el tipo final ExerciseDiagnosticSnapshot y en qué archivo quedó;
+- cómo se llena en cada frame;
+- 2–3 ejemplos reales impresos en consola (abajo, subiendo, arriba) con valores concretos, incluyendo un caso donde izquierdo y derecho difieran;
+- resultado del typecheck;
+- cualquier caso donde tuviste que usar null o no pudiste obtener algún dato;
+- confirma explícitamente si topEffective terminó siendo [70,135] o algo distinto, y de dónde sale ese 135.
+
+No construyas panel visual todavía. No cambies rangos ni tolerancias.

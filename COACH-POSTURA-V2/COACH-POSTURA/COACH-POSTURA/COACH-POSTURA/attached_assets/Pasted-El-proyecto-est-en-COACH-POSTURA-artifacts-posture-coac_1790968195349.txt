@@ -1,0 +1,28 @@
+El proyecto está en COACH-POSTURA/artifacts/posture-coach/src/App.tsx.
+
+Cambio: agregar al ejercicio FONDOS EN BARRA (id: fondos) la misma preparación que ya tienen flexiones y dominadas, ÚNICAMENTE cuando el análisis es con CÁMARA EN VIVO.
+
+⚠️ REGLA PRINCIPAL: esto NO aplica al VIDEO SUBIDO por el usuario. En video subido, fondos debe comportarse EXACTAMENTE como hoy: sin «Detectando cuerpo», sin «Acómodate», sin cuenta regresiva y sin cambios de botón. Toda la lógica nueva debe quedar protegida por una condición explícita de cámara en vivo (que NO haya archivo de video subido), de modo que sea imposible que se ejecute en video.
+
+Flujo deseado, solo en CÁMARA EN VIVO:
+1. Eliges fondos → «Detectando cuerpo» durante 5 s continuos.
+2. Cuerpo detectado → «Acómodate» durante 5 s.
+3. Termina la cuenta → el ejercicio inicia automáticamente y cuenta repeticiones desde 0.
+
+Reglas:
+- Reutiliza el mecanismo existente de flexiones o dominadas (etapas de preparación, constantes de 5 s, estado pending/calibrating/ready) con el menor cambio posible. Flexiones y dominadas deben quedar exactamente igual.
+- «Cuerpo detectado» en fondos = hombro, codo, muñeca y cadera de un lado, frescos (no retenidos), con confianza ≥ 0,38, y la guía de cámara en «ready». No agregues exigencias nuevas de ángulo de vista.
+- Si un frame falla, la cuenta de detección vuelve a cero, igual que en flexiones.
+- Al empezar el conteo, reinicia el tracker y los contadores (total, correctas, incorrectas).
+- El botón manual «Iniciar ejercicio» no debe iniciar fondos antes de que termine la preparación.
+- NO modifiques: el modo VIDEO SUBIDO de ningún ejercicio, flexiones, dominadas, ángulos, rangos, el tracker, las condiciones de correcta/incorrecta ni ningún otro ejercicio.
+
+Haz el trabajo en dos pasos:
+1. PRIMERO, sin editar nada, dime qué líneas vas a tocar, qué mecanismo reutilizas y cuál es la condición exacta que garantiza que no corre en video subido. Detente y espera mi confirmación.
+2. Cuando yo confirme, implementa el cambio.
+
+Al terminar:
+- Lista cada cambio con archivo y líneas.
+- Confirma qué NO tocaste.
+- Dime cómo probarlo en cámara y qué debería ver en cada etapa.
+- Dime cómo comprobar que en video subido de fondos no cambió nada.
