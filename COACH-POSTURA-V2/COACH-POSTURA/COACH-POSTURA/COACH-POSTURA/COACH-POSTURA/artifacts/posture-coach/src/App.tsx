@@ -167,6 +167,10 @@ const SCROLL_LERP = 0.15;
 // repeticiones normales sin convertir la reproducción en cámara lenta.
 const UPLOADED_VIDEO_ANALYSIS_FPS = 12;
 const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS;
+// TEMP-DIAGNOSTICO: intervalo de muestreo temporal del log; no interviene en el conteo.
+const UPLOADED_DIP_TIMELINE_LOG_INTERVAL_SECONDS = 0.2;
+// TEMP-DIAGNOSTICO: máximo aproximado del registro descargable para contener su tamaño.
+const UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS = 1_500_000;
 // Las flexiones subidas usan más muestras por segundo de video en el fondo de cada repetición.
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
@@ -690,6 +694,13 @@ type UploadedDipVideoSegmentationState = {
   descentDecisionEvaluated: boolean;
   descentIsDip: boolean | null;
 };
+// TEMP-DIAGNOSTICO: traza del camino que ya incrementó el contador, solo para el log.
+type UploadedDipCountTrace = {
+  route: string;
+  source: string;
+  trackerPhase: ExerciseRepPhase;
+  descentDecision: boolean | null;
+};
 type UploadedDipRepetitionMeasurement = {
   repetition: number;
   complete: boolean;
@@ -708,6 +719,8 @@ type UploadedDipRepetitionMeasurement = {
   samplesBelow100DuringDescent: number;
   rawMaximumBeforeDescent: number | null;
   returnTrigger?: 'tracker' | 'retorno forzado';
+  // TEMP-DIAGNOSTICO: metadatos informativos del incremento, no consultados por las reglas.
+  countTrace?: UploadedDipCountTrace;
 };
 type UploadedDipDiagnostics = {
   windowFrames: UploadedDipDiagnosticFrame[];
@@ -734,8 +747,16 @@ type UploadedDipDiagnostics = {
   previousStableElbowAngle: number | null;
   // TEMP-DIAGNOSTICO: dispersión de la posición hombro-muñeca 2D normalizada en tramos estables.
   stableShoulderWristNormalizedPositions: number[];
+  // TEMP-DIAGNOSTICO: tiempos de las mismas muestras espaciales para resumir su rango temporal.
+  stableShoulderWristVideoTimesSeconds: number[];
+  // TEMP-DIAGNOSTICO: último ruido emitido, para informar solo cuando cambia.
+  lastLoggedStableShoulderWristNoiseTolerance?: number | null;
   stableShoulderWristReferenceSource: UploadedDipRawShoulderWristSample['referenceSource'] | null;
   stableShoulderWristSide: PoseSide | null;
+  // TEMP-DIAGNOSTICO: escala fija y reloj de la serie temporal del video subido.
+  timelineTorsoReferenceLength: number | null;
+  timelineTorsoReferenceSide: PoseSide | null;
+  lastTimelineLogVideoTime: number | null;
   latestStableShoulderWrist: {
     side: PoseSide;
     sample: UploadedDipRawShoulderWristSample;
@@ -775,6 +796,9 @@ type UploadedDipDiagnosticPassStats = {
 
 // TEMP-DIAGNOSTICO: conserva cada línea hasta que el usuario descargue el archivo.
 const uploadedDipDiagnosticLogLines: string[] = [];
+// TEMP-DIAGNOSTICO: índice y tamaño para conservar solo el tramo reciente del registro.
+let uploadedDipDiagnosticLogStartIndex = 0;
+let uploadedDipDiagnosticLogCharacterCount = 0;
 let uploadedDipDiagnosticPass: UploadedDipDiagnosticPassNumber = 1;
 let uploadedDipWorkerFallbackReason: string | null = null;
 
@@ -818,8 +842,38 @@ function logUploadedDipDiagnostic(message: string) {
   const singleLineMessage = message.replace(/[\r\n]+/g, ' ');
   const line = `${singleLineMessage} | performance.now=${performance.now().toFixed(3)}`
     + ` | pasada=${uploadedDipDiagnosticPass}`;
-  uploadedDipDiagnosticLogLines.push(line);
+  // TEMP-DIAGNOSTICO: limita también cualquier línea individual excepcionalmente larga.
+  const storedLine = line.length > UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS
+    ? `${line.slice(0, UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS - 16)} [truncado]`
+    : line;
+  uploadedDipDiagnosticLogLines.push(storedLine);
+  // TEMP-DIAGNOSTICO: limita únicamente el buffer descargable; no altera ninguna señal o regla.
+  uploadedDipDiagnosticLogCharacterCount += storedLine.length + 1;
+  while (
+    uploadedDipDiagnosticLogCharacterCount > UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS
+    && uploadedDipDiagnosticLogStartIndex < uploadedDipDiagnosticLogLines.length
+  ) {
+    const discardedLine = uploadedDipDiagnosticLogLines[uploadedDipDiagnosticLogStartIndex];
+    uploadedDipDiagnosticLogCharacterCount -= discardedLine.length + 1;
+    uploadedDipDiagnosticLogLines[uploadedDipDiagnosticLogStartIndex] = '';
+    uploadedDipDiagnosticLogStartIndex += 1;
+  }
+  if (
+    uploadedDipDiagnosticLogStartIndex >= 512
+    && uploadedDipDiagnosticLogStartIndex * 2 >= uploadedDipDiagnosticLogLines.length
+  ) {
+    uploadedDipDiagnosticLogLines.splice(0, uploadedDipDiagnosticLogStartIndex);
+    uploadedDipDiagnosticLogStartIndex = 0;
+  }
   console.log(line);
+}
+
+// TEMP-DIAGNOSTICO: ordena el buffer circular truncado al preparar descargarLogFondos().
+function getUploadedDipDiagnosticLogText() {
+  return uploadedDipDiagnosticLogLines
+    .slice(uploadedDipDiagnosticLogStartIndex)
+    .filter(Boolean)
+    .join('\n');
 }
 
 // TEMP-DIAGNOSTICO: registra hitos una sola vez por pasada.
@@ -1006,6 +1060,12 @@ function logUploadedDipRepetitionEvent(
       disparador: trigger,
       veredicto: verdict,
       motivo: repetition.reason ?? null,
+      // TEMP-DIAGNOSTICO: se adjuntan después de contar; nunca alimentan el contador.
+      rutaConteo: repetition.countTrace
+        ? `${repetition.countTrace.route}@${repetition.countTrace.source}`
+        : 'no-contada',
+      faseTracker: repetition.countTrace?.trackerPhase ?? 'no-disponible',
+      decisionDescenso: repetition.countTrace?.descentDecision ?? 'no-evaluada',
     })}`,
   );
 }
@@ -8554,19 +8614,47 @@ function estimateUploadedDipRawAngleTolerance(diagnostics: UploadedDipDiagnostic
     : 3 * 1.4826 * medianAbsoluteDeviation;
 }
 
-// TEMP-DIAGNOSTICO: deriva el umbral espacial de la dispersión estable del mismo video.
+// TEMP-DIAGNOSTICO: resumen MAD y ventana temporal de las muestras estables ya usadas.
 function estimateUploadedDipShoulderWristNoiseTolerance(diagnostics: UploadedDipDiagnostics) {
   const positions = diagnostics.stableShoulderWristNormalizedPositions;
-  if (positions.length < 3) return null;
+  const times = diagnostics.stableShoulderWristVideoTimesSeconds;
+  const sampleCount = positions.length;
+  const firstVideoSecond = times.length === sampleCount ? times[0] ?? null : null;
+  const lastVideoSecond = times.length === sampleCount
+    ? times[times.length - 1] ?? null
+    : null;
+  if (sampleCount < 3) {
+    return {
+      tolerance: null,
+      mad: null,
+      sampleCount,
+      firstVideoSecond,
+      lastVideoSecond,
+    };
+  }
   const medianPosition = median(positions);
-  if (medianPosition === null) return null;
+  if (medianPosition === null) {
+    return {
+      tolerance: null,
+      mad: null,
+      sampleCount,
+      firstVideoSecond,
+      lastVideoSecond,
+    };
+  }
   const absoluteDeviations = positions.map(
     (position) => Math.abs(position - medianPosition),
   );
   const medianAbsoluteDeviation = median(absoluteDeviations);
-  return medianAbsoluteDeviation === null
-    ? null
-    : 3 * 1.4826 * medianAbsoluteDeviation;
+  return {
+    tolerance: medianAbsoluteDeviation === null
+      ? null
+      : 3 * 1.4826 * medianAbsoluteDeviation,
+    mad: medianAbsoluteDeviation,
+    sampleCount,
+    firstVideoSecond,
+    lastVideoSecond,
+  };
 }
 
 function resetUploadedDipVideoSegmentation(
@@ -8623,8 +8711,13 @@ function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
     previousStableElbowAngle: null,
     // TEMP-DIAGNOSTICO: dispersión espacial estable y referencia corporal usadas por fondos subidos.
     stableShoulderWristNormalizedPositions: [],
+    stableShoulderWristVideoTimesSeconds: [],
+    lastLoggedStableShoulderWristNoiseTolerance: undefined,
     stableShoulderWristReferenceSource: null,
     stableShoulderWristSide: null,
+    timelineTorsoReferenceLength: null,
+    timelineTorsoReferenceSide: null,
+    lastTimelineLogVideoTime: null,
     latestStableShoulderWrist: null,
   };
 }
@@ -8882,6 +8975,7 @@ function applyUploadedDipTrackerDiagnostics({
   bottomEvidenceTimeSeconds = null,
   incorrectReturnReason = null,
   returnForced = false,
+  countTrace = null,
 }: {
   diagnostics: UploadedDipDiagnostics;
   previousTracker: ExerciseRepTracker;
@@ -8900,6 +8994,8 @@ function applyUploadedDipTrackerDiagnostics({
   incorrectReturnReason?: 'no extendió arriba' | null;
   // TEMP-DIAGNOSTICO: distingue los retornos creados por la segmentación de los del tracker.
   returnForced?: boolean;
+  // TEMP-DIAGNOSTICO: trazabilidad de conteo, sin efecto en los valores del tracker.
+  countTrace?: UploadedDipCountTrace | null;
 }) {
   // TEMP-DIAGNOSTICO: registra la extensión previa mientras el tracker sigue en la posición inicial.
   if (
@@ -8943,6 +9039,24 @@ function applyUploadedDipTrackerDiagnostics({
       repetitions: trackerUpdate.tracker.repetitions + 1,
     };
   }
+  // TEMP-DIAGNOSTICO: conserva un rastro incluso en los incrementos auxiliares del tracker.
+  const resolvedCountTrace = countTrace
+    ?? (trackerUpdate.tracker.repetitions > previousTracker.repetitions
+      ? {
+          route: noDepthReturn
+            ? 'otra:retorno-sin-profundidad'
+            : bottomEvidenceDetected
+              ? 'ruta-por-evidencia'
+              : returnForced
+                ? 'retorno-forzado'
+                : 'ruta-tracker',
+          source: noDepthReturn ? 'App.tsx:9039' : 'App.tsx:3291',
+          trackerPhase: previousTracker.phase,
+          descentDecision: diagnostics.videoSegmentation.descentDecisionEvaluated
+            ? diagnostics.videoSegmentation.descentIsDip
+            : null,
+        }
+      : null);
   if (
     trackerUpdate.tracker.phase !== previousTracker.phase
     || trackerUpdate.tracker.repetitions > previousTracker.repetitions
@@ -9028,6 +9142,11 @@ function applyUploadedDipTrackerDiagnostics({
         );
       currentRepetition.countedAsIncorrect = true;
       currentRepetition.reason = incorrectReturnReason;
+      currentRepetition.countTrace = resolvedCountTrace ?? {
+        route: 'retorno-parcial',
+        trackerPhase: previousTracker.phase,
+        descentDecision: null,
+      };
       diagnostics.repetitions.push(currentRepetition);
       diagnostics.incompleteRepetitions += 1;
       diagnostics.lastIncorrectReason = incorrectReturnReason;
@@ -9088,6 +9207,13 @@ function applyUploadedDipTrackerDiagnostics({
         > previousTracker.repetitions;
       const markedGood = trackerUpdate.tracker.goodRepetitions
         > previousTracker.goodRepetitions;
+      if (repetitionCounted) {
+        currentRepetition.countTrace = resolvedCountTrace ?? {
+          route: 'otra',
+          trackerPhase: previousTracker.phase,
+          descentDecision: null,
+        };
+      }
       // TEMP-DIAGNOSTICO: registra el disparador, ángulos y veredicto de cada retorno.
       logUploadedDipRepetitionEvent(
         currentRepetition,
@@ -9101,10 +9227,111 @@ function applyUploadedDipTrackerDiagnostics({
       diagnostics.currentRepetition = null;
     }
   }
+  // TEMP-DIAGNOSTICO: cubre incrementos sin transición estándar para que ninguno quede sin traza.
+  const hasCountWithoutReturnEvent = trackerUpdate.tracker.repetitions
+      > previousTracker.repetitions
+    && !incorrectReturnReason
+    && !(
+      previousTracker.phase !== 'esperando inicio'
+      && previousTracker.phase !== 'inicio'
+      && trackerUpdate.tracker.phase === 'inicio'
+    );
+  if (hasCountWithoutReturnEvent) {
+    const fallbackTrace = resolvedCountTrace ?? {
+      route: 'otra',
+      source: 'App.tsx:9039',
+      trackerPhase: previousTracker.phase,
+      descentDecision: null,
+    };
+    const markedGood = trackerUpdate.tracker.goodRepetitions > previousTracker.goodRepetitions;
+    logUploadedDipDiagnostic(
+      `[fondos-repeticion-conteo] veredicto=${markedGood ? 'correcta' : 'incorrecta'} `
+      + `rutaConteo=${fallbackTrace.route}@${fallbackTrace.source} `
+      + `faseTracker=${fallbackTrace.trackerPhase} `
+      + `decisionDescenso=${fallbackTrace.descentDecision ?? 'no-evaluada'}`,
+    );
+  }
 }
 
 function formatUploadedDipAngle(angle: number | null) {
   return angle === null ? '—' : `${angle.toFixed(1)}°`;
+}
+
+// TEMP-DIAGNOSTICO: registra cinemática cruda cada intervalo de video con una escala fija de torso.
+function logUploadedDipTimelineSample({
+  diagnostics,
+  videoTimeSeconds,
+  keypoints,
+  side,
+  trackerPhase,
+}: {
+  diagnostics: UploadedDipDiagnostics;
+  videoTimeSeconds: number;
+  keypoints: PosePoint[] | undefined;
+  side: PoseSide | null;
+  trackerPhase: ExerciseRepPhase;
+}) {
+  const previousTime = diagnostics.lastTimelineLogVideoTime;
+  if (
+    previousTime !== null
+    && videoTimeSeconds >= previousTime
+    && videoTimeSeconds - previousTime < UPLOADED_DIP_TIMELINE_LOG_INTERVAL_SECONDS
+  ) {
+    return;
+  }
+  diagnostics.lastTimelineLogVideoTime = videoTimeSeconds;
+
+  const indexes = side ? sideKeypoints[side] : null;
+  const shoulder = indexes ? keypoints?.[indexes.shoulder] : undefined;
+  const hip = indexes ? keypoints?.[indexes.hip] : undefined;
+  const elbow = indexes ? keypoints?.[indexes.elbow] : undefined;
+  const wrist = indexes ? keypoints?.[indexes.wrist] : undefined;
+  const isUsable = (point: PosePoint | undefined) => Boolean(
+    point
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+  );
+
+  if (
+    diagnostics.timelineTorsoReferenceLength === null
+    && isUsable(shoulder)
+    && isUsable(hip)
+  ) {
+    const torsoReferenceLength = Math.hypot(
+      shoulder!.x - hip!.x,
+      shoulder!.y - hip!.y,
+    );
+    if (torsoReferenceLength > 0 && Number.isFinite(torsoReferenceLength)) {
+      diagnostics.timelineTorsoReferenceLength = torsoReferenceLength;
+      diagnostics.timelineTorsoReferenceSide = side;
+    }
+  }
+  const referenceLength = diagnostics.timelineTorsoReferenceLength;
+  const normalizedY = (point: PosePoint | undefined) => (
+    isUsable(point) && referenceLength !== null && referenceLength > 0
+      ? (point!.y / referenceLength).toFixed(3)
+      : '—'
+  );
+  const torsoAngle = isUsable(shoulder) && isUsable(hip)
+    ? calculateForwardLeanAngle(shoulder, hip)
+    : null;
+  const elbowAngle = isUsable(shoulder) && isUsable(elbow) && isUsable(wrist)
+    ? calculateAngle(shoulder, elbow, wrist)
+    : null;
+
+  logUploadedDipDiagnostic(
+    `[linea-tiempo] segundo=${videoTimeSeconds.toFixed(3)} `
+    + `anguloTorso=${formatUploadedDipAngle(torsoAngle)} `
+    + `anguloCodo=${formatUploadedDipAngle(elbowAngle)} `
+    + `faseTracker=${trackerPhase} `
+    + `hombroYNorm=${normalizedY(shoulder)} `
+    + `caderaYNorm=${normalizedY(hip)} `
+    + `munecaYNorm=${normalizedY(wrist)} `
+    + `lado=${side ?? 'no-disponible'} `
+    + `ladoReferencia=${diagnostics.timelineTorsoReferenceSide ?? 'no-disponible'} `
+    + `referenciaTorso=${referenceLength?.toFixed(4) ?? 'no-disponible'}`,
+  );
 }
 
 function summarizeUploadedDipAngles(values: number[]) {
@@ -11640,12 +11867,18 @@ function Home() {
             || uploadedDipDiagnosticsForNoise.stableShoulderWristSide !== measurementSide
           ) {
             uploadedDipDiagnosticsForNoise.stableShoulderWristNormalizedPositions = [];
+            uploadedDipDiagnosticsForNoise.stableShoulderWristVideoTimesSeconds = [];
+            uploadedDipDiagnosticsForNoise.lastLoggedStableShoulderWristNoiseTolerance = undefined;
             uploadedDipDiagnosticsForNoise.stableShoulderWristReferenceSource
               = uploadedDipRawShoulderWristSample.referenceSource;
             uploadedDipDiagnosticsForNoise.stableShoulderWristSide = measurementSide;
           }
           uploadedDipDiagnosticsForNoise.stableShoulderWristNormalizedPositions.push(
             uploadedDipRawShoulderWristSample.normalizedPosition,
+          );
+          // TEMP-DIAGNOSTICO: empareja cada posición estable con su segundo del video de origen.
+          uploadedDipDiagnosticsForNoise.stableShoulderWristVideoTimesSeconds.push(
+            diagnosticVideoTime ?? video.currentTime,
           );
           uploadedDipDiagnosticsForNoise.latestStableShoulderWrist = {
             side: measurementSide,
@@ -12728,6 +12961,20 @@ function Home() {
                 : true,
           uploadedDipRawPhaseRescue,
         );
+      // TEMP-DIAGNOSTICO: copia el estado observado junto al incremento normal del tracker.
+      let uploadedDipCountTraceForFrame: UploadedDipCountTrace | null = (
+        isUploadedDipVideo
+        && exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
+      )
+        ? {
+            route: 'ruta-tracker',
+            source: 'App.tsx:3291',
+            trackerPhase: previousExerciseRepTracker.phase,
+            descentDecision: uploadedDipVideoSegmentation?.descentDecisionEvaluated
+              ? uploadedDipVideoSegmentation.descentIsDip
+              : null,
+          }
+        : null;
         let uploadedDipCimaLogWritten = false;
         // TEMP-DIAGNOSTICO: impide que una fase "arriba" cierre el retorno si la curva cruda no confirma su máximo.
         if (
@@ -12919,6 +13166,19 @@ function Home() {
             uploadedDipReturnForcedForFrame = true;
             const tracker = exerciseRepUpdate.tracker;
             const alreadyCounted = tracker.repetitions > previousExerciseRepTracker.repetitions;
+            // TEMP-DIAGNOSTICO: identifica qué retorno incrementó, sin consultar esta traza.
+            if (!alreadyCounted) {
+              uploadedDipCountTraceForFrame = {
+                route: uploadedDipBottomEvidenceDetected
+                  ? 'ruta-por-evidencia'
+                  : 'retorno-forzado',
+                source: 'App.tsx:13169',
+                trackerPhase: tracker.phase,
+                descentDecision: segmentation.descentDecisionEvaluated
+                  ? segmentation.descentIsDip
+                  : null,
+              };
+            }
             const repetitionWasCorrect = (
               previousExerciseRepTracker.currentRepCorrect
               && tracker.currentRepCorrect
@@ -13057,7 +13317,7 @@ function Home() {
             && !segmentation.descentDecisionEvaluated
           ) {
             const descentDiagnostics = uploadedDipDiagnosticsRef.current;
-            const descentNoiseTolerance = (
+            const descentNoiseStats = (
               descentDiagnostics
               && measurementSide
               && descentDiagnostics.stableShoulderWristSide === measurementSide
@@ -13066,6 +13326,28 @@ function Home() {
             )
               ? estimateUploadedDipShoulderWristNoiseTolerance(descentDiagnostics)
               : null;
+            const descentNoiseTolerance = descentNoiseStats?.tolerance ?? null;
+            if (
+              descentDiagnostics
+              && (
+                descentDiagnostics.lastLoggedStableShoulderWristNoiseTolerance === undefined
+                || !Object.is(
+                  descentDiagnostics.lastLoggedStableShoulderWristNoiseTolerance,
+                  descentNoiseTolerance,
+                )
+              )
+            ) {
+              // TEMP-DIAGNOSTICO: informa muestras, rango y MAD solo cuando cambia ruidoEstable.
+              logUploadedDipDiagnostic(
+                `[ruido-estable] ruidoEstable=${descentNoiseTolerance?.toFixed(4) ?? 'no-medido'} `
+                + `muestras=${descentNoiseStats?.sampleCount ?? 0} `
+                + `primerSegundo=${descentNoiseStats?.firstVideoSecond?.toFixed(3) ?? '—'} `
+                + `ultimoSegundo=${descentNoiseStats?.lastVideoSecond?.toFixed(3) ?? '—'} `
+                + `MAD=${descentNoiseStats?.mad?.toFixed(6) ?? 'no-medido'}`,
+              );
+              descentDiagnostics.lastLoggedStableShoulderWristNoiseTolerance
+                = descentNoiseTolerance;
+            }
             const descentCanBeEvaluated = segmentation.descentHasRequiredData
               && segmentation.descentMaximumNormalizedDrop !== null
               && descentNoiseTolerance !== null;
@@ -13203,6 +13485,15 @@ function Home() {
             }
             if (partialReturnReversed) {
               uploadedDipIncorrectReturnReason = 'no extendió arriba';
+              // TEMP-DIAGNOSTICO: registra la ruta y fase inmediatamente antes del incremento parcial.
+              uploadedDipCountTraceForFrame = {
+                route: 'retorno-parcial',
+                source: 'App.tsx:13481',
+                trackerPhase: exerciseRepUpdate.tracker.phase,
+                descentDecision: segmentation.descentDecisionEvaluated
+                  ? segmentation.descentIsDip
+                  : null,
+              };
               // TEMP-DIAGNOSTICO: conserva el evento de retorno parcial no completado.
               logUploadedDipDiagnostic(
                 `[fondos-video] repetición incorrecta motivo=no extendió arriba `
@@ -13374,6 +13665,8 @@ function Home() {
             incorrectReturnReason: uploadedDipIncorrectReturnReason,
             // TEMP-DIAGNOSTICO: distingue retorno calculado del retorno forzado.
             returnForced: uploadedDipReturnForcedForFrame,
+            // TEMP-DIAGNOSTICO: añade metadatos al log después de que la ruta haya incrementado.
+            countTrace: uploadedDipCountTraceForFrame,
           });
         }
         const isUploadedStandardPushup = inputModeRef.current === 'video'
@@ -14059,6 +14352,17 @@ function Home() {
         }
       }
       if (isUploadedDipVideo) {
+        // TEMP-DIAGNOSTICO: la pasada 2 recorre todo el video; este muestreo no alimenta el conteo.
+        const timelineDiagnostics = uploadedDipDiagnosticsRef.current;
+        if (uploadedDipCountingPassStartedRef.current && timelineDiagnostics) {
+          logUploadedDipTimelineSample({
+            diagnostics: timelineDiagnostics,
+            videoTimeSeconds: diagnosticVideoTime ?? video.currentTime,
+            keypoints: detectedPose?.keypoints,
+            side: measurementSide,
+            trackerPhase: exerciseRepTrackerRef.current.phase,
+          });
+        }
         const diagnosticIndexes = measurementSide
           ? sideKeypoints[measurementSide]
           : null;
@@ -14603,12 +14907,13 @@ function Home() {
   }, []);
 
   useEffect(() => {
-    // TEMP-DIAGNOSTICO: publica la descarga manual del registro ilimitado de fondos.
+    // TEMP-DIAGNOSTICO: publica la descarga manual del registro limitado de fondos.
     const diagnosticWindow = window as Window & {
       descargarLogFondos?: () => void;
     };
     const downloadDipLog = () => {
-      const content = uploadedDipDiagnosticLogLines.join('\n');
+      // TEMP-DIAGNOSTICO: entrega el mismo buffer acotado que recibe todos los logs.
+      const content = getUploadedDipDiagnosticLogText();
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -16268,6 +16573,15 @@ function Home() {
         setExerciseGoodRepetitions(incorrectTracker.goodRepetitions);
         setExerciseRepPhase(incorrectTracker.phase);
         setExerciseMinimumAngle(incorrectTracker.endpointAngle);
+        // TEMP-DIAGNOSTICO: identifica el incremento incorrecto emitido al finalizar el video.
+        incompleteBottomRepetition.countTrace = {
+          route: 'retorno-forzado-fin-del-video',
+          source: 'App.tsx:16545',
+          trackerPhase: trackerAtEnd.phase,
+          descentDecision: diagnosticsAtEnd.videoSegmentation.descentDecisionEvaluated
+            ? diagnosticsAtEnd.videoSegmentation.descentIsDip
+            : null,
+        };
         incompleteBottomRepetition.countedAsIncorrect = true;
         incompleteBottomRepetition.reason = incorrectReason;
         diagnosticsAtEnd.lastIncorrectReason = incorrectReason;
