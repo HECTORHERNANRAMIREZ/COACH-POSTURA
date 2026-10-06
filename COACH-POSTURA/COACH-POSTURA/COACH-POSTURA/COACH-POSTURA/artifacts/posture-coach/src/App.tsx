@@ -648,11 +648,27 @@ type UploadedDipDiagnosticFrame = {
   moment: UploadedDipDiagnosticMoment;
   live: UploadedDipLiveSnapshot;
 };
+type UploadedDipVideoSegmentationState = {
+  boneLengthBlockedFrames: number;
+  boneLengthCandidateReady: boolean;
+  boneLengthCandidateMinimumAngle: number | null;
+  boneLengthCandidateTimeSeconds: number | null;
+  boneLengthCandidateFrameCount: number;
+  bottomReached: boolean;
+  bottomMinimumAngle: number | null;
+  bottomEvidenceTimeSeconds: number | null;
+  bottomEvidenceFrameCount: number;
+  postBottomMaximumAngle: number | null;
+  relativeRiseLogged: boolean;
+};
 type UploadedDipRepetitionMeasurement = {
   repetition: number;
   complete: boolean;
   countedAsIncorrect?: boolean;
-  reason?: 'sin profundidad' | 'rango incompleto: bajó pero no regresó arriba';
+  reason?:
+    | 'sin profundidad'
+    | 'rango incompleto: bajó pero no regresó arriba'
+    | 'no extendió arriba';
   start: UploadedDipDiagnosticMoment | null;
   bottom: UploadedDipDiagnosticMoment | null;
   return: UploadedDipDiagnosticMoment | null;
@@ -677,6 +693,7 @@ type UploadedDipDiagnostics = {
   lastReportTimestamp: number | null;
   lastFpsVideoTime: number | null;
   latestLiveSnapshot?: UploadedDipLiveSnapshot;
+  videoSegmentation: UploadedDipVideoSegmentationState;
 };
 type AngleDiagnosticPoint = {
   label: string;
@@ -2685,6 +2702,10 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endLabel: `cadera entre ${FLOOR_LEG_RAISE_END_MIN_ANGLE}–${FLOOR_LEG_RAISE_END_MAX_ANGLE}°`,
   },
 };
+
+const UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES = (
+  repetitionConfigs.fondos!.startMinAngle - repetitionConfigs.fondos!.endMaxAngle
+) / 2;
 
 function createExerciseRepTracker(): ExerciseRepTracker {
   return {
@@ -8103,6 +8124,55 @@ function formatUploadedPushupDiagnosticAngle(angle: number | null) {
   return angle === null ? '—' : `${angle}°`;
 }
 
+function createUploadedDipVideoSegmentationState(): UploadedDipVideoSegmentationState {
+  return {
+    boneLengthBlockedFrames: 0,
+    boneLengthCandidateReady: false,
+    boneLengthCandidateMinimumAngle: null,
+    boneLengthCandidateTimeSeconds: null,
+    boneLengthCandidateFrameCount: 0,
+    bottomReached: false,
+    bottomMinimumAngle: null,
+    bottomEvidenceTimeSeconds: null,
+    bottomEvidenceFrameCount: 0,
+    postBottomMaximumAngle: null,
+    relativeRiseLogged: false,
+  };
+}
+
+function resetUploadedDipVideoSegmentation(
+  state: UploadedDipVideoSegmentationState,
+) {
+  Object.assign(state, createUploadedDipVideoSegmentationState());
+}
+
+function clearUploadedDipBoneLengthCandidate(
+  state: UploadedDipVideoSegmentationState,
+) {
+  state.boneLengthBlockedFrames = 0;
+  state.boneLengthCandidateReady = false;
+  state.boneLengthCandidateMinimumAngle = null;
+  state.boneLengthCandidateTimeSeconds = null;
+  state.boneLengthCandidateFrameCount = 0;
+}
+
+function hasOnlyBoneLengthHeldDipPoints(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  if (!keypoints || !side) return false;
+  const trackedPoints = getTrackedPointsForExercise('fondos', keypoints, side);
+  const heldPoints = trackedPoints.filter(({ point }) => isHeldPoint(point));
+  return trackedPoints.length > 0
+    && heldPoints.length > 0
+    && trackedPoints.every(({ point }) => (
+      Boolean(point)
+      && (point?.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+      && (!isHeldPoint(point) || point?.heldReason === 'bone-length')
+    ))
+    && heldPoints.every(({ point }) => point?.heldReason === 'bone-length');
+}
+
 function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
   return {
     windowFrames: [],
@@ -8116,6 +8186,7 @@ function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
     lastSmoothedElbowAngle: null,
     lastReportTimestamp: null,
     lastFpsVideoTime: null,
+    videoSegmentation: createUploadedDipVideoSegmentationState(),
   };
 }
 
@@ -8277,6 +8348,36 @@ function createUploadedDipDiagnosticMoment({
   };
 }
 
+function createUploadedDipBottomEvidenceMoment(
+  countSide: PoseSide | null,
+  videoTimeSeconds: number,
+): UploadedDipDiagnosticMoment {
+  const moment = createUploadedDipDiagnosticMoment({
+    keypoints: undefined,
+    countSide,
+    techniqueSide: null,
+    videoTimeSeconds,
+    rawElbowAngle: null,
+    smoothedElbowAngle: null,
+    atBottom: false,
+  });
+  const notEvaluated = { angle: null, status: 'no evaluado: fondo por evidencia' };
+  return {
+    ...moment,
+    count: {
+      elbowRaw: null,
+      elbowSmoothed: null,
+      status: 'fondo confirmado por evidencia; no se usa como medición',
+    },
+    technique: {
+      torsoLean: notEvaluated,
+      elbowDepth: notEvaluated,
+      shoulderRelative: notEvaluated,
+      shoulderElbowOffsetByTorso: { dx: null, dy: null },
+    },
+  };
+}
+
 function createUploadedDipRepetitionMeasurement(
   diagnostics: UploadedDipDiagnostics,
   moment: UploadedDipDiagnosticMoment | null,
@@ -8333,6 +8434,10 @@ function applyUploadedDipTrackerDiagnostics({
   videoTimeSeconds,
   rawElbowAngle,
   repetitionConfig,
+  bottomEvidenceDetected = false,
+  bottomEvidenceOnly = false,
+  bottomEvidenceTimeSeconds = null,
+  incorrectReturnReason = null,
 }: {
   diagnostics: UploadedDipDiagnostics;
   previousTracker: ExerciseRepTracker;
@@ -8343,15 +8448,20 @@ function applyUploadedDipTrackerDiagnostics({
   videoTimeSeconds: number;
   rawElbowAngle: number;
   repetitionConfig: ExerciseRepConfig;
+  bottomEvidenceDetected?: boolean;
+  bottomEvidenceOnly?: boolean;
+  bottomEvidenceTimeSeconds?: number | null;
+  incorrectReturnReason?: 'no extendió arriba' | null;
 }) {
-  if (diagnostics.currentRepetition) {
+  if (diagnostics.currentRepetition && !incorrectReturnReason) {
     const currentRepetition = diagnostics.currentRepetition;
     currentRepetition.elbowRawMinimum = currentRepetition.elbowRawMinimum === null
       ? rawElbowAngle
       : Math.min(currentRepetition.elbowRawMinimum, rawElbowAngle);
   }
   diagnostics.lastSmoothedElbowAngle = trackerUpdate.smoothedAngle;
-  const noDepthReturn = previousTracker.phase === 'en movimiento'
+  const noDepthReturn = !bottomEvidenceDetected
+    && previousTracker.phase === 'en movimiento'
     && trackerUpdate.tracker.phase === 'inicio'
     && repetitionConfig.noDepthMaxRawAngle !== undefined
     && (diagnostics.currentRepetition?.elbowRawMinimum
@@ -8365,9 +8475,13 @@ function applyUploadedDipTrackerDiagnostics({
   if (
     trackerUpdate.tracker.phase !== previousTracker.phase
     || trackerUpdate.tracker.repetitions > previousTracker.repetitions
+    || bottomEvidenceDetected
+    || incorrectReturnReason
   ) {
-    const bottomDetected = trackerUpdate.tracker.phase === 'final'
-      && previousTracker.phase !== 'final';
+    const bottomDetected = bottomEvidenceDetected || (
+      trackerUpdate.tracker.phase === 'final'
+      && previousTracker.phase !== 'final'
+    );
     const returnDetected = previousTracker.phase !== 'esperando inicio'
       && previousTracker.phase !== 'inicio'
       && trackerUpdate.tracker.phase === 'inicio';
@@ -8378,7 +8492,7 @@ function applyUploadedDipTrackerDiagnostics({
       videoTimeSeconds,
       rawElbowAngle,
       smoothedElbowAngle: trackerUpdate.smoothedAngle,
-      atBottom: bottomDetected,
+      atBottom: bottomDetected && !bottomEvidenceOnly,
     });
     console.log(
       `[rep-event] video=${moment.videoTimeSeconds}s`
@@ -8418,13 +8532,42 @@ function applyUploadedDipTrackerDiagnostics({
         null,
         false,
       );
-      diagnostics.currentRepetition.bottom = moment;
+      if (bottomEvidenceOnly) {
+        diagnostics.currentRepetition.bottom = createUploadedDipBottomEvidenceMoment(
+          countSide,
+          bottomEvidenceTimeSeconds ?? videoTimeSeconds,
+        );
+      } else {
+        diagnostics.currentRepetition.bottom = moment;
+        updateUploadedDipRepetitionExtremes(
+          diagnostics.currentRepetition,
+          moment,
+        );
+      }
+    }
+    if (incorrectReturnReason) {
+      const currentRepetition = diagnostics.currentRepetition
+        ?? createUploadedDipRepetitionMeasurement(
+          diagnostics,
+          null,
+          false,
+        );
+      currentRepetition.countedAsIncorrect = true;
+      currentRepetition.reason = incorrectReturnReason;
+      diagnostics.repetitions.push(currentRepetition);
+      diagnostics.incompleteRepetitions += 1;
+      diagnostics.lastIncorrectReason = incorrectReturnReason;
+      console.log(`[medicion] ${JSON.stringify(currentRepetition)}`);
+      diagnostics.currentRepetition = createUploadedDipRepetitionMeasurement(
+        diagnostics,
+        moment,
+        true,
+      );
       updateUploadedDipRepetitionExtremes(
         diagnostics.currentRepetition,
         moment,
       );
-    }
-    if (returnDetected) {
+    } else if (returnDetected) {
       const currentRepetition = diagnostics.currentRepetition
         ?? createUploadedDipRepetitionMeasurement(
           diagnostics,
@@ -10794,8 +10937,76 @@ function Home() {
         : null;
       const isUploadedDipVideo = inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'fondos';
+      const uploadedDipVideoSegmentation = isUploadedDipVideo
+        ? uploadedDipDiagnosticsRef.current?.videoSegmentation ?? null
+        : null;
+      const uploadedDipBoneLengthOnlyBottomFrame = Boolean(
+        uploadedDipVideoSegmentation
+        && exerciseStartedRef.current
+        && uploadedDipCountingPassStartedRef.current
+        && exerciseRepTrackerRef.current.phase === 'en movimiento'
+        && hasFreshPose
+        && frameCameraReady
+        && countFrameReady
+        && frameMeasurementBlocked
+        && !effectiveViewBlocksFrame
+        && repetitionConfig
+        && repetitionAngle !== null
+        && repetitionAngle <= repetitionConfig.endMaxAngle
+        && hasOnlyBoneLengthHeldDipPoints(pose?.keypoints, measurementSide),
+      );
+      const uploadedDipHasFreshCountFrame = Boolean(
+        uploadedDipVideoSegmentation
+        && exerciseStartedRef.current
+        && uploadedDipCountingPassStartedRef.current
+        && exerciseRepTrackerRef.current.phase === 'en movimiento'
+        && hasFreshPose
+        && frameCameraReady
+        && countFrameReady
+        && !frameMeasurementBlocked
+        && !effectiveViewBlocksFrame
+        && repetitionAngle !== null,
+      );
+      if (uploadedDipVideoSegmentation) {
+        const segmentation = uploadedDipVideoSegmentation;
+        if (exerciseRepTrackerRef.current.phase !== 'en movimiento') {
+          clearUploadedDipBoneLengthCandidate(segmentation);
+        } else if (uploadedDipBoneLengthOnlyBottomFrame && repetitionAngle !== null) {
+          if (
+            !segmentation.boneLengthCandidateReady
+            && segmentation.boneLengthBlockedFrames === 0
+          ) {
+            segmentation.boneLengthCandidateMinimumAngle = repetitionAngle;
+            segmentation.boneLengthCandidateTimeSeconds = video.currentTime;
+            segmentation.boneLengthCandidateFrameCount = 0;
+          }
+          segmentation.boneLengthBlockedFrames += 1;
+          if (
+            segmentation.boneLengthCandidateMinimumAngle === null
+            || repetitionAngle < segmentation.boneLengthCandidateMinimumAngle
+          ) {
+            segmentation.boneLengthCandidateMinimumAngle = repetitionAngle;
+            segmentation.boneLengthCandidateTimeSeconds = video.currentTime;
+          }
+          segmentation.boneLengthCandidateFrameCount = Math.max(
+            segmentation.boneLengthCandidateFrameCount,
+            segmentation.boneLengthBlockedFrames,
+          );
+          if (segmentation.boneLengthBlockedFrames >= 2) {
+            segmentation.boneLengthCandidateReady = true;
+          }
+        } else if (uploadedDipHasFreshCountFrame && segmentation.boneLengthCandidateReady) {
+          segmentation.boneLengthBlockedFrames = 0;
+        } else {
+          clearUploadedDipBoneLengthCandidate(segmentation);
+        }
+      }
       let uploadedDipTrackerWasCalledForFrame = false;
       let uploadedDipTrackerSmoothedAngleForFrame: number | null = null;
+      let uploadedDipBottomEvidenceDetected = false;
+      let uploadedDipBottomEvidenceOnly = false;
+      let uploadedDipBottomEvidenceTimeSeconds: number | null = null;
+      let uploadedDipIncorrectReturnReason: 'no extendió arriba' | null = null;
       if (isUploadedDipVideo && uploadedDipSearchActiveRef.current) {
         const uploadedDipSearchSidePoints = measurementSide
           ? [
@@ -11707,6 +11918,186 @@ function Home() {
                   ? shoulderMachinePressTechniqueReady
                 : true,
         );
+        if (isUploadedDipVideo && uploadedDipVideoSegmentation) {
+          const segmentation = uploadedDipVideoSegmentation;
+          const dipVideoTrackerStarted = previousExerciseRepTracker.phase === 'inicio'
+            && (
+              exerciseRepUpdate.tracker.phase === 'en movimiento'
+              || exerciseRepUpdate.tracker.phase === 'final'
+            );
+          if (dipVideoTrackerStarted) {
+            resetUploadedDipVideoSegmentation(segmentation);
+            segmentation.bottomMinimumAngle = repetitionAngle;
+          } else if (
+            previousExerciseRepTracker.phase === 'en movimiento'
+            && repetitionAngle !== null
+          ) {
+            segmentation.bottomMinimumAngle = Math.min(
+              segmentation.bottomMinimumAngle ?? repetitionAngle,
+              repetitionAngle,
+            );
+          }
+
+          const confirmsBottomByEvidence = (
+            previousExerciseRepTracker.phase === 'en movimiento'
+            && segmentation.boneLengthCandidateReady
+            && segmentation.boneLengthCandidateMinimumAngle !== null
+            && repetitionAngle !== null
+            && repetitionAngle > segmentation.boneLengthCandidateMinimumAngle
+          );
+          if (confirmsBottomByEvidence && repetitionAngle !== null) {
+            uploadedDipBottomEvidenceDetected = true;
+            uploadedDipBottomEvidenceOnly = exerciseRepUpdate.tracker.phase !== 'final';
+            uploadedDipBottomEvidenceTimeSeconds
+              = segmentation.boneLengthCandidateTimeSeconds ?? video.currentTime;
+            segmentation.bottomReached = true;
+            segmentation.bottomMinimumAngle = Math.min(
+              segmentation.bottomMinimumAngle ?? segmentation.boneLengthCandidateMinimumAngle!,
+              segmentation.boneLengthCandidateMinimumAngle!,
+            );
+            segmentation.bottomEvidenceTimeSeconds = uploadedDipBottomEvidenceTimeSeconds;
+            segmentation.bottomEvidenceFrameCount = segmentation.boneLengthCandidateFrameCount;
+            segmentation.postBottomMaximumAngle = repetitionAngle;
+            console.log(
+              `[fondos-video] fondo alcanzado por evidencia `
+              + `t=${uploadedDipBottomEvidenceTimeSeconds.toFixed(3)}s `
+              + `cuadros=${segmentation.boneLengthCandidateFrameCount}`,
+            );
+            clearUploadedDipBoneLengthCandidate(segmentation);
+          }
+
+          const forceUploadedDipReturn = () => {
+            const tracker = exerciseRepUpdate.tracker;
+            const alreadyCounted = tracker.repetitions > previousExerciseRepTracker.repetitions;
+            const repetitionWasCorrect = (
+              previousExerciseRepTracker.currentRepCorrect
+              && tracker.currentRepCorrect
+            );
+            const endpointAngle = tracker.endpointAngle
+              ?? previousExerciseRepTracker.endpointAngle;
+            exerciseRepUpdate.tracker = {
+              ...tracker,
+              phase: 'inicio',
+              repetitions: alreadyCounted
+                ? tracker.repetitions
+                : previousExerciseRepTracker.repetitions + 1,
+              goodRepetitions: alreadyCounted
+                ? tracker.goodRepetitions
+                : previousExerciseRepTracker.goodRepetitions
+                  + (repetitionWasCorrect ? 1 : 0),
+              endpointAngle,
+              event: 'valid',
+              currentRepCorrect: true,
+            };
+            exerciseRepUpdate.completedEndpointAngle = endpointAngle;
+          };
+
+          if (uploadedDipBottomEvidenceDetected) {
+            const evidenceReachedTop = exerciseRepUpdate.tracker.phase === 'inicio'
+              || repetitionAngle! >= repetitionConfig.startMinAngle;
+            if (evidenceReachedTop) {
+              forceUploadedDipReturn();
+            } else if (exerciseRepUpdate.tracker.phase !== 'final') {
+              exerciseRepUpdate.tracker = {
+                ...exerciseRepUpdate.tracker,
+                phase: 'final',
+              };
+            }
+          }
+
+          if (
+            exerciseRepUpdate.tracker.phase === 'final'
+            && previousExerciseRepTracker.phase !== 'final'
+          ) {
+            if (!segmentation.bottomReached) {
+              segmentation.bottomReached = true;
+              segmentation.bottomMinimumAngle ??= repetitionAngle;
+              segmentation.postBottomMaximumAngle = repetitionAngle;
+              segmentation.bottomEvidenceTimeSeconds = null;
+              segmentation.bottomEvidenceFrameCount = 0;
+            }
+            clearUploadedDipBoneLengthCandidate(segmentation);
+          } else if (
+            previousExerciseRepTracker.phase === 'final'
+            && repetitionAngle !== null
+            && segmentation.bottomReached
+          ) {
+            segmentation.bottomMinimumAngle = Math.min(
+              segmentation.bottomMinimumAngle ?? repetitionAngle,
+              repetitionAngle,
+            );
+            segmentation.postBottomMaximumAngle = Math.max(
+              segmentation.postBottomMaximumAngle ?? repetitionAngle,
+              repetitionAngle,
+            );
+          }
+
+          if (
+            segmentation.bottomReached
+            && segmentation.bottomMinimumAngle !== null
+            && repetitionAngle !== null
+          ) {
+            const relativeRise = repetitionAngle - segmentation.bottomMinimumAngle;
+            if (
+              !segmentation.relativeRiseLogged
+              && relativeRise >= UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES
+            ) {
+              segmentation.relativeRiseLogged = true;
+              console.log(
+                `[fondos-video] repetición separada por subida relativa `
+                + `t=${video.currentTime.toFixed(3)}s subida=${relativeRise.toFixed(1)}°`,
+              );
+            }
+
+            const trackerReachedReturn = exerciseRepUpdate.tracker.phase === 'inicio';
+            const rawAngleReachedReturn = repetitionAngle >= repetitionConfig.startMinAngle;
+            if (
+              !trackerReachedReturn
+              && rawAngleReachedReturn
+              && previousExerciseRepTracker.phase === 'final'
+            ) {
+              forceUploadedDipReturn();
+            }
+
+            const returnCompleted = exerciseRepUpdate.tracker.phase === 'inicio';
+            const partialReturnReversed = (
+              previousExerciseRepTracker.phase === 'final'
+              && !returnCompleted
+              && !rawAngleReachedReturn
+              && segmentation.relativeRiseLogged
+              && segmentation.postBottomMaximumAngle !== null
+              && segmentation.postBottomMaximumAngle - repetitionAngle
+                >= UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES
+            );
+            if (partialReturnReversed) {
+              uploadedDipIncorrectReturnReason = 'no extendió arriba';
+              console.log(
+                `[fondos-video] repetición incorrecta motivo=no extendió arriba `
+                + `t=${video.currentTime.toFixed(3)}s`,
+              );
+              exerciseRepUpdate.tracker = {
+                ...exerciseRepUpdate.tracker,
+                phase: 'en movimiento',
+                repetitions: previousExerciseRepTracker.repetitions + 1,
+                goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+                endpointAngle: repetitionAngle,
+                samples: [repetitionAngle],
+                postBottomRawSamples: [],
+                event: null,
+                currentRepCorrect: true,
+              };
+              exerciseRepUpdate.smoothedAngle = repetitionAngle;
+              exerciseRepUpdate.completedEndpointAngle = null;
+              resetUploadedDipVideoSegmentation(segmentation);
+              segmentation.bottomMinimumAngle = repetitionAngle;
+            } else if (
+              previousExerciseRepTracker.phase !== 'inicio'
+              && exerciseRepUpdate.tracker.phase === 'inicio'
+            ) {
+              resetUploadedDipVideoSegmentation(segmentation);
+            }
+          }
+        }
         if (isUploadedDipVideo) {
           uploadedDipTrackerWasCalledForFrame = true;
           uploadedDipTrackerSmoothedAngleForFrame = exerciseRepUpdate.smoothedAngle;
@@ -11763,6 +12154,10 @@ function Home() {
             videoTimeSeconds: video.currentTime,
             rawElbowAngle: repetitionAngle,
             repetitionConfig,
+            bottomEvidenceDetected: uploadedDipBottomEvidenceDetected,
+            bottomEvidenceOnly: uploadedDipBottomEvidenceOnly,
+            bottomEvidenceTimeSeconds: uploadedDipBottomEvidenceTimeSeconds,
+            incorrectReturnReason: uploadedDipIncorrectReturnReason,
           });
         }
         const isUploadedStandardPushup = inputModeRef.current === 'video'
@@ -11929,6 +12324,7 @@ function Home() {
           }
           uploadedDipDiagnostics.currentRepetition = null;
           uploadedDipDiagnostics.lastSmoothedElbowAngle = null;
+          resetUploadedDipVideoSegmentation(uploadedDipDiagnostics.videoSegmentation);
         }
         const resetTracker = createExerciseRepTracker();
         if (isUploadedDipVideo) {
@@ -14324,14 +14720,18 @@ function Home() {
       const trackerAtEnd = exerciseRepTrackerRef.current;
       const diagnosticsAtEnd = uploadedDipDiagnosticsRef.current;
       const incompleteBottomRepetition = diagnosticsAtEnd?.currentRepetition;
+      const endPostBottomMaximumAngle
+        = diagnosticsAtEnd?.videoSegmentation.postBottomMaximumAngle ?? null;
       if (
         !uploadedDipBottomRepCountedAtEndRef.current
         && trackerAtEnd.phase === 'final'
         && incompleteBottomRepetition
         && incompleteBottomRepetition.bottom !== null
         && incompleteBottomRepetition.return === null
+        && endPostBottomMaximumAngle !== null
+        && endPostBottomMaximumAngle < repetitionConfigs.fondos!.startMinAngle
       ) {
-        const incorrectReason = 'rango incompleto: bajó pero no regresó arriba' as const;
+        const incorrectReason = 'no extendió arriba' as const;
         const incorrectTracker = {
           ...trackerAtEnd,
           repetitions: trackerAtEnd.repetitions + 1,
@@ -14350,7 +14750,8 @@ function Home() {
         diagnosticsAtEnd.currentRepetition = null;
         uploadedDipBottomRepCountedAtEndRef.current = true;
         console.log(
-          `[fondos-video] repetición incompleta al terminar → incorrecta motivo=rango incompleto`,
+          `[fondos-video] repetición incorrecta motivo=no extendió arriba `
+          + `t=${video?.currentTime.toFixed(3) ?? '—'}s`,
         );
       }
       if (video && !uploadedDipStopLoggedRef.current) {
