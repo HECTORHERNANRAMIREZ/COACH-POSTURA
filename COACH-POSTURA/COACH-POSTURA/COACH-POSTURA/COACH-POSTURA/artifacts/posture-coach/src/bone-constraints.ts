@@ -60,9 +60,11 @@ export type BoneConstraintDebugInfo = {
   validSamples: number;
   rejectedFrames: number;
   totalRejectedFrames: number;
+  // TEMP-DIAGNOSTICO: expone si la referencia está bloqueada sin afectar el filtro.
+  referencesLocked: boolean;
 };
 
-type BoneSegmentState = BoneConstraintDebugInfo & {
+type BoneSegmentState = Omit<BoneConstraintDebugInfo, 'referencesLocked'> & {
   samples: number[];
 };
 
@@ -304,6 +306,8 @@ export class BoneConstraintFilter {
             validSamples: state.validSamples,
             rejectedFrames: state.rejectedFrames,
             totalRejectedFrames: state.totalRejectedFrames,
+            // TEMP-DIAGNOSTICO: solo informa del estado de referencia al lector de diagnóstico.
+            referencesLocked: this.referencesLocked,
           },
         ];
       }),

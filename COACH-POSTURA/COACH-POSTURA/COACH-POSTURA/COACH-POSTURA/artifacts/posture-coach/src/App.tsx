@@ -113,6 +113,8 @@ import {
 } from '@/pose3d';
 import { createPoseWorkerDetector } from '@/pose3d-worker-client';
 import {
+  // TEMP-DIAGNOSTICO: umbral existente para identificar cuándo se aprende una referencia.
+  BONE_MIN_SAMPLES,
   createBoneConstraintFilter,
   setDebugBoneConstraintsEnabled,
 } from '@/bone-constraints';
@@ -660,6 +662,9 @@ type UploadedDipVideoSegmentationState = {
   bottomEvidenceTimeSeconds: number | null;
   bottomEvidenceFrameCount: number;
   postBottomMaximumAngle: number | null;
+  // TEMP-DIAGNOSTICO: máximo de MediaPipe y máximo filtrado válidos durante la subida.
+  postBottomMaximumRawMediaPipeAngle: number | null;
+  postBottomMaximumFilteredAngle: number | null;
   relativeRiseLogged: boolean;
 };
 type UploadedDipRepetitionMeasurement = {
@@ -701,6 +706,9 @@ type UploadedDipDiagnostics = {
   videoSegmentation: UploadedDipVideoSegmentationState;
   // TEMP-DIAGNOSTICO: máximo previo al descenso observado antes de abrir la medición.
   rawMaximumBeforeDescentCandidate: number | null;
+  // TEMP-DIAGNOSTICO: diferencias de ángulo crudo solo en segmentos estables del video.
+  stableElbowAngleChanges: number[];
+  previousStableElbowAngle: number | null;
 };
 
 // TEMP-DIAGNOSTICO: estado ilimitado del archivo de líneas y métricas de la pasada activa.
@@ -3012,13 +3020,18 @@ function advanceExerciseRepTracker(
   rawAngle: number,
   config: ExerciseRepConfig,
   techniqueValid = true,
+  // TEMP-DIAGNOSTICO: permite decidir solo la fase con un ángulo externo, sin guardarlo como medición.
+  phaseOnly = false,
 ): ExerciseRepTrackerUpdate {
-  const samples = [...tracker.samples, rawAngle].slice(
-    -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
-  );
+  const samples = phaseOnly
+    ? tracker.samples
+    : [...tracker.samples, rawAngle].slice(
+        -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
+      );
   const smoothedAngle = median(samples) ?? rawAngle;
   const postBottomRawSamples = config.postBottomRawPeakForReturn
     && tracker.phase === 'final'
+    && !phaseOnly
     ? [...tracker.postBottomRawSamples, rawAngle].slice(-PUSHUP_SMOOTHING_SAMPLES)
     : tracker.postBottomRawSamples;
   const postBottomRawPeak = postBottomRawSamples.length
@@ -3031,25 +3044,31 @@ function advanceExerciseRepTracker(
     event: null,
   };
   const isAtStart = isWithinAngle(
-    smoothedAngle,
+    phaseOnly ? rawAngle : smoothedAngle,
     config.startMinAngle,
     config.startMaxAngle,
   );
-  const smoothedHasActivated = config.direction === 'decrease'
-    ? smoothedAngle < config.activationAngle
-    : smoothedAngle > config.activationAngle;
-  const rawHasActivated = config.rawAngleCanReachEnd && (
+  const smoothedHasActivated = phaseOnly
+    ? config.direction === 'decrease'
+      ? rawAngle < config.activationAngle
+      : rawAngle > config.activationAngle
+    : config.direction === 'decrease'
+      ? smoothedAngle < config.activationAngle
+      : smoothedAngle > config.activationAngle;
+  const rawHasActivated = (phaseOnly || config.rawAngleCanReachEnd) && (
     config.direction === 'decrease'
       ? rawAngle < config.activationAngle
       : rawAngle > config.activationAngle
   );
-  const rawIsAtEnd = config.rawAngleCanReachEnd && isWithinAngle(
+  const rawIsAtEnd = (phaseOnly || config.rawAngleCanReachEnd) && isWithinAngle(
     rawAngle,
     config.endMinAngle,
     config.endMaxAngle,
   );
   const hasActivated = smoothedHasActivated || rawHasActivated;
-  const isAtEnd = config.rawAngleCanReachEnd
+  const isAtEnd = phaseOnly
+    ? rawIsAtEnd
+    : config.rawAngleCanReachEnd
     ? rawIsAtEnd
     : isWithinAngle(
         smoothedAngle,
@@ -3061,22 +3080,26 @@ function advanceExerciseRepTracker(
   if (nextTracker.phase === 'esperando inicio') {
     if (isAtStart) {
       nextTracker.phase = 'inicio';
-      nextTracker.endpointAngle = null;
-      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
-        ? true
-        : techniqueValid;
+      if (!phaseOnly) {
+        nextTracker.endpointAngle = null;
+        nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+          ? true
+          : techniqueValid;
+      }
     }
   } else if (nextTracker.phase === 'inicio') {
     if (hasActivated) {
       nextTracker.phase = rawIsAtEnd ? 'final' : 'en movimiento';
-      if (config.postBottomRawPeakForReturn && rawIsAtEnd) {
+      if (!phaseOnly && config.postBottomRawPeakForReturn && rawIsAtEnd) {
         nextTracker.postBottomRawSamples = [];
       }
-      nextTracker.endpointAngle = rawIsAtEnd ? rawAngle : smoothedAngle;
-      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
-        ? techniqueValid
-        : nextTracker.currentRepCorrect && techniqueValid;
-      if (rawIsAtEnd) {
+      if (!phaseOnly) {
+        nextTracker.endpointAngle = rawIsAtEnd ? rawAngle : smoothedAngle;
+        nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+          ? techniqueValid
+          : nextTracker.currentRepCorrect && techniqueValid;
+      }
+      if (rawIsAtEnd && !phaseOnly) {
         completedEndpointAngle = rawAngle;
       }
     } else if (!isAtStart) {
@@ -3084,27 +3107,31 @@ function advanceExerciseRepTracker(
       nextTracker.currentRepCorrect = false;
     }
   } else if (nextTracker.phase === 'en movimiento') {
-    if (config.techniqueMustHoldThroughout !== false) {
+    if (!phaseOnly && config.techniqueMustHoldThroughout !== false) {
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
     }
     const endpointReading = config.rawAngleCanReachEnd ? rawAngle : smoothedAngle;
-    nextTracker.endpointAngle = config.direction === 'decrease'
-      ? Math.min(nextTracker.endpointAngle ?? endpointReading, endpointReading)
-      : Math.max(nextTracker.endpointAngle ?? endpointReading, endpointReading);
+    if (!phaseOnly) {
+      nextTracker.endpointAngle = config.direction === 'decrease'
+        ? Math.min(nextTracker.endpointAngle ?? endpointReading, endpointReading)
+        : Math.max(nextTracker.endpointAngle ?? endpointReading, endpointReading);
+    }
 
     if (isAtEnd) {
       nextTracker.phase = 'final';
-      if (config.postBottomRawPeakForReturn) {
+      if (!phaseOnly && config.postBottomRawPeakForReturn) {
         nextTracker.postBottomRawSamples = [];
       }
       // Una lectura intermedia aislada puede perder un punto mientras el
       // cuerpo sigue visible. Para flexiones de video se evalúa la técnica en
       // el fondo y al regresar, no se invalida toda la repetición por ese
       // único frame.
-      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
-        && (config.techniqueMustHoldThroughout === false || techniqueValid);
-      completedEndpointAngle = nextTracker.endpointAngle;
-      if (!config.countOnReturn) {
+      if (!phaseOnly) {
+        nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
+          && (config.techniqueMustHoldThroughout === false || techniqueValid);
+        completedEndpointAngle = nextTracker.endpointAngle;
+      }
+      if (!phaseOnly && !config.countOnReturn) {
         if (config.countOnlyWhenCorrect !== true || nextTracker.currentRepCorrect) {
           nextTracker.event = 'valid';
           nextTracker.repetitions += 1;
@@ -3116,11 +3143,13 @@ function advanceExerciseRepTracker(
     } else if (isAtStart) {
       const lastObservedEndpointAngle = nextTracker.endpointAngle;
       nextTracker.phase = 'inicio';
-      nextTracker.endpointAngle = null;
-      nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
-        ? true
-        : techniqueValid;
-      if (config.countReturnWithoutEndAsIncorrect) {
+      if (!phaseOnly) {
+        nextTracker.endpointAngle = null;
+        nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
+          ? true
+          : techniqueValid;
+      }
+      if (!phaseOnly && config.countReturnWithoutEndAsIncorrect) {
         nextTracker.event = 'valid';
         nextTracker.repetitions += 1;
         completedEndpointAngle = lastObservedEndpointAngle;
@@ -3129,17 +3158,21 @@ function advanceExerciseRepTracker(
   } else if (nextTracker.phase === 'final') {
     if (config.countOnReturn) {
       if (
+        !phaseOnly
+        &&
         config.techniqueStartsOnActivation
         && config.techniqueMustHoldThroughout !== false
       ) {
         nextTracker.currentRepCorrect = nextTracker.currentRepCorrect && techniqueValid;
       }
       const hasReturnedFromEnd = config.direction === 'decrease'
-        ? smoothedAngle > config.endMaxAngle
-        : smoothedAngle < config.endMinAngle;
-      const returnAngleForActivation = config.postBottomRawPeakForReturn
-        ? postBottomRawPeak
-        : smoothedAngle;
+        ? (phaseOnly ? rawAngle : smoothedAngle) > config.endMaxAngle
+        : (phaseOnly ? rawAngle : smoothedAngle) < config.endMinAngle;
+      const returnAngleForActivation = phaseOnly
+        ? rawAngle
+        : config.postBottomRawPeakForReturn
+          ? postBottomRawPeak
+          : smoothedAngle;
       const hasReturnedPastActivation = config.direction === 'decrease'
         ? returnAngleForActivation !== null
           && returnAngleForActivation >= config.activationAngle
@@ -3156,9 +3189,10 @@ function advanceExerciseRepTracker(
           || hasReturnedPastActivation
         )
       ) {
-        const repetitionWasCorrect = nextTracker.currentRepCorrect && techniqueValid;
+        const repetitionWasCorrect = nextTracker.currentRepCorrect
+          && (phaseOnly || techniqueValid);
         nextTracker.phase = 'inicio';
-        if (config.countOnlyWhenCorrect === true && !repetitionWasCorrect) {
+        if (!phaseOnly && config.countOnlyWhenCorrect === true && !repetitionWasCorrect) {
           nextTracker.currentRepCorrect = techniqueValid;
           nextTracker.endpointAngle = null;
           completedEndpointAngle = null;
@@ -3168,15 +3202,17 @@ function advanceExerciseRepTracker(
           if (repetitionWasCorrect) {
             nextTracker.goodRepetitions += 1;
           }
+          if (!phaseOnly) {
             nextTracker.currentRepCorrect = config.techniqueStartsOnActivation
               ? true
               : techniqueValid;
-          completedEndpointAngle = nextTracker.endpointAngle;
+            completedEndpointAngle = nextTracker.endpointAngle;
+          }
         }
       }
     } else if (isAtStart) {
       nextTracker.phase = 'inicio';
-      if (config.techniqueStartsOnActivation) {
+      if (!phaseOnly && config.techniqueStartsOnActivation) {
         nextTracker.currentRepCorrect = true;
       }
     }
@@ -8411,8 +8447,25 @@ function createUploadedDipVideoSegmentationState(): UploadedDipVideoSegmentation
     bottomEvidenceTimeSeconds: null,
     bottomEvidenceFrameCount: 0,
     postBottomMaximumAngle: null,
+    // TEMP-DIAGNOSTICO: evita reutilizar máximos de subidas anteriores.
+    postBottomMaximumRawMediaPipeAngle: null,
+    postBottomMaximumFilteredAngle: null,
     relativeRiseLogged: false,
   };
+}
+
+// TEMP-DIAGNOSTICO: tolerancia basada en MAD de cambios medidos en tramos estables del mismo video.
+function estimateUploadedDipRawAngleTolerance(diagnostics: UploadedDipDiagnostics) {
+  if (diagnostics.stableElbowAngleChanges.length < 3) return null;
+  const medianChange = median(diagnostics.stableElbowAngleChanges);
+  if (medianChange === null) return null;
+  const absoluteDeviations = diagnostics.stableElbowAngleChanges.map(
+    (change) => Math.abs(change - medianChange),
+  );
+  const medianAbsoluteDeviation = median(absoluteDeviations);
+  return medianAbsoluteDeviation === null
+    ? null
+    : 3 * 1.4826 * medianAbsoluteDeviation;
 }
 
 function resetUploadedDipVideoSegmentation(
@@ -8464,6 +8517,9 @@ function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
     videoSegmentation: createUploadedDipVideoSegmentationState(),
     // TEMP-DIAGNOSTICO: candidato previo al descenso para la próxima medición.
     rawMaximumBeforeDescentCandidate: null,
+    // TEMP-DIAGNOSTICO: ruido calibrado por separado en la pasada de conteo de este video.
+    stableElbowAngleChanges: [],
+    previousStableElbowAngle: null,
   };
 }
 
@@ -8713,6 +8769,7 @@ function applyUploadedDipTrackerDiagnostics({
   techniqueSide,
   videoTimeSeconds,
   rawElbowAngle,
+  phaseOnly = false,
   repetitionConfig,
   bottomEvidenceDetected = false,
   bottomEvidenceOnly = false,
@@ -8727,7 +8784,9 @@ function applyUploadedDipTrackerDiagnostics({
   countSide: PoseSide | null;
   techniqueSide: PoseSide | null;
   videoTimeSeconds: number;
-  rawElbowAngle: number;
+  rawElbowAngle: number | null;
+  // TEMP-DIAGNOSTICO: evita registrar como medición una lectura retenida usada solo para fase.
+  phaseOnly?: boolean;
   repetitionConfig: ExerciseRepConfig;
   bottomEvidenceDetected?: boolean;
   bottomEvidenceOnly?: boolean;
@@ -8737,13 +8796,21 @@ function applyUploadedDipTrackerDiagnostics({
   returnForced?: boolean;
 }) {
   // TEMP-DIAGNOSTICO: registra la extensión previa mientras el tracker sigue en la posición inicial.
-  if (previousTracker.phase === 'inicio' && !diagnostics.currentRepetition) {
+  if (
+    rawElbowAngle !== null
+    && previousTracker.phase === 'inicio'
+    && !diagnostics.currentRepetition
+  ) {
     diagnostics.rawMaximumBeforeDescentCandidate = Math.max(
       diagnostics.rawMaximumBeforeDescentCandidate ?? rawElbowAngle,
       rawElbowAngle,
     );
   }
-  if (diagnostics.currentRepetition && !incorrectReturnReason) {
+  if (
+    rawElbowAngle !== null
+    && diagnostics.currentRepetition
+    && !incorrectReturnReason
+  ) {
     const currentRepetition = diagnostics.currentRepetition;
     currentRepetition.elbowRawMinimum = currentRepetition.elbowRawMinimum === null
       ? rawElbowAngle
@@ -8788,7 +8855,7 @@ function applyUploadedDipTrackerDiagnostics({
       countSide,
       techniqueSide,
       videoTimeSeconds,
-      rawElbowAngle,
+      rawElbowAngle: phaseOnly ? null : rawElbowAngle,
       smoothedElbowAngle: trackerUpdate.smoothedAngle,
       atBottom: bottomDetected && !bottomEvidenceOnly,
     });
@@ -10023,6 +10090,16 @@ function Home() {
     poseFilterRef.current.setTemporalJumpGuard(false);
     sideConsistencyRef.current.reset();
     boneConstraintRef.current.reset();
+    // TEMP-DIAGNOSTICO: deja constancia de las referencias óseas vacías al iniciar la pasada 2.
+    const resetBoneReferences = boneConstraintRef.current.getDebugInfo();
+    logUploadedDipDiagnostic(
+      `[fondos-hueso-ref] reinicio pasada=2 referencias=${JSON.stringify({
+        brazoSuperiorIzq: resetBoneReferences['left-upper-arm'],
+        brazoSuperiorDer: resetBoneReferences['right-upper-arm'],
+        antebrazoIzq: resetBoneReferences['left-forearm'],
+        antebrazoDer: resetBoneReferences['right-forearm'],
+      })}`,
+    );
     primaryPoseTrackRef.current = null;
     stabilityFramesRef.current = 0;
 
@@ -10253,9 +10330,45 @@ function Home() {
         });
         boneConstraintRef.current.reassignForSideSwaps(confirmedSideSwaps);
       }
+      // TEMP-DIAGNOSTICO: captura cambios de referencia solo en videos subidos de fondos.
+      const isUploadedDipVideoFrame = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'fondos';
+      const boneDebugBeforeFilter = isUploadedDipVideoFrame
+        ? boneConstraintRef.current.getDebugInfo()
+        : null;
       const constrainedPose = sideConsistentPose
         ? boneConstraintRef.current.filter(sideConsistentPose)
         : undefined;
+      if (isUploadedDipVideoFrame && boneDebugBeforeFilter) {
+        const boneDebugAfterFilter = boneConstraintRef.current.getDebugInfo();
+        const newlyLearnedReferences = (
+          [
+            ['brazoSuperiorIzq', 'left-upper-arm'],
+            ['brazoSuperiorDer', 'right-upper-arm'],
+            ['antebrazoIzq', 'left-forearm'],
+            ['antebrazoDer', 'right-forearm'],
+          ] as const
+        ).flatMap(([label, id]) => {
+          const before = boneDebugBeforeFilter[id];
+          const after = boneDebugAfterFilter[id];
+          return before.referenceLength === null
+            && after.referenceLength !== null
+            && after.validSamples >= BONE_MIN_SAMPLES
+            ? [{
+                hueso: label,
+                referencia: after.referenceLength,
+                muestras: after.validSamples,
+                bloqueada: after.referencesLocked,
+              }]
+            : [];
+        });
+        if (newlyLearnedReferences.length) {
+          // TEMP-DIAGNOSTICO: registra referencias justo cuando alcanzan el mínimo de aprendizaje.
+          logUploadedDipDiagnostic(
+            `[fondos-hueso-ref] referencias aprendidas=${JSON.stringify(newlyLearnedReferences)}`,
+          );
+        }
+      }
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
         : pullupSessionActive || pushupTrackingLocked
@@ -11322,8 +11435,93 @@ function Home() {
         : null;
       const isUploadedDipVideo = inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'fondos';
+      // TEMP-DIAGNOSTICO: ángulo 2D MediaPipe original, previo a filtros y retención.
+      const rawMediaPipeElbowAngle2D = isUploadedDipVideo
+        ? calculateRepetitionAngle('fondos', detectedPose?.keypoints, measurementSide)
+        : null;
       const uploadedDipVideoSegmentation = isUploadedDipVideo
         ? uploadedDipDiagnosticsRef.current?.videoSegmentation ?? null
+        : null;
+      const uploadedDipDiagnosticIndexes = measurementSide
+        ? sideKeypoints[measurementSide]
+        : null;
+      const uploadedDipRawElbowScore = uploadedDipDiagnosticIndexes
+        ? detectedPose?.keypoints?.[uploadedDipDiagnosticIndexes.elbow]?.score ?? null
+        : null;
+      const uploadedDipElbowOrWristHeldByBoneLength = Boolean(
+        uploadedDipDiagnosticIndexes
+        && (
+          pose?.keypoints?.[uploadedDipDiagnosticIndexes.elbow]?.heldReason === 'bone-length'
+          || pose?.keypoints?.[uploadedDipDiagnosticIndexes.wrist]?.heldReason === 'bone-length'
+        ),
+      );
+      const uploadedDipHasOnlyBoneLengthHeldPoints = isUploadedDipVideo
+        && hasOnlyBoneLengthHeldDipPoints(pose?.keypoints, measurementSide);
+      // TEMP-DIAGNOSTICO: el rescate abre únicamente la decisión de fase ante retención ósea.
+      const uploadedDipRawPhaseRescue = Boolean(
+        isUploadedDipVideo
+        && uploadedDipCountingPassStartedRef.current
+        && exerciseStartedRef.current
+        && frameMeasurementBlocked
+        && frameCameraReady
+        && countFrameReady
+        && hasFreshPose
+        && !effectiveViewBlocksFrame
+        && uploadedDipElbowOrWristHeldByBoneLength
+        && uploadedDipHasOnlyBoneLengthHeldPoints
+        && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+        && rawMediaPipeElbowAngle2D !== null,
+      );
+
+      // TEMP-DIAGNOSTICO: estima ruido angular solo en tramos estables y válidos de la pasada 2.
+      const uploadedDipDiagnosticsForNoise = isUploadedDipVideo
+        ? uploadedDipDiagnosticsRef.current
+        : null;
+      const uploadedDipRawAngleNoiseSampleIsStable = Boolean(
+        uploadedDipDiagnosticsForNoise
+        && uploadedDipCountingPassStartedRef.current
+        && exerciseStartedRef.current
+        && frameCameraReady
+        && countFrameReady
+        && hasFreshPose
+        && !frameMeasurementBlocked
+        && !effectiveViewBlocksFrame
+        && rawMediaPipeElbowAngle2D !== null
+        && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+        && uploadedDipDiagnosticIndexes
+        && !isHeldPoint(pose?.keypoints?.[uploadedDipDiagnosticIndexes.elbow])
+        && !isHeldPoint(pose?.keypoints?.[uploadedDipDiagnosticIndexes.wrist])
+        && (
+          exerciseRepTrackerRef.current.phase === 'esperando inicio'
+          || exerciseRepTrackerRef.current.phase === 'inicio'
+        )
+        && repetitionConfig
+        && isWithinAngle(
+          rawMediaPipeElbowAngle2D ?? 0,
+          repetitionConfig.startMinAngle,
+          repetitionConfig.startMaxAngle,
+        ),
+      );
+      if (uploadedDipDiagnosticsForNoise) {
+        if (
+          uploadedDipRawAngleNoiseSampleIsStable
+          && rawMediaPipeElbowAngle2D !== null
+        ) {
+          const previousStableAngle
+            = uploadedDipDiagnosticsForNoise.previousStableElbowAngle;
+          if (previousStableAngle !== null) {
+            uploadedDipDiagnosticsForNoise.stableElbowAngleChanges.push(
+              rawMediaPipeElbowAngle2D - previousStableAngle,
+            );
+          }
+          uploadedDipDiagnosticsForNoise.previousStableElbowAngle
+            = rawMediaPipeElbowAngle2D;
+        } else {
+          uploadedDipDiagnosticsForNoise.previousStableElbowAngle = null;
+        }
+      }
+      const uploadedDipRawAngleReturnTolerance = uploadedDipDiagnosticsForNoise
+        ? estimateUploadedDipRawAngleTolerance(uploadedDipDiagnosticsForNoise)
         : null;
       const uploadedDipBoneLengthOnlyBottomFrame = Boolean(
         uploadedDipVideoSegmentation
@@ -12255,6 +12453,11 @@ function Home() {
       let uploadedPushupTrackerGatePassed = false;
       let uploadedPushupTrackerWasCalled = false;
       let uploadedPushupTrackerEndMaxAngle: number | null = null;
+      // TEMP-DIAGNOSTICO: estado del cotejo de retorno contra la curva cruda de este video.
+      let uploadedDipRawPeakAtFrame: number | null = null;
+      let uploadedDipRawPeakComparisonAvailable = false;
+      let uploadedDipRawPeakComparisonPassed = true;
+      let uploadedDipRawPeakBlockedReturnForFrame = false;
       if (
         exerciseStartedRef.current
         && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
@@ -12280,9 +12483,13 @@ function Home() {
           || uploadedPushupWristHeldException
         )
         && repetitionConfig
-        && repetitionAngle !== null
+        && (repetitionAngle !== null || uploadedDipRawPhaseRescue)
         && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
-        && (!frameMeasurementBlocked || uploadedPushupWristHeldException)
+        && (
+          !frameMeasurementBlocked
+          || uploadedPushupWristHeldException
+          || uploadedDipRawPhaseRescue
+        )
       ) {
         uploadedPushupTrackerGatePassed = true;
         const trackerConfig = isUploadedDipVideo
@@ -12300,9 +12507,37 @@ function Home() {
           : repetitionConfig;
         uploadedPushupTrackerEndMaxAngle = trackerConfig.endMaxAngle;
         const previousExerciseRepTracker = exerciseRepTrackerRef.current;
+        if (isUploadedDipVideo && uploadedDipVideoSegmentation) {
+          const previousRawPeak
+            = uploadedDipVideoSegmentation.postBottomMaximumRawMediaPipeAngle;
+          const rawAngleIsEligible = rawMediaPipeElbowAngle2D !== null
+            && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE;
+          uploadedDipRawPeakAtFrame = previousRawPeak;
+          if (
+            previousExerciseRepTracker.phase === 'final'
+            && rawAngleIsEligible
+          ) {
+            uploadedDipRawPeakAtFrame = Math.max(
+              previousRawPeak ?? rawMediaPipeElbowAngle2D!,
+              rawMediaPipeElbowAngle2D!,
+            );
+          }
+          uploadedDipRawPeakComparisonAvailable
+            = uploadedDipRawAngleReturnTolerance !== null
+              && uploadedDipRawPeakAtFrame !== null;
+          uploadedDipRawPeakComparisonPassed
+            = !uploadedDipRawPeakComparisonAvailable
+              || (
+                rawAngleIsEligible
+                && rawMediaPipeElbowAngle2D! >= uploadedDipRawPeakAtFrame!
+                  - uploadedDipRawAngleReturnTolerance!
+              );
+        }
         const exerciseRepUpdate = advanceExerciseRepTracker(
           previousExerciseRepTracker,
-          repetitionAngle,
+          uploadedDipRawPhaseRescue
+            ? rawMediaPipeElbowAngle2D!
+            : repetitionAngle!,
           trackerConfig,
           isPushupExercise
             ? pushupTechniqueValidForTracker
@@ -12315,7 +12550,25 @@ function Home() {
                 : selectedExerciseForFrame === 'press-hombros-maquina'
                   ? shoulderMachinePressTechniqueReady
                 : true,
+          uploadedDipRawPhaseRescue,
         );
+        // TEMP-DIAGNOSTICO: impide que una fase "arriba" cierre el retorno si la curva cruda no confirma su máximo.
+        if (
+          isUploadedDipVideo
+          && previousExerciseRepTracker.phase === 'final'
+          && exerciseRepUpdate.tracker.phase === 'inicio'
+          && !uploadedDipRawPeakComparisonPassed
+        ) {
+          uploadedDipRawPeakBlockedReturnForFrame = true;
+          exerciseRepUpdate.tracker = {
+            ...exerciseRepUpdate.tracker,
+            phase: 'final',
+            repetitions: previousExerciseRepTracker.repetitions,
+            goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+            event: null,
+          };
+          exerciseRepUpdate.completedEndpointAngle = null;
+        }
         if (isUploadedDipVideo && uploadedDipVideoSegmentation) {
           const segmentation = uploadedDipVideoSegmentation;
           const dipVideoTrackerStarted = previousExerciseRepTracker.phase === 'inicio'
@@ -12325,10 +12578,13 @@ function Home() {
             );
           if (dipVideoTrackerStarted) {
             resetUploadedDipVideoSegmentation(segmentation);
-            segmentation.bottomMinimumAngle = repetitionAngle;
+            segmentation.bottomMinimumAngle = uploadedDipRawPhaseRescue
+              ? null
+              : repetitionAngle;
           } else if (
             previousExerciseRepTracker.phase === 'en movimiento'
             && repetitionAngle !== null
+            && !uploadedDipRawPhaseRescue
           ) {
             segmentation.bottomMinimumAngle = Math.min(
               segmentation.bottomMinimumAngle ?? repetitionAngle,
@@ -12355,7 +12611,17 @@ function Home() {
             );
             segmentation.bottomEvidenceTimeSeconds = uploadedDipBottomEvidenceTimeSeconds;
             segmentation.bottomEvidenceFrameCount = segmentation.boneLengthCandidateFrameCount;
-            segmentation.postBottomMaximumAngle = repetitionAngle;
+            if (!uploadedDipRawPhaseRescue) {
+              segmentation.postBottomMaximumAngle = repetitionAngle;
+            }
+            segmentation.postBottomMaximumRawMediaPipeAngle
+              = rawMediaPipeElbowAngle2D !== null
+                && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+                ? rawMediaPipeElbowAngle2D
+                : null;
+            segmentation.postBottomMaximumFilteredAngle = !frameMeasurementBlocked
+              ? repetitionAngle
+              : null;
             // TEMP-DIAGNOSTICO: conserva la evidencia de fondo derivada de longitud ósea.
             logUploadedDipDiagnostic(
               `[fondos-video] fondo alcanzado por evidencia `
@@ -12392,11 +12658,14 @@ function Home() {
             };
             exerciseRepUpdate.completedEndpointAngle = endpointAngle;
           };
+          let uploadedDipCimaLogWritten = false;
 
           if (uploadedDipBottomEvidenceDetected) {
             const evidenceReachedTop = exerciseRepUpdate.tracker.phase === 'inicio'
               || repetitionAngle! >= repetitionConfig.startMinAngle;
-            if (evidenceReachedTop) {
+            const evidenceReturnAllowed = evidenceReachedTop
+              && uploadedDipRawPeakComparisonPassed;
+            if (evidenceReturnAllowed) {
               forceUploadedDipReturn();
             } else if (exerciseRepUpdate.tracker.phase !== 'final') {
               exerciseRepUpdate.tracker = {
@@ -12412,8 +12681,20 @@ function Home() {
           ) {
             if (!segmentation.bottomReached) {
               segmentation.bottomReached = true;
-              segmentation.bottomMinimumAngle ??= repetitionAngle;
-              segmentation.postBottomMaximumAngle = repetitionAngle;
+              if (!uploadedDipRawPhaseRescue) {
+                segmentation.bottomMinimumAngle ??= repetitionAngle;
+              }
+              if (!uploadedDipRawPhaseRescue) {
+                segmentation.postBottomMaximumAngle = repetitionAngle;
+              }
+              segmentation.postBottomMaximumRawMediaPipeAngle
+                = rawMediaPipeElbowAngle2D !== null
+                  && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+                  ? rawMediaPipeElbowAngle2D
+                  : null;
+              segmentation.postBottomMaximumFilteredAngle = !frameMeasurementBlocked
+                ? repetitionAngle
+                : null;
               segmentation.bottomEvidenceTimeSeconds = null;
               segmentation.bottomEvidenceFrameCount = 0;
             }
@@ -12423,20 +12704,39 @@ function Home() {
             && repetitionAngle !== null
             && segmentation.bottomReached
           ) {
-            segmentation.bottomMinimumAngle = Math.min(
-              segmentation.bottomMinimumAngle ?? repetitionAngle,
-              repetitionAngle,
-            );
+            if (!uploadedDipRawPhaseRescue) {
+              segmentation.bottomMinimumAngle = Math.min(
+                segmentation.bottomMinimumAngle ?? repetitionAngle,
+                repetitionAngle,
+              );
+            }
             segmentation.postBottomMaximumAngle = Math.max(
               segmentation.postBottomMaximumAngle ?? repetitionAngle,
               repetitionAngle,
             );
+            if (
+              rawMediaPipeElbowAngle2D !== null
+              && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+            ) {
+              segmentation.postBottomMaximumRawMediaPipeAngle = Math.max(
+                segmentation.postBottomMaximumRawMediaPipeAngle
+                  ?? rawMediaPipeElbowAngle2D,
+                rawMediaPipeElbowAngle2D,
+              );
+            }
+            if (!frameMeasurementBlocked) {
+              segmentation.postBottomMaximumFilteredAngle = Math.max(
+                segmentation.postBottomMaximumFilteredAngle ?? repetitionAngle,
+                repetitionAngle,
+              );
+            }
           }
 
           if (
             segmentation.bottomReached
             && segmentation.bottomMinimumAngle !== null
             && repetitionAngle !== null
+            && !uploadedDipRawPhaseRescue
           ) {
             const relativeRise = repetitionAngle - segmentation.bottomMinimumAngle;
             if (
@@ -12456,6 +12756,7 @@ function Home() {
             if (
               !trackerReachedReturn
               && rawAngleReachedReturn
+              && uploadedDipRawPeakComparisonPassed
               && previousExerciseRepTracker.phase === 'final'
             ) {
               forceUploadedDipReturn();
@@ -12466,11 +12767,50 @@ function Home() {
               previousExerciseRepTracker.phase === 'final'
               && !returnCompleted
               && !rawAngleReachedReturn
+              && !uploadedDipRawPhaseRescue
               && segmentation.relativeRiseLogged
               && segmentation.postBottomMaximumAngle !== null
               && segmentation.postBottomMaximumAngle - repetitionAngle
                 >= UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES
             );
+            const returnCompletedThisFrame = returnCompleted
+              && previousExerciseRepTracker.phase !== 'inicio';
+            if (
+              returnCompletedThisFrame
+              || partialReturnReversed
+              || uploadedDipRawPeakBlockedReturnForFrame
+            ) {
+              // TEMP-DIAGNOSTICO: registra el máximo y el veredicto de cada subida desde el fondo.
+              const curveDecision = uploadedDipRawPeakBlockedReturnForFrame
+                ? 'filtrada-superó-umbral; MediaPipe-no-alcanzó-su-máximo-con-tolerancia'
+                : returnCompletedThisFrame
+                  ? uploadedDipRawPhaseRescue
+                    ? 'MediaPipe-cruda-para-fase-y-comparación-de-máximo'
+                    : uploadedDipRawPeakComparisonAvailable
+                      ? 'filtrada+MediaPipe-cruda'
+                      : 'filtrada (ruido crudo aún no estimable)'
+                  : 'filtrada (subida revertida)';
+              logUploadedDipDiagnostic(
+                `[fondos-cima] t=${video.currentTime.toFixed(3)}s `
+                + `maxBrutoMediaPipe=${formatUploadedDipAngle(segmentation.postBottomMaximumRawMediaPipeAngle)} `
+                + `maxFiltrado=${formatUploadedDipAngle(segmentation.postBottomMaximumFilteredAngle)} `
+                + `toleranciaRuido=${formatUploadedDipAngle(uploadedDipRawAngleReturnTolerance)} `
+                + `umbralRetorno=${repetitionConfig.startMinAngle.toFixed(1)}° `
+                + `umbralSubidaRelativa=${UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES.toFixed(1)}° `
+                + `comparacionCruda=${uploadedDipRawPeakComparisonAvailable
+                  ? uploadedDipRawPeakComparisonPassed ? 'pasa' : 'no-pasa'
+                  : 'no-disponible'} `
+                + `curvaDecisora=${curveDecision} `
+                + `decision=${returnCompletedThisFrame
+                  ? uploadedDipReturnForcedForFrame
+                    ? 'retorno-forzado-completado'
+                    : 'retorno-completado'
+                  : uploadedDipRawPeakBlockedReturnForFrame
+                    ? 'retorno-esperando-confirmación-cruda'
+                  : 'subida-revertida-sin-extensión-completa'}`,
+              );
+              uploadedDipCimaLogWritten = true;
+            }
             if (partialReturnReversed) {
               uploadedDipIncorrectReturnReason = 'no extendió arriba';
               // TEMP-DIAGNOSTICO: conserva el evento de retorno parcial no completado.
@@ -12501,9 +12841,71 @@ function Home() {
             }
           }
         }
+        if (
+          isUploadedDipVideo
+          && uploadedDipVideoSegmentation
+          && !uploadedDipCimaLogWritten
+          && (
+            uploadedDipRawPeakBlockedReturnForFrame
+            || (
+              previousExerciseRepTracker.phase === 'final'
+              && exerciseRepUpdate.tracker.phase === 'inicio'
+            )
+          )
+        ) {
+          // TEMP-DIAGNOSTICO: cubre retornos decididos solo por fase cruda cuando no hubo ángulo medible.
+          const curveDecision = uploadedDipRawPeakBlockedReturnForFrame
+            ? 'MediaPipe-cruda-no-alcanzó-su-máximo-con-tolerancia'
+            : uploadedDipRawPhaseRescue
+              ? 'MediaPipe-cruda-para-fase-y-comparación-de-máximo'
+              : uploadedDipRawPeakComparisonAvailable
+                ? 'filtrada+MediaPipe-cruda'
+                : 'filtrada (ruido crudo aún no estimable)';
+          logUploadedDipDiagnostic(
+            `[fondos-cima] t=${video.currentTime.toFixed(3)}s `
+            + `maxBrutoMediaPipe=${formatUploadedDipAngle(
+              uploadedDipVideoSegmentation.postBottomMaximumRawMediaPipeAngle
+                ?? uploadedDipRawPeakAtFrame,
+            )} `
+            + `maxFiltrado=${formatUploadedDipAngle(
+              uploadedDipVideoSegmentation.postBottomMaximumFilteredAngle,
+            )} `
+            + `toleranciaRuido=${formatUploadedDipAngle(uploadedDipRawAngleReturnTolerance)} `
+            + `comparacionCruda=${uploadedDipRawPeakComparisonAvailable
+              ? uploadedDipRawPeakComparisonPassed ? 'pasa' : 'no-pasa'
+              : 'no-disponible'} `
+            + `curvaDecisora=${curveDecision} `
+            + `decision=${uploadedDipRawPeakBlockedReturnForFrame
+              ? 'retorno-esperando-confirmación-cruda'
+              : 'retorno-completado'}`,
+          );
+          if (
+            uploadedDipRawPhaseRescue
+            && previousExerciseRepTracker.phase === 'final'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+          ) {
+            resetUploadedDipVideoSegmentation(uploadedDipVideoSegmentation);
+          }
+        }
         if (isUploadedDipVideo) {
           uploadedDipTrackerWasCalledForFrame = true;
           uploadedDipTrackerSmoothedAngleForFrame = exerciseRepUpdate.smoothedAngle;
+          if (uploadedDipRawPhaseRescue) {
+            // TEMP-DIAGNOSTICO: el valor retenido se reporta, no entra como lectura del tracker.
+            logUploadedDipDiagnostic(
+              `[fondos-fase-cruda] t=${video.currentTime.toFixed(3)}s `
+              + `crudoMediaPipe2D=${formatUploadedDipAngle(rawMediaPipeElbowAngle2D)} `
+              + `retenido=${formatUploadedDipAngle(repetitionAngle)} `
+              + `faseResultante=${exerciseRepUpdate.tracker.phase}`,
+            );
+          }
+          // TEMP-DIAGNOSTICO: expone la ventana exacta que recibió la mediana del tracker.
+          logUploadedDipDiagnostic(
+            `[fondos-suavizado] t=${video.currentTime.toFixed(3)}s `
+            + `ventana=${JSON.stringify(exerciseRepUpdate.tracker.samples)} `
+            + `resultado=${formatUploadedDipAngle(exerciseRepUpdate.smoothedAngle)} `
+            + `fase=${exerciseRepUpdate.tracker.phase}`,
+          );
           // TEMP-DIAGNOSTICO: registra la primera llamada efectiva al tracker de conteo.
           logUploadedDipStartupStageOnce(
             'primera-llamada-tracker',
@@ -12560,7 +12962,8 @@ function Home() {
             countSide: measurementSide,
             techniqueSide: nextDominantSide,
             videoTimeSeconds: video.currentTime,
-            rawElbowAngle: repetitionAngle,
+            rawElbowAngle: uploadedDipRawPhaseRescue ? null : repetitionAngle,
+            phaseOnly: uploadedDipRawPhaseRescue,
             repetitionConfig,
             bottomEvidenceDetected: uploadedDipBottomEvidenceDetected,
             bottomEvidenceOnly: uploadedDipBottomEvidenceOnly,
@@ -13256,6 +13659,54 @@ function Home() {
         const diagnosticIndexes = measurementSide
           ? sideKeypoints[measurementSide]
           : null;
+        // TEMP-DIAGNOSTICO: ángulo 2D desde el resultado MediaPipe anterior a filtro óseo y retención.
+        const rawMediaPipeElbowAngle2D = calculateRepetitionAngle(
+          'fondos',
+          detectedPose?.keypoints,
+          measurementSide,
+        );
+        // TEMP-DIAGNOSTICO: obtiene las coordenadas 3D MediaPipe sin retención ni filtro óseo.
+        const rawMediaPipeLandmark = (key: 'shoulder' | 'elbow' | 'wrist') => {
+          const index = diagnosticIndexes?.[key];
+          const point = index === undefined ? undefined : detectedPose?.keypoints[index];
+          const worldPoint = index === undefined
+            ? undefined
+            : detectedPose?.worldLandmarks[index]?.world;
+          const world = point?.world
+            ?? worldPoint
+            ?? (point?.z === undefined
+              ? null
+              : { x: point.x, y: point.y, z: point.z });
+          return world && [world.x, world.y, world.z].every(Number.isFinite)
+            ? world
+            : null;
+        };
+        const rawShoulder3D = rawMediaPipeLandmark('shoulder');
+        const rawElbow3D = rawMediaPipeLandmark('elbow');
+        const rawWrist3D = rawMediaPipeLandmark('wrist');
+        const rawMediaPipeElbowAngle3D = (
+          rawShoulder3D && rawElbow3D && rawWrist3D
+        )
+          ? (() => {
+              const first = {
+                x: rawShoulder3D.x - rawElbow3D.x,
+                y: rawShoulder3D.y - rawElbow3D.y,
+                z: rawShoulder3D.z - rawElbow3D.z,
+              };
+              const second = {
+                x: rawWrist3D.x - rawElbow3D.x,
+                y: rawWrist3D.y - rawElbow3D.y,
+                z: rawWrist3D.z - rawElbow3D.z,
+              };
+              const firstLength = Math.hypot(first.x, first.y, first.z);
+              const secondLength = Math.hypot(second.x, second.y, second.z);
+              if (!(firstLength > 0) || !(secondLength > 0)) return null;
+              const cosine = (
+                first.x * second.x + first.y * second.y + first.z * second.z
+              ) / (firstLength * secondLength);
+              return Math.acos(Math.max(-1, Math.min(1, cosine))) * (180 / Math.PI);
+            })()
+          : null;
         const diagnosticPoint = (key: UploadedDipPointKey) => (
           diagnosticIndexes
             ? pose?.keypoints?.[diagnosticIndexes[key]]
@@ -13286,6 +13737,90 @@ function Home() {
           : null;
         const boneLengthHeld = diagnosticElbowHeldReason === 'bone-length'
           || diagnosticWristHeldReason === 'bone-length';
+        // TEMP-DIAGNOSTICO: detalla medición, referencia y puntos cuando bone-length retiene codo/muñeca.
+        if (
+          measurementSide
+          && sideConsistentPose
+          && diagnosticIndexes
+        ) {
+          const coordinates = {
+            hombro: diagnosticIndexes.shoulder,
+            codo: diagnosticIndexes.elbow,
+            muñeca: diagnosticIndexes.wrist,
+          };
+          const coordinateDetails = Object.fromEntries(
+            Object.entries(coordinates).map(([name, index]) => {
+              const point = sideConsistentPose.keypoints[index];
+              const world = point?.world
+                ?? sideConsistentPose.worldLandmarks[index]?.world
+                ?? null;
+              return [
+                name,
+                {
+                  p2: point ? { x: point.x, y: point.y } : null,
+                  p3: world
+                    ? { x: world.x, y: world.y, z: world.z }
+                    : null,
+                },
+              ];
+            }),
+          );
+          const getPreConstraintWorld = (index: number) => (
+            sideConsistentPose.keypoints[index]?.world
+            ?? sideConsistentPose.worldLandmarks[index]?.world
+            ?? null
+          );
+          const logHeldBone = (
+            boneName: string,
+            distalName: string,
+            bone: typeof diagnosticBoneDebug['left-upper-arm'],
+            proximalIndex: number,
+            distalIndex: number,
+          ) => {
+            const proximal = getPreConstraintWorld(proximalIndex);
+            const distal = getPreConstraintWorld(distalIndex);
+            const measuredLength = proximal && distal
+              ? Math.hypot(
+                  proximal.x - distal.x,
+                  proximal.y - distal.y,
+                  proximal.z - distal.z,
+                )
+              : null;
+            const relativeDifference = measuredLength !== null
+              && bone.referenceLength !== null
+              && bone.referenceLength > 0
+              ? `${(((measuredLength - bone.referenceLength) / bone.referenceLength) * 100).toFixed(1)}%`
+              : '—';
+            logUploadedDipDiagnostic(
+              `[fondos-hueso] lado=${measurementSide} hueso=${boneName} `
+              + `resultado=rechazado-y-retenido-${distalName} `
+              + `longitud=${measuredLength?.toFixed(4) ?? '—'} `
+              + `referencia=${bone.referenceLength?.toFixed(4) ?? '—'} `
+              + `diferenciaRelativa=${relativeDifference} `
+              + `muestrasReferencia=${bone.validSamples} `
+              + `referenciaEstado=${bone.referencesLocked ? 'bloqueada' : 'actualizándose'} `
+              + `coordenadas=${JSON.stringify(coordinateDetails)}`,
+            );
+          };
+          if (diagnosticElbowHeldReason === 'bone-length') {
+            logHeldBone(
+              'brazo-superior',
+              'codo',
+              diagnosticUpperArmDebug!,
+              diagnosticIndexes.shoulder,
+              diagnosticIndexes.elbow,
+            );
+          }
+          if (diagnosticWristHeldReason === 'bone-length') {
+            logHeldBone(
+              'antebrazo',
+              'muñeca',
+              diagnosticForearmDebug!,
+              diagnosticIndexes.elbow,
+              diagnosticIndexes.wrist,
+            );
+          }
+        }
         const lowConfidence = Boolean(diagnosticIndexes) && [
           diagnosticPoint('shoulder'),
           diagnosticPoint('hip'),
@@ -13333,6 +13868,8 @@ function Home() {
         logUploadedDipDiagnostic(
           `[fondos-curva] t=${video.currentTime.toFixed(2)} `
           + `bruto=${formatUploadedDipAngle(repetitionAngle)} `
+          + `brutoMediaPipe2D=${formatUploadedDipAngle(rawMediaPipeElbowAngle2D)} `
+          + `brutoMediaPipe3D=${formatUploadedDipAngle(rawMediaPipeElbowAngle3D)} `
           + `suav=${formatUploadedDipAngle(uploadedDipTrackerSmoothedAngleForFrame)} `
           + `lado=${measurementSide ?? 'ninguno'} `
           + `vista=${nextViewAlignment.status}`
@@ -13384,7 +13921,8 @@ function Home() {
           // TEMP-DIAGNOSTICO: registra bloqueos por excepción con tiempo y pasada.
           recordUploadedDipBlockedFrame('other');
           logUploadedDipDiagnostic(
-            `[fondos-curva] t=${video.currentTime.toFixed(2)} bruto=— suav=— `
+            `[fondos-curva] t=${video.currentTime.toFixed(2)} bruto=— `
+            + `brutoMediaPipe2D=— brutoMediaPipe3D=— suav=— `
             + `fase=${exerciseRepTrackerRef.current.phase} `
             + 'estado=bloqueado:error de procesamiento',
           );
