@@ -1,0 +1,1 @@
+Necesito el archivo de logs [view-diagnostics] (no el de pullup-diagnostics), con los campos shoulderYawDeg, hipYawDeg, yawDeg, estimatedView y status de la misma sesión. Expórtalo igual que el de pullup, en JSON crudo, sin resumir.

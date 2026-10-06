@@ -1,0 +1,76 @@
+Copia y pega este prompt en la siguiente conversación:
+
+```text
+Continúa resolviendo NetPosture usando únicamente los diagnósticos de texto adjuntos. No necesito que analices nuevamente el video ni que solicites créditos adicionales para visión.
+
+Objetivo:
+1. El video contiene 7 flexiones correctas.
+2. NetPosture debe mostrar 7 repeticiones y 7 correctas.
+3. El preview debe permanecer pausado prácticamente en el primer milisegundo mientras detecta y fija el cuerpo.
+4. Después de que el sistema termine la calibración, el usuario debe poder pulsar reproducir y el análisis debe comenzar desde 0.001 s.
+5. El esqueleto debe seguir el cuerpo sin retraso perceptible.
+
+Contexto técnico ya aplicado:
+- El video de referencia es 3840×2160.
+- El detector ahora analiza una copia reducida aproximadamente a 1280×720.
+- El canvas de descarga se limita aproximadamente a 1920×1080.
+- La captura del video se desacopló de la inferencia para evitar que el video avance lento.
+- El video subido se pausa y busca 0.001 s antes de calibrar.
+- El tracker de flexiones subidas reconoce si el primer cuadro empieza con el cuerpo abajo, porque este video comienza en el fondo de la primera flexión.
+- Esa primera transición debe contar como la primera repetición, sin falsificar el conteo ni afectar cámara en vivo u otros ejercicios.
+
+Archivos principales:
+- artifacts/posture-coach/src/App.tsx
+- artifacts/posture-coach/src/pose3d.ts
+
+Diagnóstico anterior relevante:
+- Antes del ajuste: 148 registros, 34 tiempos distintos, 2 repeticiones y 0 correctas.
+- Después de reducir el detector: 61 registros, 61 tiempos distintos, 6 repeticiones y 6 correctas.
+- El último diagnóstico terminaba en 9.127846 s, con fase `inicio`, 6 repeticiones y 6 correctas.
+- La primera imagen del video muestra al cuerpo abajo; por eso se implementó el arranque especial del tracker.
+- El último cambio todavía debe comprobarse con un diagnóstico nuevo.
+
+Procedimiento:
+1. Localiza el diagnóstico más reciente con:
+   find attached_assets -maxdepth 1 -type f | grep 'netposture-diagnostic'
+2. Usa jq para inspeccionar:
+   - cantidad total de frames;
+   - cantidad de `videoTimeSeconds` únicos;
+   - primer y último tiempo;
+   - fase final;
+   - `repetitions`;
+   - `goodRepetitions`;
+   - eventos `valid`;
+   - `measurementBlockingReasons`;
+   - valores de `repetitionAngle`.
+3. Compara el diagnóstico nuevo con los valores anteriores.
+4. Verifica específicamente:
+   - si el primer frame está cerca de 0.001 s;
+   - si la primera transición desde el fondo genera un evento;
+   - si aparecen 7 eventos `valid`;
+   - si el resultado final es 7 repeticiones y 7 correctas;
+   - si el análisis procesa tiempos distintos de forma continua;
+   - si existen saltos de pose, puntos retenidos o bloqueos de medición.
+5. Si el diagnóstico todavía muestra 6, no fijes artificialmente el número en 7. Determina si:
+   - la primera transición no fue reconocida;
+   - el séptimo retorno no llegó al buffer;
+   - el video terminó antes de completar el séptimo ciclo;
+   - el ángulo o la fase quedaron bloqueados.
+6. Corrige solo la causa demostrada por el diagnóstico.
+7. Ejecuta:
+   pnpm run typecheck:libs
+   pnpm --filter @workspace/posture-coach run typecheck
+   git diff --check
+8. Si modificas código, reinicia el workflow:
+   artifacts/posture-coach: web
+9. Revisa la consola del navegador y entrega un resumen con:
+   - frames totales;
+   - tiempos únicos;
+   - eventos detectados;
+   - repeticiones finales;
+   - correctas finales;
+   - bloqueos encontrados;
+   - cambios realizados.
+
+No cambies el conteo a un valor fijo, no ignores las reglas de puntos frescos y no uses coordenadas retenidas como mediciones válidas.
+```

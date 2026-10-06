@@ -1,0 +1,37 @@
+Trabaja SOLO en esta carpeta:
+COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+
+Entorno: el workspace usa pnpm. El servidor de desarrollo ya lo ejecuto yo a mano desde el
+shell (vite con PORT y BASE_PATH). NO lo reinicies, NO crees ni reinicies workflows, NO
+ejecutes pnpm install ni toques package.json, lockfile ni dependencias. Para verificar usa
+"pnpm run typecheck" dentro de esa carpeta (debe dar exit=0). Ignora errores de lib/db y
+lib/api-zod: no pertenecen a este paquete.
+
+Solo videos subidos de fondos (isUploadedDipVideo). Marca todo con // TEMP-DIAGNOSTICO.
+No uses números tomados de un video concreto.
+
+OBJETIVO: evitar que se cuenten como repetición la subida a las barras y el desmontaje.
+
+CAMBIO 1 (en la ruta que hoy incrementa el contador, retorno forzado @App.tsx:13169, y en
+cualquier otra ruta que cuente como correcta o incorrecta, incluidas retorno-parcial y la
+ruta por evidencia):
+Antes de incrementar, comprueba que el retorno restauró el nivel del hombro:
+- base = mediana de la posición vertical normalizada del hombro (misma referencia fija
+  por torso que usa [linea-tiempo]) en los cuadros válidos de fase "inicio"
+  inmediatamente anteriores a salir de "inicio" para esta repetición.
+- retorno = posición del mismo hombro en el cuadro del retorno.
+- bajada = el desplazamiento vertical máximo hacia abajo del hombro durante el descenso
+  (el que ya registras como desplazamientoNormalizado).
+- Si |retorno - base| > 0.5 * bajada, o bajada <= 0, NO incrementes ningún contador
+  (ni correctas ni incorrectas) y NO agregues la repetición a la lista contada.
+  La constante 0.5 va con nombre y comentario.
+- No cambies las transiciones de fase del tracker: solo omite el incremento.
+
+CAMBIO 2 (solo log): cuando se omita una repetición por esto, registra en
+[fondos-repeticion] veredicto="descartada: no restaura nivel del hombro",
+con base, retorno, bajada y la diferencia.
+
+NO conectes la decisión descentIsDip/ruidoEstable al conteo. Déjala como está.
+
+Responde con archivo:línea de lo cambiado, confirma que typecheck da exit=0 y lista
+las constantes nuevas.

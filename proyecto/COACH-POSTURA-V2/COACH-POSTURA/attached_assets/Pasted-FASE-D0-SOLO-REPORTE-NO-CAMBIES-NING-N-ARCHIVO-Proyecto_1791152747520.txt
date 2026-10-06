@@ -1,0 +1,12 @@
+FASE D0: SOLO REPORTE, NO CAMBIES NINGÚN ARCHIVO. Proyecto NetPosture, archivo COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx. Objetivo futuro: que «dominadas en barra» con video subido use el mismo flujo que las flexiones de pecho (id «flexiones»): reinicio de estado al subir, búsqueda de cuerpo (5 s continuos de cuadros válidos, capa «Buscando cuerpo…», tolerancia a huecos de 0.6 s), salto atrás a t=0 con pausa, decisión de posición inicial (uploadedPushupStartsAtBottomRef) y conteo a 0.35×. Los videos de dominadas se graban DE ESPALDAS: se ve al usuario por detrás, colgado de la barra.
+
+Reglas: no git, no Preview, no servidores, no mates procesos, no capturas, no edites nada. Responde con líneas de código concretas.
+
+Reporta:
+1. Si existe el ejercicio de dominadas en barra: su id, y dónde se define (lista de ejercicios, tracker, ángulos, validación de técnica, guía de cámara).
+2. Qué ángulo mide la repetición en dominadas, qué constantes usa (equivalentes a PUSHUP_REP_END_MIN_ANGLE y PUSHUP_REP_END_MAX_ANGLE), y cuáles son las fases del tracker.
+3. Cómo se elige el lado de medición (izquierdo o derecho) en dominadas y si funciona con una cámara trasera: qué puntos exige la guía de cámara para considerar un cuadro válido.
+4. Qué partes del flujo de video de flexiones (búsqueda de cuerpo, tolerancia a huecos, salto atrás, uploadedPushupStartsAtBottomRef, uploadedPushupPreflightRef, conteo a 0.35×, capa «Buscando cuerpo…», reinicio al subir video) están condicionadas a selectedExercise === 'flexiones' o a uploadedPushup*, y cuáles son genéricas.
+5. Qué ocurre hoy con un video subido de dominadas, paso a paso.
+6. Lista de cada sitio donde habría que cambiar una condición «solo flexiones» para incluir dominadas, con número de línea y sin proponer el código todavía.
+7. Riesgos específicos de dominadas que veas en el código: la barra tapando manos o muñecas, la cabeza pasando por encima de la barra, la vista de espaldas, los filtros de pose y de longitud de huesos.

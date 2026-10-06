@@ -1,0 +1,21 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado con datos reales de sesión (200 frames, [view-diagnostics]):
+- estimatedView = 'front' en el 100% de los frames, nunca 'back', aunque el usuario ejecutaba el ejercicio de espaldas a la cámara.
+- yawDeg osciló entre 8.6° y 26.3° (promedio 13°) — un ángulo excelente, muy por debajo del umbral de 30° para 'good'.
+- hipYawDeg es null en el 100% de los frames.
+- Como estimatedView nunca es 'back' (recommendedView), la desviación se fuerza a 180° (VIEW_OPPOSITE_DISTANCE_DEG) y status queda en 'bad' siempre, sin importar que el yaw sea excelente.
+
+Esto confirma que el problema NO es el umbral de tolerancia (30°/50°) — es que la clasificación front/back/side está fallando sistemáticamente. El yaw de hombros es correcto y estable, pero el sistema decide 'front' cuando debería decidir 'back'.
+
+Necesito que investigues, SIN implementar nada todavía:
+
+1. Muéstrame la función completa que decide estimatedView (front/back/side), citando archivo y línea exacta.
+
+2. ¿Qué dato usa para distinguir 'front' de 'back'? El yaw (ángulo agudo por atan2 con valores absolutos) no puede por sí solo distinguir si estás de frente o de espaldas — un yaw de 13° podría ser frente o espalda, matemáticamente es ambiguo con valores absolutos. ¿Qué otra señal usa el código para resolver esa ambigüedad (por ejemplo: profundidad relativa de nariz vs hombros, orientación de landmarks específicos, algún signo que se pierde en el cálculo actual)?
+
+3. ¿Es posible que el código simplemente tenga un valor por defecto o una condición invertida que hace caer siempre en 'front' cuando no puede determinar la diferencia?
+
+4. Muéstrame por qué hipYawDeg salió null en el 100% de los frames — ¿depende de que ambas caderas tengan score >= VIEW_MIN_SCORE (0.4), o hay otra condición que las descarta siempre en esta vista de dominadas (donde las caderas pueden estar parcialmente fuera de encuadre)?
+
+No implementes ninguna corrección todavía. Solo cita el código exacto y explica la lógica de decisión front/back/side.

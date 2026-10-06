@@ -1,0 +1,23 @@
+Rol: arquitecto y monitor de integración para NetPosture, ejercicio "dominadas".
+
+Contexto confirmado: se implementó la Etapa 3A (vista 'unknown' ya no bloquea). Se probó con una sesión real (~250 frames, 90854ms-102640ms) y el problema PERSISTE IGUAL:
+- repetitions y goodRepetitions permanecen en 0 durante toda la sesión.
+- frameStable es false en el 100% de los fotogramas.
+- "vista incorrecta" sigue apareciendo en casi todos los fotogramas.
+- Hay momentos confirmados con atBottom=true (94048-94337ms) y atTop=true (91297-91636ms), con ángulos de codo coherentes con dominadas reales (32° a 176°), pero nunca se completa un ciclo.
+
+Esto indica que el clasificador de vista NO está devolviendo 'unknown' (que ya no bloquea) sino 'bad' (que sigue bloqueando). Necesito entender por qué clasifica la vista como 'bad' de forma casi permanente en una sesión real.
+
+Necesito que investigues y me respondas, SIN implementar ni cambiar nada todavía:
+
+1. Instrumenta temporalmente (solo log, no cambies lógica) para capturar, en varios frames de una sesión real: el valor exacto de shoulderYaw, hipYaw, yawDeg final usado, y el status resultante ('good'/'acceptable'/'bad'/'unknown'). Necesito ver los números reales, no solo el status.
+
+2. Muéstrame la función completa getYawDeg() y de dónde saca las coordenadas x/z de hombros y caderas (¿landmarks 3D de MediaPipe directamente, o pasan por algún suavizado/transformación antes?).
+
+3. ¿VIEW_TOLERANCE_DEFAULT_DEG (30°) y VIEW_ACCEPTABLE_EXTRA_DEG (20°) son fijos en código o configurables por ejercicio? ¿De dónde salieron esos números — hay algún comentario o commit que explique cómo se calibraron?
+
+4. Corre una sesión real corta (10-15 segundos, dominadas, de espaldas a la cámara como pide 'recommendedView: back') y pégame en tu respuesta los valores reales de yawDeg y status en al menos 8-10 frames distribuidos a lo largo de la sesión, incluyendo el momento de atBottom y el de atTop confirmados.
+
+5. Con esos números reales: ¿el yaw calculado se mantiene consistentemente por encima de 50° (lo cual explicaría el 'bad' constante), o fluctúa cerca del límite de 30-50°? Esto determina si el problema es de calibración de umbral o de cálculo del ángulo mismo.
+
+No implementes ninguna corrección todavía. Solo necesito los números reales y las funciones exactas citando archivo y línea.

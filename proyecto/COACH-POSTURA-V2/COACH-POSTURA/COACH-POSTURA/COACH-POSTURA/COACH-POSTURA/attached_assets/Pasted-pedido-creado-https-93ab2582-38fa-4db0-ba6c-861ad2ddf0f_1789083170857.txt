@@ -1,0 +1,130 @@
+pedido_creado
+https://93ab2582-38fa-4db0-ba6c-861ad2ddf0f5-00-umxsbv1cgee5.janeway.replit.dev/api/billing/webhook
+
+
+Reenviar
+Respuesta:
+
+200
+
+{"received":true}
+Pedido:
+
+{
+  "data": {
+    "id": "9445150",
+    "type": "orders",
+    "links": {
+      "self": "https://api.lemonsqueezy.com/v1/orders/9445150"
+    },
+    "attributes": {
+      "tax": 0,
+      "urls": {
+        "receipt": "https://app.lemonsqueezy.com/my-orders/5996290e-a43e-45d0-baf3-467e3d1fcae6?expires=1789104052&signature=79cceb438c2daef89331f636a262f2465f869ed34b1e393e71ddec59b84ab335"
+      },
+      "total": 100,
+      "status": "paid",
+      "tax_usd": 0,
+      "currency": "USD",
+      "refunded": false,
+      "store_id": 418164,
+      "subtotal": 100,
+      "tax_name": "VAT",
+      "tax_rate": 0,
+      "setup_fee": 0,
+      "test_mode": false,
+      "total_usd": 100,
+      "user_name": "juan perez",
+      "created_at": "2026-09-10T23:20:50.000000Z",
+      "identifier": "5996290e-a43e-45d0-baf3-467e3d1fcae6",
+      "updated_at": "2026-09-10T23:20:52.000000Z",
+      "user_email": "hhggcrdh@gmail.com",
+      "customer_id": 9851162,
+      "refunded_at": null,
+      "affiliate_id": null,
+      "order_number": 4181643,
+      "subtotal_usd": 100,
+      "currency_rate": "1.00000000",
+      "setup_fee_usd": 0,
+      "tax_formatted": "$0.00",
+      "tax_inclusive": true,
+      "discount_total": 0,
+      "referral_amount": null,
+      "refunded_amount": 0,
+      "total_formatted": "$1.00",
+      "first_order_item": {
+        "id": 9369950,
+        "price": 100,
+        "order_id": 9445150,
+        "price_id": 3547217,
+        "quantity": 1,
+        "test_mode": false,
+        "created_at": "2026-09-10T23:20:52.000000Z",
+        "product_id": 1297371,
+        "updated_at": "2026-09-10T23:20:52.000000Z",
+        "variant_id": 2029790,
+        "product_name": "Plan Anual",
+        "variant_name": "Default"
+      },
+      "status_formatted": "Paid",
+      "discount_total_usd": 0,
+      "subtotal_formatted": "$1.00",
+      "refunded_amount_usd": 0,
+      "setup_fee_formatted": "$0.00",
+      "discount_total_formatted": "$0.00",
+      "refunded_amount_formatted": "$0.00"
+    },
+    "relationships": {
+      "store": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/store",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/store"
+        }
+      },
+      "customer": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/customer",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/customer"
+        }
+      },
+      "affiliate": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/affiliate",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/affiliate"
+        }
+      },
+      "order-items": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/order-items",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/order-items"
+        }
+      },
+      "license-keys": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/license-keys",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/license-keys"
+        }
+      },
+      "subscriptions": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/subscriptions",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/subscriptions"
+        }
+      },
+      "discount-redemptions": {
+        "links": {
+          "self": "https://api.lemonsqueezy.com/v1/orders/9445150/relationships/discount-redemptions",
+          "related": "https://api.lemonsqueezy.com/v1/orders/9445150/discount-redemptions"
+        }
+      }
+    }
+  },
+  "meta": {
+    "test_mode": false,
+    "event_name": "order_created",
+    "webhook_id": "a2b75673-90b9-4b73-abe4-6fb965771afe",
+    "custom_data": {
+      "user_id": "user_3J9nqdrnTiy1PHxDfZtvkxzlGib"
+    }
+  }
+}
