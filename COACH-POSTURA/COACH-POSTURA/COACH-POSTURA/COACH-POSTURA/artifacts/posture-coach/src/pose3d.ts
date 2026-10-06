@@ -22,6 +22,13 @@ const MIN_POSE_PRESENCE_CONFIDENCE = 0.45;
 // Umbral mínimo para conservar el tracking entre frames.
 const MIN_TRACKING_CONFIDENCE = 0.4;
 
+// TEMP-DIAGNOSTICO: exponer solo los umbrales vigentes para registrarlos en videos de fondos.
+export const POSE_DIAGNOSTIC_THRESHOLDS = {
+  detection: MIN_POSE_DETECTION_CONFIDENCE,
+  presence: MIN_POSE_PRESENCE_CONFIDENCE,
+  tracking: MIN_TRACKING_CONFIDENCE,
+} as const;
+
 export type PoseModel = 'heavy' | 'full';
 export type PoseDelegate = 'GPU' | 'CPU';
 
