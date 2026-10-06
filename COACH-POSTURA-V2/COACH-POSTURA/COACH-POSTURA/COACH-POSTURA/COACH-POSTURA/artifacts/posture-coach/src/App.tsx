@@ -693,6 +693,9 @@ type UploadedDipVideoSegmentationState = {
   descentHasRequiredData: boolean;
   descentDecisionEvaluated: boolean;
   descentIsDip: boolean | null;
+  // TEMP-DIAGNOSTICO: posiciones normalizadas del hombro en la fase inicial y su mediana por repetición.
+  startShoulderYNormalizedSamples: number[];
+  repetitionStartShoulderYNormalized: number | null;
 };
 // TEMP-DIAGNOSTICO: traza del camino que ya incrementó el contador, solo para el log.
 type UploadedDipCountTrace = {
@@ -3080,6 +3083,8 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
 const UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES = (
   repetitionConfigs.fondos!.startMinAngle - repetitionConfigs.fondos!.endMaxAngle
 ) / 2;
+// TEMP-DIAGNOSTICO: fracción de la bajada que limita cuánto puede diferir el hombro al volver arriba.
+const UPLOADED_DIP_SHOULDER_RETURN_DROP_FRACTION = 0.5;
 
 function createExerciseRepTracker(): ExerciseRepTracker {
   return {
@@ -8554,6 +8559,9 @@ function createUploadedDipVideoSegmentationState(): UploadedDipVideoSegmentation
     descentHasRequiredData: false,
     descentDecisionEvaluated: false,
     descentIsDip: null,
+    // TEMP-DIAGNOSTICO: inicia una ventana nueva para medir la referencia alta de hombro.
+    startShoulderYNormalizedSamples: [],
+    repetitionStartShoulderYNormalized: null,
   };
 }
 
@@ -8975,6 +8983,7 @@ function applyUploadedDipTrackerDiagnostics({
   bottomEvidenceTimeSeconds = null,
   incorrectReturnReason = null,
   returnForced = false,
+  shoulderReturnRejected = false,
   countTrace = null,
 }: {
   diagnostics: UploadedDipDiagnostics;
@@ -8994,6 +9003,8 @@ function applyUploadedDipTrackerDiagnostics({
   incorrectReturnReason?: 'no extendió arriba' | null;
   // TEMP-DIAGNOSTICO: distingue los retornos creados por la segmentación de los del tracker.
   returnForced?: boolean;
+  // TEMP-DIAGNOSTICO: omite el conteo y la medición contada si el hombro no recuperó el nivel.
+  shoulderReturnRejected?: boolean;
   // TEMP-DIAGNOSTICO: trazabilidad de conteo, sin efecto en los valores del tracker.
   countTrace?: UploadedDipCountTrace | null;
 }) {
@@ -9027,7 +9038,8 @@ function applyUploadedDipTrackerDiagnostics({
     }
   }
   diagnostics.lastSmoothedElbowAngle = trackerUpdate.smoothedAngle;
-  const noDepthReturn = !bottomEvidenceDetected
+  const noDepthReturn = !shoulderReturnRejected // TEMP-DIAGNOSTICO: no recontar un retorno descartado.
+    && !bottomEvidenceDetected
     && previousTracker.phase === 'en movimiento'
     && trackerUpdate.tracker.phase === 'inicio'
     && repetitionConfig.noDepthMaxRawAngle !== undefined
@@ -9133,7 +9145,10 @@ function applyUploadedDipTrackerDiagnostics({
         );
       }
     }
-    if (incorrectReturnReason) {
+    if (shoulderReturnRejected) {
+      // TEMP-DIAGNOSTICO: la fase puede cerrar, pero no se conserva en la lista de repeticiones contadas.
+      diagnostics.currentRepetition = null;
+    } else if (incorrectReturnReason) {
       const currentRepetition = diagnostics.currentRepetition
         ?? createUploadedDipRepetitionMeasurement(
           diagnostics,
@@ -9334,6 +9349,42 @@ function logUploadedDipTimelineSample({
     + `ladoReferencia=${diagnostics.timelineTorsoReferenceSide ?? 'no-disponible'} `
     + `referenciaTorso=${referenceLength?.toFixed(4) ?? 'no-disponible'}`,
   );
+}
+
+// TEMP-DIAGNOSTICO: normaliza el hombro con la misma referencia fija que usa [linea-tiempo].
+function getUploadedDipTimelineShoulderYNormalized(
+  diagnostics: UploadedDipDiagnostics,
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+) {
+  const indexes = side ? sideKeypoints[side] : null;
+  const shoulder = indexes ? keypoints?.[indexes.shoulder] : undefined;
+  const hip = indexes ? keypoints?.[indexes.hip] : undefined;
+  const isUsable = (point: PosePoint | undefined): point is PosePoint => Boolean(
+    point
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+  );
+
+  if (
+    diagnostics.timelineTorsoReferenceLength === null
+    && isUsable(shoulder)
+    && isUsable(hip)
+  ) {
+    const torsoReferenceLength = Math.hypot(
+      shoulder.x - hip.x,
+      shoulder.y - hip.y,
+    );
+    if (torsoReferenceLength > 0 && Number.isFinite(torsoReferenceLength)) {
+      diagnostics.timelineTorsoReferenceLength = torsoReferenceLength;
+      diagnostics.timelineTorsoReferenceSide = side;
+    }
+  }
+  const referenceLength = diagnostics.timelineTorsoReferenceLength;
+  return isUsable(shoulder) && referenceLength !== null && referenceLength > 0
+    ? shoulder.y / referenceLength
+    : null;
 }
 
 function summarizeUploadedDipAngles(values: number[]) {
@@ -11787,6 +11838,32 @@ function Home() {
       const uploadedDipRawShoulderWristSample = isUploadedDipVideo
         ? getUploadedDipRawShoulderWristSample(detectedPose?.keypoints, measurementSide)
         : null;
+      // TEMP-DIAGNOSTICO: lee la altura del hombro sobre la escala fija del torso de [linea-tiempo].
+      const uploadedDipShoulderYNormalized = isUploadedDipVideo
+        && uploadedDipDiagnosticsRef.current
+        ? getUploadedDipTimelineShoulderYNormalized(
+            uploadedDipDiagnosticsRef.current,
+            detectedPose?.keypoints,
+            measurementSide,
+          )
+        : null;
+      // TEMP-DIAGNOSTICO: acumula solo cuadros observados válidos mientras el tracker permanece arriba.
+      if (
+        isUploadedDipVideo
+        && uploadedDipCountingPassStartedRef.current
+        && exerciseStartedRef.current
+        && exerciseRepTrackerRef.current.phase === 'inicio'
+        && uploadedDipVideoSegmentation
+        && uploadedDipShoulderYNormalized !== null
+        && hasFreshPose
+        && frameCameraReady
+        && countFrameReady
+        && !effectiveViewBlocksFrame
+      ) {
+        uploadedDipVideoSegmentation.startShoulderYNormalizedSamples.push(
+          uploadedDipShoulderYNormalized,
+        );
+      }
       // TEMP-DIAGNOSTICO: si falta señal en cualquier cuadro observado del descenso, deja la regla actual.
       if (
         isUploadedDipVideo
@@ -12977,6 +13054,9 @@ function Home() {
               : null,
           }
         : null;
+        // TEMP-DIAGNOSTICO: estado del filtro previo a cualquier ruta de retorno o conteo.
+        let uploadedDipShoulderReturnRejectedForFrame = false;
+        let uploadedDipPartialReturnRestartForFrame = false;
         let uploadedDipCimaLogWritten = false;
         // TEMP-DIAGNOSTICO: impide que una fase "arriba" cierre el retorno si la curva cruda no confirma su máximo.
         if (
@@ -13004,7 +13084,12 @@ function Home() {
               || exerciseRepUpdate.tracker.phase === 'final'
             );
           if (dipVideoTrackerStarted) {
+            // TEMP-DIAGNOSTICO: conserva la mediana del nivel de hombro antes de reiniciar la segmentación.
+            const startShoulderYNormalized = median(
+              segmentation.startShoulderYNormalizedSamples,
+            );
             resetUploadedDipVideoSegmentation(segmentation);
+            segmentation.repetitionStartShoulderYNormalized = startShoulderYNormalized;
             segmentation.bottomMinimumAngle = uploadedDipRawPhaseRescue
               ? null
               : repetitionAngle;
@@ -13514,14 +13599,93 @@ function Home() {
               };
               exerciseRepUpdate.smoothedAngle = repetitionAngle;
               exerciseRepUpdate.completedEndpointAngle = null;
-              resetUploadedDipVideoSegmentation(segmentation);
-              segmentation.bottomMinimumAngle = repetitionAngle;
-            } else if (
-              previousExerciseRepTracker.phase !== 'inicio'
-              && exerciseRepUpdate.tracker.phase === 'inicio'
-            ) {
-              resetUploadedDipVideoSegmentation(segmentation);
+              // TEMP-DIAGNOSTICO: posterga el reinicio hasta comprobar el nivel del hombro.
+              uploadedDipPartialReturnRestartForFrame = true;
             }
+          }
+        }
+        // TEMP-DIAGNOSTICO: bloquea cualquier ruta de conteo que no restaure la altura inicial del hombro.
+        if (isUploadedDipVideo) {
+          const segmentation = uploadedDipVideoSegmentation;
+          const uploadedDipDiagnostics = uploadedDipDiagnosticsRef.current;
+          const currentRepetitionMinimum
+            = uploadedDipDiagnostics?.currentRepetition?.elbowRawMinimum
+              ?? Number.POSITIVE_INFINITY;
+          const rawElbowForDiagnostics = uploadedDipRawPhaseRescue
+            ? null
+            : repetitionAngle;
+          const minimumAfterCurrentFrame = !uploadedDipIncorrectReturnReason
+            && uploadedDipDiagnostics?.currentRepetition
+            && rawElbowForDiagnostics !== null
+            ? Math.min(currentRepetitionMinimum, rawElbowForDiagnostics)
+            : currentRepetitionMinimum;
+          const noDepthReturnWouldCount = Boolean(
+            !uploadedDipBottomEvidenceDetected
+            && previousExerciseRepTracker.phase === 'en movimiento'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+            && repetitionConfig.noDepthMaxRawAngle !== undefined
+            && minimumAfterCurrentFrame < repetitionConfig.noDepthMaxRawAngle,
+          );
+          const countAttempted = (
+            exerciseRepUpdate.tracker.repetitions
+              > previousExerciseRepTracker.repetitions
+            || exerciseRepUpdate.tracker.goodRepetitions
+              > previousExerciseRepTracker.goodRepetitions
+            || uploadedDipIncorrectReturnReason !== null
+            || noDepthReturnWouldCount
+          );
+          if (countAttempted) {
+            const base = segmentation?.repetitionStartShoulderYNormalized ?? null;
+            const returned = uploadedDipShoulderYNormalized;
+            const descent = segmentation?.descentMaximumNormalizedDrop ?? null;
+            const difference = base !== null && returned !== null
+              ? Math.abs(returned - base)
+              : null;
+            const shoulderLevelRestored = (
+              base !== null
+              && returned !== null
+              && descent !== null
+              && descent > 0
+              && difference !== null
+              && difference
+                <= UPLOADED_DIP_SHOULDER_RETURN_DROP_FRACTION * descent
+            );
+            if (!shoulderLevelRestored) {
+              uploadedDipShoulderReturnRejectedForFrame = true;
+              uploadedDipIncorrectReturnReason = null;
+              exerciseRepUpdate.tracker = {
+                ...exerciseRepUpdate.tracker,
+                repetitions: previousExerciseRepTracker.repetitions,
+                goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+                event: null,
+              };
+              exerciseRepUpdate.completedEndpointAngle = null;
+              // TEMP-DIAGNOSTICO: evita que una salida posterior agregue esta tentativa a la lista contada.
+              if (uploadedDipDiagnostics) {
+                uploadedDipDiagnostics.currentRepetition = null;
+              }
+              // TEMP-DIAGNOSTICO: documenta los valores de la única condición nueva de descarte.
+              logUploadedDipDiagnostic(
+                `[fondos-repeticion] `
+                + `veredicto="descartada: no restaura nivel del hombro" `
+                + `base=${base?.toFixed(4) ?? '—'} `
+                + `retorno=${returned?.toFixed(4) ?? '—'} `
+                + `bajada=${descent?.toFixed(4) ?? '—'} `
+                + `diferencia=${difference?.toFixed(4) ?? '—'}`,
+              );
+            }
+          }
+          if (uploadedDipPartialReturnRestartForFrame && segmentation) {
+            const repetitionBase = segmentation.repetitionStartShoulderYNormalized;
+            resetUploadedDipVideoSegmentation(segmentation);
+            segmentation.repetitionStartShoulderYNormalized = repetitionBase;
+            segmentation.bottomMinimumAngle = repetitionAngle;
+          } else if (
+            segmentation
+            && previousExerciseRepTracker.phase !== 'inicio'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+          ) {
+            resetUploadedDipVideoSegmentation(segmentation);
           }
         }
         if (
@@ -13571,13 +13735,6 @@ function Home() {
               ? 'retorno-esperando-confirmación-cruda'
               : 'retorno-completado'}`,
           );
-          if (
-            uploadedDipRawPhaseRescue
-            && previousExerciseRepTracker.phase === 'final'
-            && exerciseRepUpdate.tracker.phase === 'inicio'
-          ) {
-            resetUploadedDipVideoSegmentation(uploadedDipVideoSegmentation);
-          }
         }
         if (isUploadedDipVideo) {
           uploadedDipTrackerWasCalledForFrame = true;
@@ -13665,6 +13822,8 @@ function Home() {
             bottomEvidenceOnly: uploadedDipBottomEvidenceOnly,
             bottomEvidenceTimeSeconds: uploadedDipBottomEvidenceTimeSeconds,
             incorrectReturnReason: uploadedDipIncorrectReturnReason,
+            // TEMP-DIAGNOSTICO: impide que las rutas auxiliares vuelvan a contar el retorno descartado.
+            shoulderReturnRejected: uploadedDipShoulderReturnRejectedForFrame,
             // TEMP-DIAGNOSTICO: distingue retorno calculado del retorno forzado.
             returnForced: uploadedDipReturnForcedForFrame,
             // TEMP-DIAGNOSTICO: añade metadatos al log después de que la ruta haya incrementado.
