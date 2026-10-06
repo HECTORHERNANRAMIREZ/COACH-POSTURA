@@ -9144,6 +9144,7 @@ function applyUploadedDipTrackerDiagnostics({
       currentRepetition.reason = incorrectReturnReason;
       currentRepetition.countTrace = resolvedCountTrace ?? {
         route: 'retorno-parcial',
+        source: 'respaldo-sin-traza', // TEMP-DIAGNOSTICO
         trackerPhase: previousTracker.phase,
         descentDecision: null,
       };
@@ -9210,6 +9211,7 @@ function applyUploadedDipTrackerDiagnostics({
       if (repetitionCounted) {
         currentRepetition.countTrace = resolvedCountTrace ?? {
           route: 'otra',
+          source: 'respaldo-sin-traza', // TEMP-DIAGNOSTICO
           trackerPhase: previousTracker.phase,
           descentDecision: null,
         };
