@@ -11470,6 +11470,7 @@ function Home() {
         && uploadedDipElbowOrWristHeldByBoneLength
         && uploadedDipHasOnlyBoneLengthHeldPoints
         && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
+        && repetitionAngle !== null
         && rawMediaPipeElbowAngle2D !== null,
       );
 
@@ -12552,6 +12553,7 @@ function Home() {
                 : true,
           uploadedDipRawPhaseRescue,
         );
+        let uploadedDipCimaLogWritten = false;
         // TEMP-DIAGNOSTICO: impide que una fase "arriba" cierre el retorno si la curva cruda no confirma su máximo.
         if (
           isUploadedDipVideo
@@ -12658,11 +12660,13 @@ function Home() {
             };
             exerciseRepUpdate.completedEndpointAngle = endpointAngle;
           };
-          let uploadedDipCimaLogWritten = false;
 
           if (uploadedDipBottomEvidenceDetected) {
             const evidenceReachedTop = exerciseRepUpdate.tracker.phase === 'inicio'
-              || repetitionAngle! >= repetitionConfig.startMinAngle;
+              || (
+                !uploadedDipRawPhaseRescue
+                && repetitionAngle! >= repetitionConfig.startMinAngle
+              );
             const evidenceReturnAllowed = evidenceReachedTop
               && uploadedDipRawPeakComparisonPassed;
             if (evidenceReturnAllowed) {
@@ -12710,10 +12714,12 @@ function Home() {
                 repetitionAngle,
               );
             }
-            segmentation.postBottomMaximumAngle = Math.max(
-              segmentation.postBottomMaximumAngle ?? repetitionAngle,
-              repetitionAngle,
-            );
+            if (!uploadedDipRawPhaseRescue) {
+              segmentation.postBottomMaximumAngle = Math.max(
+                segmentation.postBottomMaximumAngle ?? repetitionAngle,
+                repetitionAngle,
+              );
+            }
             if (
               rawMediaPipeElbowAngle2D !== null
               && (uploadedDipRawElbowScore ?? 0) >= CAMERA_POINT_MIN_SCORE
@@ -12756,6 +12762,7 @@ function Home() {
             if (
               !trackerReachedReturn
               && rawAngleReachedReturn
+              && !uploadedDipRawPhaseRescue
               && uploadedDipRawPeakComparisonPassed
               && previousExerciseRepTracker.phase === 'final'
             ) {
@@ -13076,7 +13083,7 @@ function Home() {
             + ` | ángulo bruto=${formatUploadedPushupDiagnosticAngle(repetitionAngle)}`
             + ` | ángulo suavizado=${formatUploadedPushupDiagnosticAngle(exerciseRepUpdate.smoothedAngle)}`
             + ` | máx post-fondo=${formatUploadedPushupDiagnosticAngle(postBottomRawPeak)}`
-            + ` | fondo detectado=${repetitionAngle >= 70 && repetitionAngle <= 105}`,
+            + ` | fondo detectado=${repetitionAngle! >= 70 && repetitionAngle! <= 105}`,
           );
         }
         setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
@@ -13659,12 +13666,6 @@ function Home() {
         const diagnosticIndexes = measurementSide
           ? sideKeypoints[measurementSide]
           : null;
-        // TEMP-DIAGNOSTICO: ángulo 2D desde el resultado MediaPipe anterior a filtro óseo y retención.
-        const rawMediaPipeElbowAngle2D = calculateRepetitionAngle(
-          'fondos',
-          detectedPose?.keypoints,
-          measurementSide,
-        );
         // TEMP-DIAGNOSTICO: obtiene las coordenadas 3D MediaPipe sin retención ni filtro óseo.
         const rawMediaPipeLandmark = (key: 'shoulder' | 'elbow' | 'wrist') => {
           const index = diagnosticIndexes?.[key];
