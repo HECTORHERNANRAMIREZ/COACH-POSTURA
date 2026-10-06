@@ -3023,11 +3023,10 @@ function advanceExerciseRepTracker(
   // TEMP-DIAGNOSTICO: permite decidir solo la fase con un ángulo externo, sin guardarlo como medición.
   phaseOnly = false,
 ): ExerciseRepTrackerUpdate {
-  const samples = phaseOnly
-    ? tracker.samples
-    : [...tracker.samples, rawAngle].slice(
-        -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
-      );
+  // TEMP-DIAGNOSTICO: phaseOnly solo llega desde uploadedDipRawPhaseRescue; incluirlo refresca la ventana sin guardarlo como medición.
+  const samples = [...tracker.samples, rawAngle].slice(
+    -(config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES),
+  );
   const smoothedAngle = median(samples) ?? rawAngle;
   const postBottomRawSamples = config.postBottomRawPeakForReturn
     && tracker.phase === 'final'
@@ -12459,6 +12458,9 @@ function Home() {
       let uploadedDipRawPeakComparisonAvailable = false;
       let uploadedDipRawPeakComparisonPassed = true;
       let uploadedDipRawPeakBlockedReturnForFrame = false;
+      // TEMP-DIAGNOSTICO: permite compensación solo con máximos de esta subida y ruido medido.
+      let uploadedDipMaximumFilteredAngleAtFrame: number | null = null;
+      let uploadedDipNoiseCompensatedReturnForFrame = false;
       if (
         exerciseStartedRef.current
         && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
@@ -12533,6 +12535,28 @@ function Home() {
                 && rawMediaPipeElbowAngle2D! >= uploadedDipRawPeakAtFrame!
                   - uploadedDipRawAngleReturnTolerance!
               );
+          // TEMP-DIAGNOSTICO: el crudo debe alcanzar el umbral configurado; el filtrado puede quedar por debajo hasta la tolerancia medida.
+          uploadedDipMaximumFilteredAngleAtFrame
+            = uploadedDipVideoSegmentation.postBottomMaximumFilteredAngle;
+          if (
+            !frameMeasurementBlocked
+            && repetitionAngle !== null
+          ) {
+            uploadedDipMaximumFilteredAngleAtFrame = Math.max(
+              uploadedDipMaximumFilteredAngleAtFrame ?? repetitionAngle,
+              repetitionAngle,
+            );
+          }
+          uploadedDipNoiseCompensatedReturnForFrame = (
+            previousExerciseRepTracker.phase === 'final'
+            && uploadedDipRawPeakAtFrame !== null
+            && uploadedDipRawPeakAtFrame >= repetitionConfig.startMinAngle
+            && uploadedDipRawAngleReturnTolerance !== null
+            && uploadedDipMaximumFilteredAngleAtFrame !== null
+            && uploadedDipMaximumFilteredAngleAtFrame < repetitionConfig.startMinAngle
+            && uploadedDipMaximumFilteredAngleAtFrame
+              >= repetitionConfig.startMinAngle - uploadedDipRawAngleReturnTolerance
+          );
         }
         const exerciseRepUpdate = advanceExerciseRepTracker(
           previousExerciseRepTracker,
@@ -12560,6 +12584,7 @@ function Home() {
           && previousExerciseRepTracker.phase === 'final'
           && exerciseRepUpdate.tracker.phase === 'inicio'
           && !uploadedDipRawPeakComparisonPassed
+          && !uploadedDipNoiseCompensatedReturnForFrame
         ) {
           uploadedDipRawPeakBlockedReturnForFrame = true;
           exerciseRepUpdate.tracker = {
@@ -12761,6 +12786,14 @@ function Home() {
             const rawAngleReachedReturn = repetitionAngle >= repetitionConfig.startMinAngle;
             if (
               !trackerReachedReturn
+              && uploadedDipNoiseCompensatedReturnForFrame
+              && previousExerciseRepTracker.phase === 'final'
+            ) {
+              // TEMP-DIAGNOSTICO: completa el retorno por máximo crudo y margen de ruido estable.
+              forceUploadedDipReturn();
+            }
+            if (
+              exerciseRepUpdate.tracker.phase !== 'inicio'
               && rawAngleReachedReturn
               && !uploadedDipRawPhaseRescue
               && uploadedDipRawPeakComparisonPassed
@@ -12790,6 +12823,8 @@ function Home() {
               // TEMP-DIAGNOSTICO: registra el máximo y el veredicto de cada subida desde el fondo.
               const curveDecision = uploadedDipRawPeakBlockedReturnForFrame
                 ? 'filtrada-superó-umbral; MediaPipe-no-alcanzó-su-máximo-con-tolerancia'
+                : uploadedDipNoiseCompensatedReturnForFrame
+                  ? 'máximo-crudo-alcanzó-umbral; máximo-filtrado-dentro-de-tolerancia-por-debajo'
                 : returnCompletedThisFrame
                   ? uploadedDipRawPhaseRescue
                     ? 'MediaPipe-cruda-para-fase-y-comparación-de-máximo'
@@ -12802,14 +12837,22 @@ function Home() {
                 + `maxBrutoMediaPipe=${formatUploadedDipAngle(segmentation.postBottomMaximumRawMediaPipeAngle)} `
                 + `maxFiltrado=${formatUploadedDipAngle(segmentation.postBottomMaximumFilteredAngle)} `
                 + `toleranciaRuido=${formatUploadedDipAngle(uploadedDipRawAngleReturnTolerance)} `
+                + `origenTolerancia=${uploadedDipRawAngleReturnTolerance !== null
+                  ? 'tramos-estables-del-mismo-video'
+                  : 'no-medida; regla-actual'} `
                 + `umbralRetorno=${repetitionConfig.startMinAngle.toFixed(1)}° `
+                + `condicionRetornoRuido=${uploadedDipNoiseCompensatedReturnForFrame
+                  ? 'crudo>=umbral-y-filtrado>=umbral-tolerancia'
+                  : 'no-aplicada'} `
                 + `umbralSubidaRelativa=${UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES.toFixed(1)}° `
                 + `comparacionCruda=${uploadedDipRawPeakComparisonAvailable
                   ? uploadedDipRawPeakComparisonPassed ? 'pasa' : 'no-pasa'
                   : 'no-disponible'} `
                 + `curvaDecisora=${curveDecision} `
                 + `decision=${returnCompletedThisFrame
-                  ? uploadedDipReturnForcedForFrame
+                  ? uploadedDipNoiseCompensatedReturnForFrame
+                    ? 'retorno-completado-por-toleranciaRuido'
+                    : uploadedDipReturnForcedForFrame
                     ? 'retorno-forzado-completado'
                     : 'retorno-completado'
                   : uploadedDipRawPeakBlockedReturnForFrame
@@ -12863,6 +12906,8 @@ function Home() {
           // TEMP-DIAGNOSTICO: cubre retornos decididos solo por fase cruda cuando no hubo ángulo medible.
           const curveDecision = uploadedDipRawPeakBlockedReturnForFrame
             ? 'MediaPipe-cruda-no-alcanzó-su-máximo-con-tolerancia'
+            : uploadedDipNoiseCompensatedReturnForFrame
+              ? 'máximo-crudo-alcanzó-umbral; máximo-filtrado-dentro-de-tolerancia-por-debajo'
             : uploadedDipRawPhaseRescue
               ? 'MediaPipe-cruda-para-fase-y-comparación-de-máximo'
               : uploadedDipRawPeakComparisonAvailable
@@ -12878,6 +12923,13 @@ function Home() {
               uploadedDipVideoSegmentation.postBottomMaximumFilteredAngle,
             )} `
             + `toleranciaRuido=${formatUploadedDipAngle(uploadedDipRawAngleReturnTolerance)} `
+            + `umbralRetorno=${repetitionConfig.startMinAngle.toFixed(1)}° `
+            + `origenTolerancia=${uploadedDipRawAngleReturnTolerance !== null
+              ? 'tramos-estables-del-mismo-video'
+              : 'no-medida; regla-actual'} `
+            + `condicionRetornoRuido=${uploadedDipNoiseCompensatedReturnForFrame
+              ? 'crudo>=umbral-y-filtrado>=umbral-tolerancia'
+              : 'no-aplicada'} `
             + `comparacionCruda=${uploadedDipRawPeakComparisonAvailable
               ? uploadedDipRawPeakComparisonPassed ? 'pasa' : 'no-pasa'
               : 'no-disponible'} `
@@ -12910,6 +12962,10 @@ function Home() {
           logUploadedDipDiagnostic(
             `[fondos-suavizado] t=${video.currentTime.toFixed(3)}s `
             + `ventana=${JSON.stringify(exerciseRepUpdate.tracker.samples)} `
+            + `ventanaRecibioCrudo=${uploadedDipRawPhaseRescue ? 'si' : 'no'} `
+            + `crudoEnVentana=${uploadedDipRawPhaseRescue
+              ? formatUploadedDipAngle(rawMediaPipeElbowAngle2D)
+              : 'n/a'} `
             + `resultado=${formatUploadedDipAngle(exerciseRepUpdate.smoothedAngle)} `
             + `fase=${exerciseRepUpdate.tracker.phase}`,
           );
