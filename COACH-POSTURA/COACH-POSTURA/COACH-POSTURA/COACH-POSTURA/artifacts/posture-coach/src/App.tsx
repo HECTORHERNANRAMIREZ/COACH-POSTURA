@@ -651,6 +651,13 @@ type UploadedDipDiagnosticFrame = {
   moment: UploadedDipDiagnosticMoment;
   live: UploadedDipLiveSnapshot;
 };
+// TEMP-DIAGNOSTICO: desplazamiento relativo medido solo con puntos 2D crudos de fondos subidos.
+type UploadedDipRawShoulderWristSample = {
+  shoulderWristVerticalGap: number;
+  normalizedPosition: number;
+  referenceLength: number;
+  referenceSource: 'torso-2D' | 'brazo-superior-2D';
+};
 type UploadedDipVideoSegmentationState = {
   boneLengthBlockedFrames: number;
   boneLengthCandidateReady: boolean;
@@ -666,6 +673,14 @@ type UploadedDipVideoSegmentationState = {
   postBottomMaximumRawMediaPipeAngle: number | null;
   postBottomMaximumFilteredAngle: number | null;
   relativeRiseLogged: boolean;
+  // TEMP-DIAGNOSTICO: evaluación del hombro respecto de la muñeca durante el descenso.
+  descentStartShoulderWristGap: number | null;
+  descentReferenceLength: number | null;
+  descentReferenceSource: UploadedDipRawShoulderWristSample['referenceSource'] | null;
+  descentMaximumNormalizedDrop: number | null;
+  descentHasRequiredData: boolean;
+  descentDecisionEvaluated: boolean;
+  descentIsDip: boolean | null;
 };
 type UploadedDipRepetitionMeasurement = {
   repetition: number;
@@ -709,6 +724,14 @@ type UploadedDipDiagnostics = {
   // TEMP-DIAGNOSTICO: diferencias de ángulo crudo solo en segmentos estables del video.
   stableElbowAngleChanges: number[];
   previousStableElbowAngle: number | null;
+  // TEMP-DIAGNOSTICO: dispersión de la posición hombro-muñeca 2D normalizada en tramos estables.
+  stableShoulderWristNormalizedPositions: number[];
+  stableShoulderWristReferenceSource: UploadedDipRawShoulderWristSample['referenceSource'] | null;
+  stableShoulderWristSide: PoseSide | null;
+  latestStableShoulderWrist: {
+    side: PoseSide;
+    sample: UploadedDipRawShoulderWristSample;
+  } | null;
 };
 
 // TEMP-DIAGNOSTICO: estado ilimitado del archivo de líneas y métricas de la pasada activa.
@@ -8450,6 +8473,54 @@ function createUploadedDipVideoSegmentationState(): UploadedDipVideoSegmentation
     postBottomMaximumRawMediaPipeAngle: null,
     postBottomMaximumFilteredAngle: null,
     relativeRiseLogged: false,
+    // TEMP-DIAGNOSTICO: estado del descenso normalizado, independiente de la segmentación ósea.
+    descentStartShoulderWristGap: null,
+    descentReferenceLength: null,
+    descentReferenceSource: null,
+    descentMaximumNormalizedDrop: null,
+    descentHasRequiredData: false,
+    descentDecisionEvaluated: false,
+    descentIsDip: null,
+  };
+}
+
+// TEMP-DIAGNOSTICO: obtiene señal vertical hombro-muñeca y escala corporal en el mismo plano 2D.
+function getUploadedDipRawShoulderWristSample(
+  keypoints: PosePoint[] | undefined,
+  side: PoseSide | null,
+): UploadedDipRawShoulderWristSample | null {
+  if (!keypoints || !side) return null;
+  const indexes = sideKeypoints[side];
+  const shoulder = keypoints[indexes.shoulder];
+  const wrist = keypoints[indexes.wrist];
+  const hip = keypoints[indexes.hip];
+  const elbow = keypoints[indexes.elbow];
+  const isUsable = (point: PosePoint | undefined): point is PosePoint => Boolean(
+    point
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y)
+    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+  );
+  if (!isUsable(shoulder) || !isUsable(wrist)) return null;
+
+  let referenceLength = 0;
+  let referenceSource: UploadedDipRawShoulderWristSample['referenceSource'] | null = null;
+  if (isUsable(hip)) {
+    referenceLength = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+    referenceSource = 'torso-2D';
+  }
+  if (!(referenceLength > 0) && isUsable(elbow)) {
+    referenceLength = Math.hypot(shoulder.x - elbow.x, shoulder.y - elbow.y);
+    referenceSource = 'brazo-superior-2D';
+  }
+  if (!(referenceLength > 0) || referenceSource === null) return null;
+
+  const shoulderWristVerticalGap = shoulder.y - wrist.y;
+  return {
+    shoulderWristVerticalGap,
+    normalizedPosition: shoulderWristVerticalGap / referenceLength,
+    referenceLength,
+    referenceSource,
   };
 }
 
@@ -8460,6 +8531,21 @@ function estimateUploadedDipRawAngleTolerance(diagnostics: UploadedDipDiagnostic
   if (medianChange === null) return null;
   const absoluteDeviations = diagnostics.stableElbowAngleChanges.map(
     (change) => Math.abs(change - medianChange),
+  );
+  const medianAbsoluteDeviation = median(absoluteDeviations);
+  return medianAbsoluteDeviation === null
+    ? null
+    : 3 * 1.4826 * medianAbsoluteDeviation;
+}
+
+// TEMP-DIAGNOSTICO: deriva el umbral espacial de la dispersión estable del mismo video.
+function estimateUploadedDipShoulderWristNoiseTolerance(diagnostics: UploadedDipDiagnostics) {
+  const positions = diagnostics.stableShoulderWristNormalizedPositions;
+  if (positions.length < 3) return null;
+  const medianPosition = median(positions);
+  if (medianPosition === null) return null;
+  const absoluteDeviations = positions.map(
+    (position) => Math.abs(position - medianPosition),
   );
   const medianAbsoluteDeviation = median(absoluteDeviations);
   return medianAbsoluteDeviation === null
@@ -8519,6 +8605,11 @@ function createUploadedDipDiagnostics(): UploadedDipDiagnostics {
     // TEMP-DIAGNOSTICO: ruido calibrado por separado en la pasada de conteo de este video.
     stableElbowAngleChanges: [],
     previousStableElbowAngle: null,
+    // TEMP-DIAGNOSTICO: dispersión espacial estable y referencia corporal usadas por fondos subidos.
+    stableShoulderWristNormalizedPositions: [],
+    stableShoulderWristReferenceSource: null,
+    stableShoulderWristSide: null,
+    latestStableShoulderWrist: null,
   };
 }
 
@@ -11447,6 +11538,19 @@ function Home() {
       const uploadedDipRawElbowScore = uploadedDipDiagnosticIndexes
         ? detectedPose?.keypoints?.[uploadedDipDiagnosticIndexes.elbow]?.score ?? null
         : null;
+      // TEMP-DIAGNOSTICO: señal 2D cruda y longitud corporal del mismo plano, solo para fondos subidos.
+      const uploadedDipRawShoulderWristSample = isUploadedDipVideo
+        ? getUploadedDipRawShoulderWristSample(detectedPose?.keypoints, measurementSide)
+        : null;
+      // TEMP-DIAGNOSTICO: si falta señal en cualquier cuadro observado del descenso, deja la regla actual.
+      if (
+        isUploadedDipVideo
+        && uploadedDipVideoSegmentation
+        && exerciseRepTrackerRef.current.phase === 'en movimiento'
+        && !uploadedDipRawShoulderWristSample
+      ) {
+        uploadedDipVideoSegmentation.descentHasRequiredData = false;
+      }
       const uploadedDipElbowOrWristHeldByBoneLength = Boolean(
         uploadedDipDiagnosticIndexes
         && (
@@ -11502,7 +11606,36 @@ function Home() {
           repetitionConfig.startMaxAngle,
         ),
       );
+      // TEMP-DIAGNOSTICO: aprende dispersión espacial solo durante los tramos estables existentes.
+      const uploadedDipShoulderWristNoiseSampleIsStable = Boolean(
+        uploadedDipRawAngleNoiseSampleIsStable
+        && uploadedDipRawShoulderWristSample
+        && measurementSide,
+      );
       if (uploadedDipDiagnosticsForNoise) {
+        if (
+          uploadedDipShoulderWristNoiseSampleIsStable
+          && uploadedDipRawShoulderWristSample
+          && measurementSide
+        ) {
+          if (
+            uploadedDipDiagnosticsForNoise.stableShoulderWristReferenceSource
+              !== uploadedDipRawShoulderWristSample.referenceSource
+            || uploadedDipDiagnosticsForNoise.stableShoulderWristSide !== measurementSide
+          ) {
+            uploadedDipDiagnosticsForNoise.stableShoulderWristNormalizedPositions = [];
+            uploadedDipDiagnosticsForNoise.stableShoulderWristReferenceSource
+              = uploadedDipRawShoulderWristSample.referenceSource;
+            uploadedDipDiagnosticsForNoise.stableShoulderWristSide = measurementSide;
+          }
+          uploadedDipDiagnosticsForNoise.stableShoulderWristNormalizedPositions.push(
+            uploadedDipRawShoulderWristSample.normalizedPosition,
+          );
+          uploadedDipDiagnosticsForNoise.latestStableShoulderWrist = {
+            side: measurementSide,
+            sample: uploadedDipRawShoulderWristSample,
+          };
+        }
         if (
           uploadedDipRawAngleNoiseSampleIsStable
           && rawMediaPipeElbowAngle2D !== null
@@ -11592,6 +11725,8 @@ function Home() {
       let uploadedDipIncorrectReturnReason: 'no extendió arriba' | null = null;
       // TEMP-DIAGNOSTICO: marca retornos que la segmentación fuerza fuera del tracker.
       let uploadedDipReturnForcedForFrame = false;
+      // TEMP-DIAGNOSTICO: marca el descarte sin correcto/incorrecto de un movimiento que no es fondo.
+      let uploadedDipNonDipDiscardedForFrame = false;
       if (isUploadedDipVideo && uploadedDipSearchActiveRef.current) {
         const uploadedDipSearchSidePoints = measurementSide
           ? [
@@ -12608,6 +12743,33 @@ function Home() {
             segmentation.bottomMinimumAngle = uploadedDipRawPhaseRescue
               ? null
               : repetitionAngle;
+            // TEMP-DIAGNOSTICO: inicia el descenso desde el último punto estable de arriba, si existe.
+            const stableShoulderWristStart
+              = uploadedDipDiagnosticsRef.current?.latestStableShoulderWrist;
+            const descentStartSample = stableShoulderWristStart?.side === measurementSide
+              ? stableShoulderWristStart.sample
+              : uploadedDipRawShoulderWristSample;
+            segmentation.descentStartShoulderWristGap
+              = descentStartSample?.shoulderWristVerticalGap ?? null;
+            segmentation.descentReferenceLength
+              = descentStartSample?.referenceLength ?? null;
+            segmentation.descentReferenceSource
+              = descentStartSample?.referenceSource ?? null;
+            segmentation.descentHasRequiredData = Boolean(
+              descentStartSample && uploadedDipRawShoulderWristSample,
+            );
+            segmentation.descentMaximumNormalizedDrop
+              = segmentation.descentHasRequiredData
+                && segmentation.descentStartShoulderWristGap !== null
+                && segmentation.descentReferenceLength !== null
+                ? Math.max(
+                    0,
+                    (
+                      uploadedDipRawShoulderWristSample!.shoulderWristVerticalGap
+                      - segmentation.descentStartShoulderWristGap
+                    ) / segmentation.descentReferenceLength,
+                  )
+                : null;
           } else if (
             previousExerciseRepTracker.phase === 'en movimiento'
             && repetitionAngle !== null
@@ -12617,6 +12779,29 @@ function Home() {
               segmentation.bottomMinimumAngle ?? repetitionAngle,
               repetitionAngle,
             );
+          }
+          // TEMP-DIAGNOSTICO: conserva el mayor descenso vertical relativo observado hasta el fondo.
+          if (
+            !dipVideoTrackerStarted
+            && previousExerciseRepTracker.phase === 'en movimiento'
+            && !segmentation.descentDecisionEvaluated
+          ) {
+            if (
+              !uploadedDipRawShoulderWristSample
+              || segmentation.descentStartShoulderWristGap === null
+              || segmentation.descentReferenceLength === null
+            ) {
+              segmentation.descentHasRequiredData = false;
+            } else if (segmentation.descentHasRequiredData) {
+              const normalizedDrop = (
+                uploadedDipRawShoulderWristSample.shoulderWristVerticalGap
+                - segmentation.descentStartShoulderWristGap
+              ) / segmentation.descentReferenceLength;
+              segmentation.descentMaximumNormalizedDrop = Math.max(
+                segmentation.descentMaximumNormalizedDrop ?? normalizedDrop,
+                normalizedDrop,
+              );
+            }
           }
 
           const confirmsBottomByEvidence = (
@@ -12684,6 +12869,29 @@ function Home() {
               currentRepCorrect: true,
             };
             exerciseRepUpdate.completedEndpointAngle = endpointAngle;
+          };
+
+          // TEMP-DIAGNOSTICO: descarta el movimiento sin alterar el conteo correcto/incorrecto.
+          const discardUploadedDipNonDipReturn = () => {
+            uploadedDipNonDipDiscardedForFrame = true;
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              phase: 'esperando inicio',
+              repetitions: previousExerciseRepTracker.repetitions,
+              goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+              event: null,
+            };
+            exerciseRepUpdate.completedEndpointAngle = null;
+            const descentDiagnostics = uploadedDipDiagnosticsRef.current;
+            if (descentDiagnostics) {
+              descentDiagnostics.currentRepetition = null;
+            }
+            logUploadedDipDiagnostic(
+              `[fondos-descenso] `
+              + `desplazamientoNormalizado=${segmentation.descentMaximumNormalizedDrop?.toFixed(4) ?? '—'} `
+              + `referencia=${segmentation.descentReferenceSource ?? 'no-disponible'} `
+              + `decision=descartado-movimiento-no-es-un-fondo`,
+            );
           };
 
           if (uploadedDipBottomEvidenceDetected) {
@@ -12763,6 +12971,60 @@ function Home() {
             }
           }
 
+          // TEMP-DIAGNOSTICO: valida hombro-muñeca al tocar fondo; sin datos/ruido medible conserva la regla actual.
+          const uploadedDipDescentReachedBottom = uploadedDipBottomEvidenceDetected
+            || (
+              exerciseRepUpdate.tracker.phase === 'final'
+              && previousExerciseRepTracker.phase !== 'final'
+            );
+          if (
+            segmentation.bottomReached
+            && uploadedDipDescentReachedBottom
+            && !segmentation.descentDecisionEvaluated
+          ) {
+            const descentDiagnostics = uploadedDipDiagnosticsRef.current;
+            const descentNoiseTolerance = (
+              descentDiagnostics
+              && measurementSide
+              && descentDiagnostics.stableShoulderWristSide === measurementSide
+              && descentDiagnostics.stableShoulderWristReferenceSource
+                === segmentation.descentReferenceSource
+            )
+              ? estimateUploadedDipShoulderWristNoiseTolerance(descentDiagnostics)
+              : null;
+            const descentCanBeEvaluated = segmentation.descentHasRequiredData
+              && segmentation.descentMaximumNormalizedDrop !== null
+              && descentNoiseTolerance !== null;
+            segmentation.descentIsDip = descentCanBeEvaluated
+              ? segmentation.descentMaximumNormalizedDrop! > descentNoiseTolerance!
+              : null;
+            segmentation.descentDecisionEvaluated = true;
+            logUploadedDipDiagnostic(
+              `[fondos-descenso] `
+              + `desplazamientoNormalizado=${segmentation.descentMaximumNormalizedDrop?.toFixed(4) ?? '—'} `
+              + `ruidoEstable=${descentNoiseTolerance?.toFixed(4) ?? 'no-medido'} `
+              + `origenRuido=${descentNoiseTolerance !== null
+                ? 'tramos-estables-del-mismo-video'
+                : 'no-medido; regla-actual'} `
+              + `referencia=${segmentation.descentReferenceSource ?? 'no-disponible'} `
+              + `decision=${segmentation.descentIsDip === null
+                ? 'sin-datos-o-ruido; regla-actual'
+                : segmentation.descentIsDip
+                  ? 'descenso-compatible-con-fondo'
+                  : 'movimiento-no-es-un-fondo'}`,
+            );
+          }
+
+          // TEMP-DIAGNOSTICO: retira solo retornos tras descensos medidos como no-fondo.
+          if (
+            segmentation.bottomReached
+            && segmentation.descentDecisionEvaluated
+            && segmentation.descentIsDip === false
+            && exerciseRepUpdate.tracker.phase === 'inicio'
+          ) {
+            discardUploadedDipNonDipReturn();
+          }
+
           if (
             segmentation.bottomReached
             && segmentation.bottomMinimumAngle !== null
@@ -12806,6 +13068,7 @@ function Home() {
             const partialReturnReversed = (
               previousExerciseRepTracker.phase === 'final'
               && !returnCompleted
+              && !uploadedDipNonDipDiscardedForFrame // TEMP-DIAGNOSTICO: omite la reversión del movimiento descartado.
               && !rawAngleReachedReturn
               && !uploadedDipRawPhaseRescue
               && segmentation.relativeRiseLogged
