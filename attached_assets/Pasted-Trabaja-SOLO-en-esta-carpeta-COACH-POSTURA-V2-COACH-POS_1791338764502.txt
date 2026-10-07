@@ -1,0 +1,43 @@
+Trabaja SOLO en esta carpeta:
+COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+
+TAREA: SOLO LECTURA. NO modifiques archivos, NO ejecutes pnpm install, NO reinicies
+servidor ni workflows, NO hagas commits. Usa archivo:línea y tablas cortas; no pegues
+bloques largos de código. No uses números de ningún video concreto. Si algo no lo
+encuentras, dilo en vez de suponerlo.
+
+OBJETIVO: entender cómo SENTADILLA maneja hoy un VIDEO SUBIDO, para decidir si se le puede
+añadir una pasada previa de búsqueda del cuerpo como la de flexiones.
+
+Responde en estas secciones:
+
+1. FLUJO ACTUAL DE SENTADILLA CON VIDEO SUBIDO
+   Paso a paso desde que se elige el archivo hasta que termina: qué función hace cada paso
+   (archivo:línea), velocidad de reproducción, cuadros por segundo de análisis, y si hay
+   calentamiento del primer cuadro.
+
+2. PUNTOS Y GUÍA DE CÁMARA
+   Qué puntos usa el tracker de sentadilla y qué lado de medición elige. Qué exige su guía
+   de cámara para dar "lista" (puntos, confianza mínima, vista lateral) y cómo comprueba la
+   vista lateral. Dime si esa guía se puede usar tal cual como criterio de "cuerpo
+   encontrado" o qué le faltaría.
+
+3. CUÁNDO EMPIEZA A CONTAR HOY
+   Qué condiciones debe cumplir un cuadro para que el tracker lo use, cuántos cuadros
+   estables espera, y qué estado inicial tiene el tracker. Si el video arranca de pie o ya
+   en cuclillas, qué pasa con la primera repetición.
+
+4. DÓNDE SE DECIDE POR EJERCICIO
+   Qué comparaciones con 'flexiones' deciden el flujo de dos pasadas (startCamera,
+   scheduler, processFrame, startUploadedPushupPlayback, handleUploadedVideoEnded) y cuáles
+   de ellas habría que tocar para incluir sentadilla. Indica cuáles son genéricas y cuáles
+   están atadas a los puntos de flexiones.
+
+5. LOGS
+   Qué líneas de log emite sentadilla hoy y si existe alguna función de descarga.
+
+6. RIESGOS
+   Qué dificultades ves para añadir la pasada de búsqueda sin afectar a flexiones, fondos,
+   dominadas ni la cámara en vivo de sentadilla.
+
+No propongas cambios todavía.
