@@ -1,0 +1,39 @@
+Trabaja SOLO en esta carpeta:
+proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+No ejecutes pnpm install, no toques package.json ni el lockfile, no reinicies el servidor
+ni workflows, no hagas commits. Para verificar usa "pnpm run typecheck" dentro de esa carpeta
+(debe dar exit=0).
+
+FASE 2 DE 5: DETECTOR PASIVO DE CUERPO EN SENTADILLA. SOLO OBSERVA.
+
+REGLA PRINCIPAL: este cambio NO debe alterar ninguna decisión. No cambies el tracker de
+sentadilla, sus fases, umbrales ni el conteo; no pauses ni reinicies el video; no cambies
+velocidad ni cuadros por segundo; no cambies mensajes al usuario; no toques flexiones,
+fondos ni dominadas. Todo lo nuevo va marcado con // TEMP-DIAGNOSTICO y solo lee estado.
+Solo para VIDEO SUBIDO de sentadilla (no cámara en vivo).
+
+QUÉ AÑADIR:
+1. Un detector pasivo que, cuadro a cuadro, evalúe "cuerpo válido" así: los tres puntos de
+   sentadilla del lado de medición (cadera, rodilla, tobillo) FRESCOS (no retenidos), con la
+   confianza mínima de cámara que ya existe, guía de cámara lista, y estado de vista que
+   NO sea "bad". Anota en el log el estado de vista (lateral / aceptable / bad / unknown).
+2. Acumula tiempo de video válido continuo, tolerando huecos cortos (usa una constante
+   propia nueva, con nombre claro; propón un valor razonable y dime cuál). Un seek hacia
+   atrás o un hueco mayor reinicia el acumulado.
+3. En lugar de un único umbral de duración, usa una lista de duraciones candidatas como
+   constante nueva (por ejemplo 0.5 s, 1 s, 2 s). La primera vez que el acumulado alcance
+   cada candidata, registra una línea [sentadilla-deteccion] con: duración candidata,
+   segundo del video, contador de repeticiones y fase actuales del tracker de sentadilla
+   (leídos de squatTrackerRef), y estado de vista.
+4. Una línea [sentadilla-invalido] cuando un cuadro no es válido, con el MOTIVO (punto no
+   fresco, confianza baja, guía no lista, vista mala), limitada para no inundar (por
+   ejemplo, una línea cada ~0.5 s de video).
+5. Una línea [sentadilla-fin] cuando termina el video, con duración total, segundos válidos
+   acumulados, y qué candidatas llegaron a cumplirse y en qué segundo.
+6. Un buffer limitado en tamaño con esas líneas y window.descargarLogSentadillas() que
+   descargue un .txt, igual que window.descargarLogFondos(). Debe funcionar solo con video
+   subido de sentadilla; para el resto de ejercicios no debe registrar nada.
+
+RESPUESTA (compacta): archivo:línea de cada cambio, lista de constantes nuevas con su
+valor, confirmación de typecheck exit=0, y confirmación explícita de que NO cambió el
+conteo, el tracker, la reproducción ni ningún otro ejercicio.

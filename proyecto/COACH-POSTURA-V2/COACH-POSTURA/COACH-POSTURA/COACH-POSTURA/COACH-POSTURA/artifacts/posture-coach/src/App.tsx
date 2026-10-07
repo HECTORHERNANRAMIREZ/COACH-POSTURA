@@ -171,6 +171,16 @@ const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS
 const UPLOADED_DIP_TIMELINE_LOG_INTERVAL_SECONDS = 0.2;
 // TEMP-DIAGNOSTICO: máximo aproximado del registro descargable para contener su tamaño.
 const UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS = 1_500_000;
+// TEMP-DIAGNOSTICO: permite puentes breves entre cuadros válidos del video de sentadilla.
+const UPLOADED_SQUAT_VALIDITY_GAP_TOLERANCE_SECONDS = 0.5;
+// TEMP-DIAGNOSTICO: hitos de duración para observar la continuidad del cuerpo en sentadilla.
+const UPLOADED_SQUAT_VALIDITY_CANDIDATES_SECONDS = [0.5, 1, 2] as const;
+// TEMP-DIAGNOSTICO: limita los avisos de cuadro inválido por tiempo de video.
+const UPLOADED_SQUAT_INVALID_LOG_INTERVAL_SECONDS = 0.5;
+// TEMP-DIAGNOSTICO: evita confundir pequeñas variaciones temporales con un seek hacia atrás.
+const UPLOADED_SQUAT_BACKWARD_SEEK_THRESHOLD_SECONDS = 0.05;
+// TEMP-DIAGNOSTICO: límite fijo para el buffer descargable de sentadillas.
+const UPLOADED_SQUAT_DIAGNOSTIC_LOG_MAX_LINES = 5_000;
 // Las flexiones subidas usan más muestras por segundo de video en el fondo de cada repetición.
 const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
@@ -537,6 +547,20 @@ type SquatTracker = {
   event: SquatRepEvent;
   currentRepCounted: boolean;
 };
+// TEMP-DIAGNOSTICO: datos aislados de observación pasiva para un video subido de sentadillas.
+type UploadedSquatDiagnosticCandidate = {
+  durationSeconds: number;
+  videoSecond: number;
+};
+type UploadedSquatDiagnosticState = {
+  lastObservedVideoTime: number | null;
+  lastValidVideoTime: number | null;
+  continuousValidSeconds: number;
+  totalValidSeconds: number;
+  lastInvalidLogVideoTime: number | null;
+  reachedCandidates: UploadedSquatDiagnosticCandidate[];
+  finished: boolean;
+};
 type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
 type PullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
 type PullupPreparationStage = 'body-detection' | 'bar-preparation' | 'active';
@@ -877,6 +901,152 @@ function getUploadedDipDiagnosticLogText() {
     .slice(uploadedDipDiagnosticLogStartIndex)
     .filter(Boolean)
     .join('\n');
+}
+
+// TEMP-DIAGNOSTICO: crea el estado separado que no participa en el tracker de sentadillas.
+function createUploadedSquatDiagnosticState(): UploadedSquatDiagnosticState {
+  return {
+    lastObservedVideoTime: null,
+    lastValidVideoTime: null,
+    continuousValidSeconds: 0,
+    totalValidSeconds: 0,
+    lastInvalidLogVideoTime: null,
+    reachedCandidates: [],
+    finished: false,
+  };
+}
+
+// TEMP-DIAGNOSTICO: conserva un registro acotado, independiente del log de otros ejercicios.
+const uploadedSquatDiagnosticLogLines: string[] = [];
+function resetUploadedSquatDiagnosticLog() {
+  uploadedSquatDiagnosticLogLines.length = 0;
+}
+
+// TEMP-DIAGNOSTICO: añade una línea plana y limita el buffer descargable.
+function logUploadedSquatDiagnostic(message: string) {
+  const line = message.replace(/[\r\n]+/g, ' ');
+  uploadedSquatDiagnosticLogLines.push(line);
+  if (uploadedSquatDiagnosticLogLines.length > UPLOADED_SQUAT_DIAGNOSTIC_LOG_MAX_LINES) {
+    uploadedSquatDiagnosticLogLines.splice(
+      0,
+      uploadedSquatDiagnosticLogLines.length - UPLOADED_SQUAT_DIAGNOSTIC_LOG_MAX_LINES,
+    );
+  }
+  console.log(line);
+}
+
+// TEMP-DIAGNOSTICO: prepara solo el contenido generado durante videos subidos de sentadillas.
+function getUploadedSquatDiagnosticLogText() {
+  return uploadedSquatDiagnosticLogLines.join('\n');
+}
+
+// TEMP-DIAGNOSTICO: observa frescura, guía, vista y continuidad sin alterar ninguna decisión.
+function observeUploadedSquatBody(params: {
+  state: UploadedSquatDiagnosticState;
+  videoTimeSeconds: number;
+  measurementSide: PoseSide | null;
+  keypoints: PosePoint[] | undefined;
+  cameraGuideReady: boolean;
+  viewStatus: ViewAlignmentState['status'];
+  tracker: SquatTracker;
+}) {
+  const {
+    state,
+    measurementSide,
+    keypoints,
+    cameraGuideReady,
+    viewStatus,
+    tracker,
+  } = params;
+  const videoTime = Number.isFinite(params.videoTimeSeconds)
+    ? Math.max(0, params.videoTimeSeconds)
+    : 0;
+  const viewLabel = viewStatus === 'good'
+    ? 'lateral'
+    : viewStatus === 'acceptable'
+      ? 'aceptable'
+      : viewStatus === 'bad'
+        ? 'bad'
+        : 'unknown';
+
+  if (
+    state.lastObservedVideoTime !== null
+    && videoTime
+      < state.lastObservedVideoTime - UPLOADED_SQUAT_BACKWARD_SEEK_THRESHOLD_SECONDS
+  ) {
+    state.lastValidVideoTime = null;
+    state.continuousValidSeconds = 0;
+    state.lastInvalidLogVideoTime = null;
+    logUploadedSquatDiagnostic(
+      `[sentadilla-reset] motivo=seek-hacia-atras segundoVideo=${videoTime.toFixed(3)}`,
+    );
+  }
+  state.lastObservedVideoTime = videoTime;
+
+  const invalidReasons: string[] = [];
+  if (!measurementSide) {
+    invalidReasons.push('punto no fresco: lado de medición no disponible');
+  } else {
+    const indexes = sideKeypoints[measurementSide];
+    const measurementPoints = [
+      { label: 'cadera', point: keypoints?.[indexes.hip] },
+      { label: 'rodilla', point: keypoints?.[indexes.knee] },
+      { label: 'tobillo', point: keypoints?.[indexes.ankle] },
+    ];
+    measurementPoints.forEach(({ label, point }) => {
+      if (!point || point.held) invalidReasons.push(`punto no fresco:${label}`);
+      if (point && (point.score ?? 0) < CAMERA_POINT_MIN_SCORE) {
+        invalidReasons.push(
+          `confianza baja:${label}=${(point.score ?? 0).toFixed(2)}`,
+        );
+      }
+    });
+  }
+  if (!cameraGuideReady) invalidReasons.push('guía no lista');
+  if (viewStatus === 'bad') invalidReasons.push('vista mala');
+
+  if (!invalidReasons.length) {
+    const previousValidVideoTime = state.lastValidVideoTime;
+    if (previousValidVideoTime !== null) {
+      const elapsedSinceValidFrame = videoTime - previousValidVideoTime;
+      if (elapsedSinceValidFrame > UPLOADED_SQUAT_VALIDITY_GAP_TOLERANCE_SECONDS) {
+        state.continuousValidSeconds = 0;
+      } else if (elapsedSinceValidFrame > 0) {
+        state.continuousValidSeconds += elapsedSinceValidFrame;
+        state.totalValidSeconds += elapsedSinceValidFrame;
+      }
+    }
+    state.lastValidVideoTime = videoTime;
+
+    UPLOADED_SQUAT_VALIDITY_CANDIDATES_SECONDS.forEach((candidateSeconds) => {
+      const alreadyReached = state.reachedCandidates.some(
+        ({ durationSeconds }) => durationSeconds === candidateSeconds,
+      );
+      if (alreadyReached || state.continuousValidSeconds < candidateSeconds) return;
+      state.reachedCandidates.push({
+        durationSeconds: candidateSeconds,
+        videoSecond: videoTime,
+      });
+      logUploadedSquatDiagnostic(
+        `[sentadilla-deteccion] candidata=${candidateSeconds}s `
+        + `segundoVideo=${videoTime.toFixed(3)} `
+        + `repeticiones=${tracker.repetitions} fase=${tracker.phase} vista=${viewLabel}`,
+      );
+    });
+    return;
+  }
+
+  const shouldLogInvalid = state.lastInvalidLogVideoTime === null
+    || videoTime - state.lastInvalidLogVideoTime
+      >= UPLOADED_SQUAT_INVALID_LOG_INTERVAL_SECONDS
+    || videoTime < state.lastInvalidLogVideoTime;
+  if (shouldLogInvalid) {
+    state.lastInvalidLogVideoTime = videoTime;
+    logUploadedSquatDiagnostic(
+      `[sentadilla-invalido] segundoVideo=${videoTime.toFixed(3)} `
+      + `motivo=${invalidReasons.join('; ')} vista=${viewLabel}`,
+    );
+  }
 }
 
 // TEMP-DIAGNOSTICO: registra hitos una sola vez por pasada.
@@ -9926,6 +10096,10 @@ function Home() {
     rightAnkle: [],
   });
   const squatTrackerRef = useRef<SquatTracker>(createSquatTracker());
+  // TEMP-DIAGNOSTICO: estado separado de observación para videos subidos de sentadillas.
+  const uploadedSquatDiagnosticsRef = useRef<UploadedSquatDiagnosticState>(
+    createUploadedSquatDiagnosticState(),
+  );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
@@ -12385,6 +12559,21 @@ function Home() {
             detail: 'Mantén el control y vuelve a subir para completar la repetición.',
           });
         }
+      }
+      // TEMP-DIAGNOSTICO: observa únicamente cuadros de video subido de sentadillas.
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'sentadillas'
+      ) {
+        observeUploadedSquatBody({
+          state: uploadedSquatDiagnosticsRef.current,
+          videoTimeSeconds: diagnosticVideoTime ?? video.currentTime,
+          measurementSide,
+          keypoints: pose?.keypoints,
+          cameraGuideReady: frameCameraReady,
+          viewStatus: nextViewAlignment.status,
+          tracker: squatTrackerRef.current,
+        });
       }
       if (
         (selectedExerciseRef.current === 'dominadas'
@@ -14898,6 +15087,9 @@ function Home() {
     // TEMP-DIAGNOSTICO: limita los contadores a fondos subidos, sin tocar el scheduler.
     const isUploadedDipPlayback = inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'fondos';
+    // TEMP-DIAGNOSTICO: conserva el tiempo original del cuadro solo para observar sentadillas subidas.
+    const isUploadedSquatPlayback = inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'sentadillas';
     const uploadedVideoPlaybackHasEnded = (
       isUploadedPushupPlayback && uploadedPushupVideoEndedRef.current
     ) || (
@@ -14969,7 +15161,10 @@ function Home() {
       }
       processingFrameRef.current = true;
       // TEMP-DIAGNOSTICO: entrega el tiempo de video original solo para atribuir métricas.
-      void processFrame(timestamp, isUploadedDipPlayback ? sourceTime : undefined).finally(() => {
+      void processFrame(
+        timestamp,
+        isUploadedDipPlayback || isUploadedSquatPlayback ? sourceTime : undefined,
+      ).finally(() => {
         processingFrameRef.current = false;
       });
       logUploadedPushupFpsDiagnostics(sourceTime);
@@ -15092,6 +15287,32 @@ function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (inputMode !== 'video' || selectedExercise !== 'sentadillas') return;
+    // TEMP-DIAGNOSTICO: la descarga solo se publica mientras se analiza un video de sentadillas.
+    const diagnosticWindow = window as Window & {
+      descargarLogSentadillas?: () => void;
+    };
+    const downloadSquatLog = () => {
+      const content = getUploadedSquatDiagnosticLogText();
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'log-sentadillas.txt';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    diagnosticWindow.descargarLogSentadillas = downloadSquatLog;
+    return () => {
+      if (diagnosticWindow.descargarLogSentadillas === downloadSquatLog) {
+        delete diagnosticWindow.descargarLogSentadillas;
+      }
+    };
+  }, [inputMode, selectedExercise]);
 
   useEffect(() => {
     if (inputMode !== 'video' || selectedExercise !== 'fondos') return;
@@ -16500,6 +16721,11 @@ function Home() {
     if (file.type.startsWith('video/') && exercise === 'fondos') {
       uploadedDipDiagnosticsRef.current = createUploadedDipDiagnostics();
     }
+    if (file.type.startsWith('video/') && exercise === 'sentadillas') {
+      // TEMP-DIAGNOSTICO: cada video de sentadillas inicia un registro aislado.
+      resetUploadedSquatDiagnosticLog();
+      uploadedSquatDiagnosticsRef.current = createUploadedSquatDiagnosticState();
+    }
     uploadedDipPlaybackRateManualOverrideRef.current = false;
     uploadedDipPlaybackRateExpectedRef.current = null;
     uploadedDipPlaybackRateInitializedRef.current = false;
@@ -16515,6 +16741,33 @@ function Home() {
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'dominadas'
     );
+    // TEMP-DIAGNOSTICO: cierra el resumen pasivo al terminar un video subido de sentadillas.
+    const isUploadedSquatVideo = (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'sentadillas'
+    );
+    if (isUploadedSquatVideo) {
+      const video = videoRef.current;
+      const diagnostics = uploadedSquatDiagnosticsRef.current;
+      if (video && !diagnostics.finished) {
+        diagnostics.finished = true;
+        const durationSeconds = Number.isFinite(video.duration)
+          ? video.duration.toFixed(3)
+          : 'desconocida';
+        const completedCandidates = diagnostics.reachedCandidates.length
+          ? diagnostics.reachedCandidates
+            .map(({ durationSeconds: candidate, videoSecond }) => (
+              `${candidate}s@${videoSecond.toFixed(3)}s`
+            ))
+            .join(', ')
+          : 'ninguna';
+        logUploadedSquatDiagnostic(
+          `[sentadilla-fin] duracionTotal=${durationSeconds}s `
+          + `segundosValidosAcumulados=${diagnostics.totalValidSeconds.toFixed(3)} `
+          + `candidatas=${completedCandidates}`,
+        );
+      }
+    }
     if (isUploadedStandardPushup) {
       if (uploadedPushupVideoEndedRef.current) return;
       uploadedPushupVideoEndedRef.current = true;
