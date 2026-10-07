@@ -1,0 +1,58 @@
+Trabaja SOLO en esta carpeta:
+COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+
+TAREA: SOLO LECTURA. NO modifiques ningún archivo, NO ejecutes pnpm install, NO reinicies
+el servidor ni workflows, NO crees commits. Solo lee src/App.tsx (y otros archivos si hace
+falta) y responde con un reporte. No pegues bloques largos de código: usa archivo:línea y
+describe en prosa o tabla corta. No uses números de ningún video concreto.
+
+OBJETIVO: entender cómo funciona hoy el ejercicio SENTADILLA (squat), en especial la
+detección de extremidades y el conteo de repeticiones, y en qué se parece o se diferencia
+de fondos (dips).
+
+Responde en estas secciones:
+
+1. DETECCIÓN DE EXTREMIDADES
+   - Qué puntos del cuerpo usa sentadilla (cadera, rodilla, tobillo, hombro, etc.) y cómo
+     elige el lado (izquierdo/derecho) cuando la cámara está de lado, de frente o diagonal.
+   - Qué filtros aplica a esos puntos: confianza mínima, longitud de huesos (rechazo y
+     retención), frescura de la pose, validación de vista/cámara. Indica cuáles son
+     compartidos con fondos y cuáles son propios de sentadilla.
+
+2. ÁNGULOS Y MEDICIÓN
+   - Qué ángulos calcula (rodilla, cadera, torso, tobillo, etc.), con qué puntos, y si usa
+     2D, 3D o ambos.
+   - Cómo se suavizan (ventana, filtros) y qué diferencia hay entre el valor "crudo" y el
+     "suavizado" que usa el tracker.
+
+3. CONSTANTES Y UMBRALES
+   - Tabla con: nombre de la constante, valor, archivo:línea y para qué sirve. Incluye los
+     rangos de inicio, de profundidad válida, de retorno, de final, de subida relativa,
+     tolerancias y confianzas mínimas. Marca cuáles difieren de las de fondos.
+
+4. TRACKER DE FASES Y CONTEO
+   - Las fases del tracker de sentadilla y sus transiciones (qué condición mueve de una a
+     otra).
+   - TODAS las rutas que pueden incrementar el contador (correcta o incorrecta), con
+     archivo:línea: por ejemplo retorno normal del tracker, retorno forzado, ruta por
+     evidencia, retorno parcial u otras. Para cada una: qué condiciones exige y si consulta
+     alguna validación previa o la salta.
+   - Qué hace que una repetición sea "incorrecta" y qué motivos registra.
+
+5. VIDEO SUBIDO VS CÁMARA EN VIVO
+   - Qué lógica es distinta entre ambos modos para sentadilla (muestreo, pasada de
+     búsqueda de cuerpo y pasada de conteo, calentamiento, velocidad de reproducción).
+
+6. DIAGNÓSTICO DISPONIBLE
+   - Qué líneas de log existen hoy para sentadilla en consola.
+   - Si hay función de descarga de log para sentadilla (como window.descargarLogFondos()
+     en fondos) y cómo se llama; si no existe, dilo.
+
+7. RIESGOS
+   - Lista breve de puntos donde sentadilla podría contar de más o de menos por la misma
+     razón que pasó en fondos: rutas de conteo que se saltan una validación, tolerancias
+     calculadas con muestras no estables, o movimiento de montaje/desmontaje contado como
+     repetición. Marca cada punto como "confirmado en el código" o "hipótesis".
+
+No propongas cambios todavía. Si algo no lo encuentras, dilo explícitamente en vez de
+suponerlo. Cierra indicando cuántas rutas de conteo encontraste en total.
