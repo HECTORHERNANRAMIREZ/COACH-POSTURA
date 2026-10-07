@@ -1,0 +1,48 @@
+Trabaja SOLO en esta carpeta:
+COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+
+TAREA: SOLO LECTURA. NO modifiques archivos, NO ejecutes pnpm install, NO reinicies
+servidor ni workflows, NO hagas commits. Usa archivo:línea y descripciones en prosa o
+tablas cortas; no pegues bloques largos de código. No uses números de ningún video concreto.
+
+OBJETIVO: entender cómo FLEXIONES DE PECHO (push-ups) maneja un VIDEO SUBIDO desde que se
+carga hasta que cuenta, en especial el sistema de DETECCIÓN DEL CUERPO previo al conteo,
+cuyo fin es que el conteo no se enrede porque aún no se detecta el cuerpo. Quiero reutilizar
+esa idea en SENTADILLA, que hoy no la tiene.
+
+Responde en estas secciones:
+
+1. FLUJO COMPLETO DEL VIDEO SUBIDO
+   Línea de tiempo paso a paso desde que se carga el video: carga del modelo, calentamiento,
+   pasada de búsqueda del cuerpo, reinicio, pasada de conteo, fin. Para cada paso: qué
+   función lo hace (archivo:línea), qué lo dispara y qué lo termina.
+
+2. PASADA DE BÚSQUEDA DEL CUERPO
+   - Qué condiciones definen "cuerpo encontrado" (cuántos cuadros consecutivos, qué puntos,
+     confianza, vista/cámara, pose fresca, torso, etc.).
+   - Qué pasa si nunca lo encuentra (tiempo máximo, reintentos, mensaje al usuario).
+   - Si durante esta pasada se cuentan repeticiones o se acumula estado (tracker, referencias
+     de huesos, ruido) y qué se resetea al reiniciar.
+
+3. REINICIO Y PASADA DE CONTEO
+   - A qué tiempo del video se reinicia (desde 0 o desde donde encontró el cuerpo), velocidad
+     de reproducción, muestreo de cuadros por segundo, calentamiento del primer cuadro.
+   - Qué condiciones debe cumplir un cuadro para que el tracker lo use.
+
+4. CONSTANTES
+   Tabla: nombre, valor, archivo:línea, para qué sirve (cuadros consecutivos, velocidades,
+   muestreo, tiempos máximos, confianzas).
+
+5. QUÉ ES ESPECÍFICO DE FLEXIONES Y QUÉ ES GENÉRICO
+   Marca qué partes dependen del ejercicio (puntos, ángulos, rangos) y cuáles son lógica
+   genérica que se podría activar para otro ejercicio. Indica dónde se decide por ejercicio
+   (por ejemplo, una lista de ejercicios o un isUploaded...Video) y qué habría que añadir
+   para incluir sentadilla.
+
+6. COMPARACIÓN CON FONDOS Y DOMINADAS
+   Tabla corta: qué flujo comparten con flexiones y qué cambia.
+
+7. LOGS
+   Qué líneas de log emite este flujo en consola y si hay función de descarga.
+
+No propongas cambios todavía. Si algo no lo encuentras, dilo en vez de suponerlo.
