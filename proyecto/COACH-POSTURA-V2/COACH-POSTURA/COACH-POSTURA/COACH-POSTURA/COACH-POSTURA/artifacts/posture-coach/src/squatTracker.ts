@@ -3,35 +3,46 @@ export type SquatPhase =
   | 'esperando arriba'
   | 'arriba'
   | 'bajando'
-  | 'abajo';
+  | 'abajo'
+  | 'subiendo';
 
 export type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
 export type SquatDirection = 'down' | 'up';
+
+export const SQUAT_VALID_MIN_ANGLE = 83;
+export const SQUAT_VALID_MAX_ANGLE = 90;
+export const SQUAT_TOP_THRESHOLD = 140;
+export const TOLERANCIA_GRADOS = 5;
+
+const DIRECTION_SENSITIVITY_DEGREES = 0.25;
+const RAW_MEDIAN_WINDOW_SIZE = 3;
+const DISPLAY_EMA_TIME_CONSTANT_SECONDS = 0.16;
+const MAX_TRACKING_GAP_SECONDS = 0.75;
+
+type DirectionCandidate = {
+  direction: SquatDirection | null;
+  startAngle: number | null;
+  extremeAngle: number | null;
+  movingFrames: number;
+};
 
 export type SquatTracker = {
   phase: SquatPhase;
   repetitions: number;
   goodRepetitions: number;
   minimumAngle: number | null;
-  descentStartAngle: number | null;
-  hasMeaningfulDescent: boolean;
   event: SquatRepEvent;
-  currentRepCounted: boolean;
   smoothedAngle: number | null;
   lastSampleTimeSeconds: number | null;
-  lastConfidentAngle: number | null;
-  lastConfidentTimeSeconds: number | null;
+  rawAngleWindow: number[];
+  lastFilteredAngle: number | null;
   candidateDirection: SquatDirection | null;
-  candidateDirectionStartedAtSeconds: number | null;
   candidateDirectionStartAngle: number | null;
+  candidateDirectionExtremeAngle: number | null;
   candidateDirectionFrames: number;
-  phaseStartedAtSeconds: number | null;
-  observedPeakAngle: number | null;
-  observedValleyAngle: number | null;
   cyclePeakAngle: number | null;
   cycleValleyAngle: number | null;
   cycleHasDescent: boolean;
-  recentCycleRanges: number[];
 };
 
 export type SquatCompletedCycle = {
@@ -41,6 +52,11 @@ export type SquatCompletedCycle = {
   referenceRange: number;
   depthRatio: number;
   recoveryRatio: number;
+  topThreshold: number;
+  bottomMinThreshold: number;
+  bottomMaxThreshold: number;
+  toleranceDegrees: number;
+  classification: Exclude<SquatRepEvent, null>;
   reason: string;
 };
 
@@ -51,127 +67,81 @@ export type SquatTrackerUpdate = {
   completedCycle: SquatCompletedCycle | null;
 };
 
-const EMA_TIME_CONSTANT_SECONDS = 0.16;
-const MAX_TRACKING_GAP_SECONDS = 0.75;
-const DIRECTION_CONFIRMATION_SECONDS = 0.12;
-const MIN_PHASE_DURATION_SECONDS = 0.12;
-const DIRECTION_SLOPE_RATIO_PER_SECOND = 0.012;
-const DIRECTION_HYSTERESIS_RATIO = 0.035;
-const MIN_RELATIVE_DEPTH_RATIO = 0.5;
-const COMPLETION_RECOVERY_RATIO = 0.58;
-const TOP_RECOVERY_RATIO = 0.84;
-const RECENT_CYCLE_RANGE_COUNT = 5;
+const TOP_ACCEPTANCE_THRESHOLD = SQUAT_TOP_THRESHOLD - TOLERANCIA_GRADOS;
+const BOTTOM_ACCEPTANCE_MIN = SQUAT_VALID_MIN_ANGLE - TOLERANCIA_GRADOS;
+const BOTTOM_ACCEPTANCE_MAX = SQUAT_VALID_MAX_ANGLE + TOLERANCIA_GRADOS;
 
 function median(values: number[]) {
-  if (values.length === 0) return null;
   const sorted = [...values].sort((first, second) => first - second);
   return sorted[Math.floor(sorted.length / 2)] ?? null;
 }
 
-function positiveRange(peak: number | null, valley: number | null) {
-  if (peak === null || valley === null) return 0;
-  return Math.max(0, peak - valley);
-}
-
-function getObservedRange(tracker: SquatTracker) {
-  const referenceRange = median(tracker.recentCycleRanges);
-  if (referenceRange !== null && referenceRange > 0) return referenceRange;
-  return Math.max(
-    positiveRange(tracker.cyclePeakAngle, tracker.cycleValleyAngle),
-    positiveRange(tracker.observedPeakAngle, tracker.observedValleyAngle),
-  );
-}
-
-function resetDirectionCandidate(tracker: SquatTracker): SquatTracker {
+function resetDirectionCandidate(): DirectionCandidate {
   return {
-    ...tracker,
-    candidateDirection: null,
-    candidateDirectionStartedAtSeconds: null,
-    candidateDirectionStartAngle: null,
-    candidateDirectionFrames: 0,
+    direction: null,
+    startAngle: null,
+    extremeAngle: null,
+    movingFrames: 0,
   };
 }
 
-function updateDirectionCandidate(
-  tracker: SquatTracker,
-  smoothedAngle: number,
-  timeSeconds: number,
-  previousConfidentAngle: number | null,
-  previousConfidentTimeSeconds: number | null,
-): { tracker: SquatTracker; confirmedDirection: SquatDirection | null } {
-  if (
-    previousConfidentAngle === null
-    || previousConfidentTimeSeconds === null
-    || timeSeconds <= previousConfidentTimeSeconds
-  ) {
-    return {
-      tracker: resetDirectionCandidate(tracker),
-      confirmedDirection: null,
-    };
-  }
-
-  const deltaSeconds = timeSeconds - previousConfidentTimeSeconds;
-  const deltaAngle = smoothedAngle - previousConfidentAngle;
-  const observedRange = Math.max(
-    getObservedRange(tracker),
-    Math.abs(deltaAngle),
-  );
-  const directionalDeltaThreshold = observedRange
-    * DIRECTION_SLOPE_RATIO_PER_SECOND
-    * deltaSeconds;
-  const direction: SquatDirection | null = deltaAngle < -directionalDeltaThreshold
+function readDirectionCandidate(
+  candidate: DirectionCandidate,
+  previousAngle: number,
+  currentAngle: number,
+): { candidate: DirectionCandidate; confirmedDirection: SquatDirection | null } {
+  const delta = currentAngle - previousAngle;
+  const direction = delta < -DIRECTION_SENSITIVITY_DEGREES
     ? 'down'
-    : deltaAngle > directionalDeltaThreshold
+    : delta > DIRECTION_SENSITIVITY_DEGREES
       ? 'up'
       : null;
 
-  let candidateTracker = tracker;
-  if (direction && direction !== tracker.candidateDirection) {
-    candidateTracker = {
-      ...tracker,
-      candidateDirection: direction,
-      candidateDirectionStartedAtSeconds: previousConfidentTimeSeconds,
-      candidateDirectionStartAngle: previousConfidentAngle,
-      candidateDirectionFrames: 1,
+  let nextCandidate = candidate;
+  if (direction && direction !== candidate.direction) {
+    nextCandidate = {
+      direction,
+      startAngle: previousAngle,
+      extremeAngle: currentAngle,
+      movingFrames: 1,
     };
-  } else if (direction && direction === tracker.candidateDirection) {
-    candidateTracker = {
-      ...tracker,
-      candidateDirectionFrames: tracker.candidateDirectionFrames + 1,
-    };
-  } else if (tracker.candidateDirection) {
-    // Neutral samples stay inside the hysteresis band and do not cancel a trend.
-    candidateTracker = {
-      ...tracker,
-      candidateDirectionFrames: tracker.candidateDirectionFrames + 1,
+  } else if (direction && direction === candidate.direction) {
+    nextCandidate = {
+      ...candidate,
+      extremeAngle: direction === 'down'
+        ? Math.min(candidate.extremeAngle ?? currentAngle, currentAngle)
+        : Math.max(candidate.extremeAngle ?? currentAngle, currentAngle),
+      movingFrames: candidate.movingFrames + 1,
     };
   }
 
-  const candidateDirection = candidateTracker.candidateDirection;
-  const candidateStartedAt = candidateTracker.candidateDirectionStartedAtSeconds;
-  const candidateStartAngle = candidateTracker.candidateDirectionStartAngle;
   if (
-    !candidateDirection
-    || candidateStartedAt === null
-    || candidateStartAngle === null
+    !nextCandidate.direction
+    || nextCandidate.startAngle === null
+    || nextCandidate.extremeAngle === null
   ) {
-    return { tracker: candidateTracker, confirmedDirection: null };
+    return { candidate: nextCandidate, confirmedDirection: null };
   }
-  const candidateDuration = timeSeconds - candidateStartedAt;
-  const candidateTravel = candidateDirection === 'down'
-    ? candidateStartAngle - smoothedAngle
-    : smoothedAngle - candidateStartAngle;
-  const minimumTravel = Math.max(
-    0,
-    getObservedRange(candidateTracker) * DIRECTION_HYSTERESIS_RATIO,
-  );
-  const confirmedDirection = candidateDuration >= DIRECTION_CONFIRMATION_SECONDS
-    && candidateTracker.candidateDirectionFrames >= 2
-    && candidateTravel >= minimumTravel
-    ? candidateDirection
-    : null;
 
-  return { tracker: candidateTracker, confirmedDirection };
+  const travel = nextCandidate.direction === 'down'
+    ? nextCandidate.startAngle - nextCandidate.extremeAngle
+    : nextCandidate.extremeAngle - nextCandidate.startAngle;
+  return {
+    candidate: nextCandidate,
+    confirmedDirection: nextCandidate.movingFrames >= 2
+      && travel > TOLERANCIA_GRADOS
+      ? nextCandidate.direction
+      : null,
+  };
+}
+
+function emptyUpdate(tracker: SquatTracker): SquatTrackerUpdate {
+  return {
+    tracker,
+    smoothedAngle: tracker.smoothedAngle ?? Number.NaN,
+    completedMinimumAngle: null,
+    completedCycle: null,
+  };
 }
 
 export function createSquatTracker(): SquatTracker {
@@ -180,293 +150,200 @@ export function createSquatTracker(): SquatTracker {
     repetitions: 0,
     goodRepetitions: 0,
     minimumAngle: null,
-    descentStartAngle: null,
-    hasMeaningfulDescent: false,
     event: null,
-    currentRepCounted: false,
     smoothedAngle: null,
     lastSampleTimeSeconds: null,
-    lastConfidentAngle: null,
-    lastConfidentTimeSeconds: null,
+    rawAngleWindow: [],
+    lastFilteredAngle: null,
     candidateDirection: null,
-    candidateDirectionStartedAtSeconds: null,
     candidateDirectionStartAngle: null,
+    candidateDirectionExtremeAngle: null,
     candidateDirectionFrames: 0,
-    phaseStartedAtSeconds: null,
-    observedPeakAngle: null,
-    observedValleyAngle: null,
     cyclePeakAngle: null,
     cycleValleyAngle: null,
     cycleHasDescent: false,
-    recentCycleRanges: [],
   };
 }
 
 export function advanceSquatTracker(
   tracker: SquatTracker,
   rawAngle: number,
-  confidenceReady = true,
   timeSeconds?: number,
 ): SquatTrackerUpdate {
-  if (!Number.isFinite(rawAngle)) {
-    return {
-      tracker,
-      smoothedAngle: tracker.smoothedAngle ?? rawAngle,
-      completedMinimumAngle: null,
-      completedCycle: null,
-    };
-  }
+  if (!Number.isFinite(rawAngle)) return emptyUpdate(tracker);
 
   const sampleTime = Number.isFinite(timeSeconds)
     ? timeSeconds as number
     : (tracker.lastSampleTimeSeconds ?? 0) + 1 / 30;
-  const previousSampleTime = tracker.lastSampleTimeSeconds;
-  const deltaSeconds = previousSampleTime === null
+  const deltaSeconds = tracker.lastSampleTimeSeconds === null
     ? null
-    : sampleTime - previousSampleTime;
+    : sampleTime - tracker.lastSampleTimeSeconds;
   const smoothingAlpha = tracker.smoothedAngle === null
     || deltaSeconds === null
     || deltaSeconds <= 0
     || deltaSeconds >= MAX_TRACKING_GAP_SECONDS
     ? 1
-    : 1 - Math.exp(-deltaSeconds / EMA_TIME_CONSTANT_SECONDS);
+    : 1 - Math.exp(-deltaSeconds / DISPLAY_EMA_TIME_CONSTANT_SECONDS);
   const smoothedAngle = tracker.smoothedAngle === null
     ? rawAngle
     : tracker.smoothedAngle + smoothingAlpha * (rawAngle - tracker.smoothedAngle);
-  const previousConfidentAngle = tracker.lastConfidentAngle;
-  const previousConfidentTimeSeconds = tracker.lastConfidentTimeSeconds;
-  let nextTracker: SquatTracker = {
+  const rawAngleWindow = [...tracker.rawAngleWindow, rawAngle]
+    .slice(-RAW_MEDIAN_WINDOW_SIZE);
+  const filteredAngle = median(rawAngleWindow);
+  if (filteredAngle === null) return emptyUpdate(tracker);
+
+  const nextTracker: SquatTracker = {
     ...tracker,
+    event: null,
     smoothedAngle,
     lastSampleTimeSeconds: sampleTime,
-    lastConfidentAngle: smoothedAngle,
-    lastConfidentTimeSeconds: sampleTime,
-    event: null,
+    rawAngleWindow,
+    lastFilteredAngle: filteredAngle,
   };
 
-  if (!confidenceReady) {
-    nextTracker = resetDirectionCandidate(nextTracker);
+  if (tracker.phase === 'desconocida') {
+    const startsAtTop = filteredAngle >= TOP_ACCEPTANCE_THRESHOLD;
     return {
-      tracker: nextTracker,
+      tracker: {
+        ...nextTracker,
+        phase: startsAtTop ? 'arriba' : 'abajo',
+        minimumAngle: startsAtTop ? null : filteredAngle,
+        cyclePeakAngle: filteredAngle,
+        cycleValleyAngle: filteredAngle,
+        cycleHasDescent: !startsAtTop,
+        candidateDirection: null,
+        candidateDirectionStartAngle: null,
+        candidateDirectionExtremeAngle: null,
+        candidateDirectionFrames: 0,
+      },
       smoothedAngle,
       completedMinimumAngle: null,
       completedCycle: null,
     };
   }
 
-  if (
-    previousSampleTime !== null
-    && (
-      deltaSeconds === null
-      || deltaSeconds <= 0
-      || deltaSeconds > MAX_TRACKING_GAP_SECONDS
-    )
-  ) {
-    nextTracker = resetDirectionCandidate(nextTracker);
-    nextTracker = {
-      ...nextTracker,
-      observedPeakAngle: Math.max(
-        nextTracker.observedPeakAngle ?? smoothedAngle,
-        smoothedAngle,
-      ),
-      observedValleyAngle: Math.min(
-        nextTracker.observedValleyAngle ?? smoothedAngle,
-        smoothedAngle,
-      ),
-    };
-    return {
-      tracker: nextTracker,
-      smoothedAngle,
-      completedMinimumAngle: null,
-      completedCycle: null,
-    };
-  }
+  const previousFilteredAngle = tracker.lastFilteredAngle;
+  const directionResult = previousFilteredAngle === null
+    ? { candidate: resetDirectionCandidate(), confirmedDirection: null }
+    : readDirectionCandidate(
+      {
+        direction: tracker.candidateDirection,
+        startAngle: tracker.candidateDirectionStartAngle,
+        extremeAngle: tracker.candidateDirectionExtremeAngle,
+        movingFrames: tracker.candidateDirectionFrames,
+      },
+      previousFilteredAngle,
+      filteredAngle,
+    );
 
-  nextTracker = {
-    ...nextTracker,
-    observedPeakAngle: Math.max(
-      nextTracker.observedPeakAngle ?? smoothedAngle,
-      smoothedAngle,
-    ),
-    observedValleyAngle: Math.min(
-      nextTracker.observedValleyAngle ?? smoothedAngle,
-      smoothedAngle,
-    ),
-  };
-  const directionUpdate = updateDirectionCandidate(
-    nextTracker,
-    smoothedAngle,
-    sampleTime,
-    previousConfidentAngle,
-    previousConfidentTimeSeconds,
-  );
-  nextTracker = directionUpdate.tracker;
-  const confirmedDirection = directionUpdate.confirmedDirection;
+  let phase = tracker.phase;
+  let cyclePeakAngle = tracker.cyclePeakAngle ?? filteredAngle;
+  let cycleValleyAngle = tracker.cycleValleyAngle ?? filteredAngle;
+  let cycleHasDescent = tracker.cycleHasDescent;
+  let repetitions = tracker.repetitions;
+  let goodRepetitions = tracker.goodRepetitions;
+  let event: SquatRepEvent = null;
   let completedMinimumAngle: number | null = null;
   let completedCycle: SquatCompletedCycle | null = null;
 
-  const startDescent = () => {
-    const peakAngle = nextTracker.candidateDirectionStartAngle
-      ?? nextTracker.observedPeakAngle
-      ?? smoothedAngle;
-    nextTracker = {
-      ...nextTracker,
-      phase: 'bajando',
-      phaseStartedAtSeconds: nextTracker.candidateDirectionStartedAtSeconds
-        ?? sampleTime,
-      descentStartAngle: peakAngle,
-      minimumAngle: smoothedAngle,
-      hasMeaningfulDescent: false,
-      currentRepCounted: false,
-      cyclePeakAngle: peakAngle,
-      cycleValleyAngle: smoothedAngle,
-      cycleHasDescent: true,
-    };
-  };
+  // Los extremos del ciclo se miden solo en la mediana de las últimas 3 rodillas
+  // brutas válidas; el EMA se conserva únicamente para la visualización.
+  cyclePeakAngle = Math.max(cyclePeakAngle, filteredAngle);
+  cycleValleyAngle = Math.min(cycleValleyAngle, filteredAngle);
+  cycleHasDescent = cycleHasDescent
+    || cyclePeakAngle - cycleValleyAngle > 2 * TOLERANCIA_GRADOS;
+  const confirmedDirection = directionResult.confirmedDirection;
 
-  if (nextTracker.phase === 'desconocida') {
+  if (phase === 'arriba') {
     if (confirmedDirection === 'down') {
-      startDescent();
-    } else if (confirmedDirection === 'up') {
-      nextTracker = {
-        ...nextTracker,
-        phase: 'arriba',
-        phaseStartedAtSeconds: nextTracker.candidateDirectionStartedAtSeconds
-          ?? sampleTime,
-        cyclePeakAngle: nextTracker.observedPeakAngle,
-        cycleValleyAngle: nextTracker.observedValleyAngle,
-        cycleHasDescent: false,
-      };
+      phase = 'bajando';
+      cyclePeakAngle = Math.max(cyclePeakAngle, filteredAngle);
+      cycleValleyAngle = filteredAngle;
+      cycleHasDescent = cyclePeakAngle - cycleValleyAngle
+        > 2 * TOLERANCIA_GRADOS;
     }
-  } else if (nextTracker.phase === 'arriba') {
-    if (
-      confirmedDirection === 'down'
-      && nextTracker.phaseStartedAtSeconds !== null
-      && sampleTime - nextTracker.phaseStartedAtSeconds
-        >= MIN_PHASE_DURATION_SECONDS
-    ) {
-      startDescent();
-    }
-  } else if (nextTracker.phase === 'bajando') {
-    const cyclePeak = nextTracker.cyclePeakAngle ?? smoothedAngle;
-    const cycleValley = Math.min(nextTracker.cycleValleyAngle ?? smoothedAngle, smoothedAngle);
-    const cycleRange = positiveRange(cyclePeak, cycleValley);
-    const referenceRange = median(nextTracker.recentCycleRanges) ?? cycleRange;
-    nextTracker = {
-      ...nextTracker,
-      cyclePeakAngle: cyclePeak,
-      cycleValleyAngle: cycleValley,
-      minimumAngle: cycleValley,
-      hasMeaningfulDescent: referenceRange > 0
-        && cyclePeak - smoothedAngle >= referenceRange * MIN_RELATIVE_DEPTH_RATIO,
-    };
-    if (
-      confirmedDirection === 'up'
-      && nextTracker.phaseStartedAtSeconds !== null
-      && sampleTime - nextTracker.phaseStartedAtSeconds
-        >= MIN_PHASE_DURATION_SECONDS
-    ) {
-      nextTracker = {
-        ...nextTracker,
-        phase: 'abajo',
-        phaseStartedAtSeconds: sampleTime,
-      };
-    }
-  } else if (nextTracker.phase === 'abajo') {
-    const cyclePeak = nextTracker.cyclePeakAngle ?? smoothedAngle;
-    const cycleValley = Math.min(nextTracker.cycleValleyAngle ?? smoothedAngle, smoothedAngle);
-    const cycleRange = positiveRange(cyclePeak, cycleValley);
-    const referenceRange = median(nextTracker.recentCycleRanges) ?? cycleRange;
-    const recoveryRatio = cycleRange > 0
-      ? Math.max(0, (smoothedAngle - cycleValley) / cycleRange)
-      : 0;
-    const relativeDepthRatio = referenceRange > 0
-      ? cycleRange / referenceRange
-      : 0;
-    nextTracker = {
-      ...nextTracker,
-      cycleValleyAngle: cycleValley,
-      minimumAngle: cycleValley,
-      hasMeaningfulDescent: nextTracker.cycleHasDescent
-        && relativeDepthRatio >= MIN_RELATIVE_DEPTH_RATIO,
-    };
-
-    const phaseDuration = nextTracker.phaseStartedAtSeconds === null
-      ? 0
-      : sampleTime - nextTracker.phaseStartedAtSeconds;
-    if (
-      confirmedDirection === 'down'
-      && phaseDuration >= MIN_PHASE_DURATION_SECONDS
-    ) {
-      nextTracker = {
-        ...nextTracker,
-        phase: 'bajando',
-        phaseStartedAtSeconds: sampleTime,
-      };
-    } else if (
-      confirmedDirection === 'up'
-      && phaseDuration >= MIN_PHASE_DURATION_SECONDS
-      && nextTracker.cycleHasDescent
-      && !nextTracker.currentRepCounted
-      && relativeDepthRatio >= MIN_RELATIVE_DEPTH_RATIO
-      && recoveryRatio >= COMPLETION_RECOVERY_RATIO
-    ) {
-      const depthReference = median(nextTracker.recentCycleRanges) ?? cycleRange;
-      const recentCycleRanges = [
-        ...nextTracker.recentCycleRanges,
-        cycleRange,
-      ].slice(-RECENT_CYCLE_RANGE_COUNT);
-      nextTracker = {
-        ...nextTracker,
-        repetitions: nextTracker.repetitions + 1,
-        goodRepetitions: nextTracker.goodRepetitions + 1,
-        event: 'valid',
-        currentRepCounted: true,
-        recentCycleRanges,
-      };
-      completedMinimumAngle = cycleValley;
-      completedCycle = {
-        peakAngle: cyclePeak,
-        valleyAngle: cycleValley,
-        observedRange: cycleRange,
-        referenceRange: depthReference,
-        depthRatio: depthReference > 0 ? cycleRange / depthReference : 0,
-        recoveryRatio,
-        reason:
-          `valle=${(depthReference > 0 ? cycleRange / depthReference : 0).toFixed(2)} `
-          + `× rango observado (mínimo ${MIN_RELATIVE_DEPTH_RATIO.toFixed(2)}); `
-          + `recuperación=${recoveryRatio.toFixed(2)}× ciclo `
-          + `(mínimo ${COMPLETION_RECOVERY_RATIO.toFixed(2)})`,
-      };
-    } else if (
-      confirmedDirection === 'up'
-      && phaseDuration >= MIN_PHASE_DURATION_SECONDS
-      && nextTracker.cycleHasDescent
-      && recoveryRatio >= TOP_RECOVERY_RATIO
-    ) {
-      nextTracker = {
-        ...nextTracker,
-        phase: 'arriba',
-        phaseStartedAtSeconds: sampleTime,
-        descentStartAngle: null,
-      };
+  } else if (phase === 'bajando') {
+    if (confirmedDirection === 'up') phase = 'abajo';
+  } else if (phase === 'abajo') {
+    if (confirmedDirection === 'up') phase = 'subiendo';
+  } else if (phase === 'subiendo') {
+    if (confirmedDirection === 'down') {
+      phase = 'bajando';
+    } else if (filteredAngle >= TOP_ACCEPTANCE_THRESHOLD) {
+      if (!cycleHasDescent) {
+        phase = 'arriba';
+        cyclePeakAngle = filteredAngle;
+        cycleValleyAngle = filteredAngle;
+      } else {
+        const classification: Exclude<SquatRepEvent, null> = cycleValleyAngle
+          < BOTTOM_ACCEPTANCE_MIN
+          ? 'too-deep'
+          : cycleValleyAngle <= BOTTOM_ACCEPTANCE_MAX
+            ? 'valid'
+            : 'too-shallow';
+        const observedRange = Math.max(0, cyclePeakAngle - cycleValleyAngle);
+        const referenceRange = SQUAT_VALID_MAX_ANGLE - SQUAT_VALID_MIN_ANGLE;
+        repetitions += 1;
+        if (classification === 'valid') goodRepetitions += 1;
+        event = classification;
+        completedMinimumAngle = cycleValleyAngle;
+        completedCycle = {
+          peakAngle: cyclePeakAngle,
+          valleyAngle: cycleValleyAngle,
+          observedRange,
+          referenceRange,
+          depthRatio: referenceRange > 0 ? observedRange / referenceRange : 0,
+          recoveryRatio: observedRange > 0
+            ? Math.max(0, (filteredAngle - cycleValleyAngle) / observedRange)
+            : 0,
+          topThreshold: TOP_ACCEPTANCE_THRESHOLD,
+          bottomMinThreshold: BOTTOM_ACCEPTANCE_MIN,
+          bottomMaxThreshold: BOTTOM_ACCEPTANCE_MAX,
+          toleranceDegrees: TOLERANCIA_GRADOS,
+          classification,
+          reason: classification === 'valid'
+            ? `valle=${cycleValleyAngle.toFixed(2)}° dentro de `
+              + `${BOTTOM_ACCEPTANCE_MIN}–${BOTTOM_ACCEPTANCE_MAX}°; `
+              + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`
+            : classification === 'too-shallow'
+              ? `valle=${cycleValleyAngle.toFixed(2)}° supera `
+                + `${BOTTOM_ACCEPTANCE_MAX}° (profundidad insuficiente); `
+                + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`
+              : `valle=${cycleValleyAngle.toFixed(2)}° menor que `
+                + `${BOTTOM_ACCEPTANCE_MIN}° (exceso de profundidad); `
+                + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`,
+        };
+        phase = 'arriba';
+        cyclePeakAngle = filteredAngle;
+        cycleValleyAngle = filteredAngle;
+        cycleHasDescent = false;
+      }
     }
   }
 
-  const currentCycleRange = positiveRange(
-    nextTracker.cyclePeakAngle,
-    nextTracker.cycleValleyAngle,
-  );
-  const referenceRange = median(nextTracker.recentCycleRanges) ?? currentCycleRange;
-  nextTracker = {
+  const candidate = directionResult.confirmedDirection
+    ? resetDirectionCandidate()
+    : directionResult.candidate;
+  const updatedTracker: SquatTracker = {
     ...nextTracker,
-    hasMeaningfulDescent: nextTracker.cycleHasDescent
-      && referenceRange > 0
-      && currentCycleRange / referenceRange >= MIN_RELATIVE_DEPTH_RATIO,
+    phase,
+    repetitions,
+    goodRepetitions,
+    event,
+    minimumAngle: phase === 'arriba' && event === null
+      ? null
+      : cycleValleyAngle,
+    candidateDirection: candidate.direction,
+    candidateDirectionStartAngle: candidate.startAngle,
+    candidateDirectionExtremeAngle: candidate.extremeAngle,
+    candidateDirectionFrames: candidate.movingFrames,
+    cyclePeakAngle,
+    cycleValleyAngle,
+    cycleHasDescent,
   };
 
   return {
-    tracker: nextTracker,
+    tracker: updatedTracker,
     smoothedAngle,
     completedMinimumAngle,
     completedCycle,

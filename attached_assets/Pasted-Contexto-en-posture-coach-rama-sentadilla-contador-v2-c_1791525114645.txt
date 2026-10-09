@@ -1,0 +1,37 @@
+Contexto: en posture-coach (rama sentadilla-contador-v2, commit base 5d5a829) existe un contador de sentadillas en un módulo independiente, con logs [sentadilla-linea-tiempo], [sentadilla-fase], [sentadilla-repeticion] y [sentadilla-ciclo]. En pruebas con video real cuenta menos repeticiones de las que hay (en un video de 6 contó 3). Ubica ese módulo y su integración en App.tsx antes de cambiar nada.
+
+Objetivo: el contador debe validar las repeticiones de cualquier video subido por el usuario (cualquier persona, ángulo, velocidad y número de repeticiones) cuando cumplan las condiciones del ejercicio, con una tolerancia de unos 5° más o menos, no con ángulos exactos.
+
+Regla de generalidad: el contador no debe usar, copiar ni ajustarse a datos de ningún video concreto. Ningún umbral, constante ni condición puede salir de valores observados en un video. Toda prueba debe usar series sintéticas generadas por parámetros: amplitud, velocidad, ruido, pausas arriba y abajo, número de repeticiones (de 1 a 15), fase de inicio y fps de análisis. El resultado esperado se deduce de la serie generada, no de un video real.
+
+Alcance: SOLO la lógica del contador de sentadillas. No tocar UI, otros ejercicios, worker, pose3d ni backend. No modificar .replit. Mantener los logs existentes.
+
+Causas observadas en los logs:
+1. rodillaSuavizada se congela cuando cuadrosEstables=0, que ocurre justo en el pico y el valle del movimiento (la suavizada queda muy lejos de la bruta). Hay que eliminarlo.
+2. picoPrevio y rangoObservado se calculan sobre esa señal congelada, así que salen subestimados y distorsionan el filtro de profundidad.
+3. Las fases cambian tarde (se entra a "abajo" cuando la rodilla ya sube) y se pierden ciclos completos. Las repeticiones contadas coinciden con valores altos de cuadrosEstables; parece que aún condiciona transiciones o conteo.
+4. Desde fase desconocida, una rodilla muy flexionada que empieza a subir se etiqueta como "arriba".
+
+Cambios pedidos:
+A. cuadrosEstables NO debe condicionar el suavizado, las transiciones de fase ni el conteo. Solo informativo en logs. cuadroValido sí puede filtrar.
+B. Detectar pico y valle sobre rodillaBruta con un filtro mínimo (mediana de 3 cuadros) que se actualice en cada cuadro válido sin congelarse. El suavizado más fuerte puede quedar solo para mostrar.
+C. Condiciones del ejercicio con tolerancia de ±5°:
+   - Arriba: la rodilla alcanza casi extensión completa; se acepta hasta 5° menos.
+   - Abajo: la rodilla alcanza la flexión exigida para una sentadilla correcta; se acepta hasta 5° menos de profundidad.
+   Reutiliza los ángulos que la app ya usa para clasificar correcta/incorrecta y define TOLERANCIA_GRADOS = 5 como constante única.
+D. Máquina de estados: arriba → bajando → abajo → subiendo → arriba. Cada ciclo completo suma una repetición al volver a arriba (con tolerancia). Profundidad dentro de tolerancia = correcta; insuficiente = incorrecta, pero el ciclo no se pierde.
+E. Histéresis: un cambio de fase requiere un movimiento sostenido mayor que la tolerancia y al menos 2 cuadros, sin depender de la estabilidad.
+F. Inicio a mitad de movimiento: en fase desconocida, solo asignar "arriba" si la rodilla está cerca de extensión (con tolerancia). Si está flexionada, asignar "abajo" (valle en curso); si luego recupera la extensión, cuenta como repetición aunque no se haya visto el pico previo.
+G. El resultado no debe cambiar por pequeños desfases de muestreo (analysisFps, playbackRate).
+H. En [sentadilla-ciclo] registrar pico y valle brutos, los umbrales aplicados con la tolerancia y el motivo.
+
+Pruebas sintéticas nuevas (todas generadas por parámetros):
+1. Pausa de varios cuadros arriba y abajo en cada repetición.
+2. Series de 1 a 15 repeticiones seguidas sin pérdidas.
+3. Serie que empieza en el fondo y serie que empieza a mitad de la bajada.
+4. Profundidad 5° corta cuenta como correcta; 15° corta cuenta como incorrecta, sin perderse.
+5. Mismo resultado a distintas velocidades y fps de análisis.
+6. Ruido de ±3° sin rebotes.
+7. Distintas amplitudes de movimiento.
+
+Al terminar: typecheck, build y todas las pruebas correctos, y un resumen breve de qué cambió y qué no. Verifica además que ningún valor del módulo provenga de datos de un video concreto.

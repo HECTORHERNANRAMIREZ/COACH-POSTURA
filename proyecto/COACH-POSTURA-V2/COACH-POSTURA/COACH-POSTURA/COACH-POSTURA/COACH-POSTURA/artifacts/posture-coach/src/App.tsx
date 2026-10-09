@@ -33,6 +33,9 @@ import {
 import {
   advanceSquatTracker,
   createSquatTracker,
+  SQUAT_TOP_THRESHOLD,
+  SQUAT_VALID_MAX_ANGLE,
+  SQUAT_VALID_MIN_ANGLE,
   type SquatPhase,
   type SquatTracker,
 } from './squatTracker';
@@ -2664,9 +2667,6 @@ const exerciseGroups = [
   },
 ].filter((group) => group.exercises.length > 0);
 
-const SQUAT_VALID_MIN_ANGLE = 83;
-const SQUAT_VALID_MAX_ANGLE = 90;
-const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
@@ -12819,7 +12819,6 @@ function Home() {
         const squatUpdate = advanceSquatTracker(
           squatTrackerRef.current,
           rawAngle,
-          frameDetectionStable,
           squatSampleTimeSeconds,
         );
         squatTrackerRef.current = squatUpdate.tracker;
@@ -12830,6 +12829,8 @@ function Home() {
         setSquatPhase(
           squatUpdate.tracker.phase === 'desconocida'
             ? 'esperando arriba'
+            : squatUpdate.tracker.phase === 'subiendo'
+              ? 'abajo'
             : squatUpdate.tracker.phase,
         );
         setSquatMinimumAngle(squatUpdate.tracker.minimumAngle ?? squatUpdate.completedMinimumAngle);
@@ -12901,13 +12902,19 @@ function Home() {
                 `[sentadilla-ciclo] source=App.tsx:12819 `
                 + `repeticion=${squatUpdate.tracker.repetitions} `
                 + `segundo=${videoTime.toFixed(3)} `
-                + `clasificacion=valle-y-recuperacion-proporcionales `
+                + `clasificacion=${completedCycle.classification} `
                 + `picoPrevio=${completedCycle.peakAngle.toFixed(2)}° `
+                + `picoBruto=${completedCycle.peakAngle.toFixed(2)}° `
                 + `valle=${completedCycle.valleyAngle.toFixed(2)}° `
+                + `valleBruto=${completedCycle.valleyAngle.toFixed(2)}° `
                 + `rangoObservado=${completedCycle.observedRange.toFixed(2)}° `
                 + `rangoReferencia=${completedCycle.referenceRange.toFixed(2)}° `
                 + `ratioProfundidad=${completedCycle.depthRatio.toFixed(3)} `
                 + `recuperacionProporcional=${completedCycle.recoveryRatio.toFixed(3)} `
+                + `umbralArriba=${completedCycle.topThreshold}° `
+                + `umbralAbajoMin=${completedCycle.bottomMinThreshold}° `
+                + `umbralAbajoMax=${completedCycle.bottomMaxThreshold}° `
+                + `tolerancia=${completedCycle.toleranceDegrees}° `
                 + `motivo=${completedCycle.reason}`,
               );
             }
