@@ -1,0 +1,49 @@
+Trabaja SOLO en esta carpeta:
+COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+No ejecutes pnpm install, no toques package.json ni el lockfile, no reinicies el servidor ni
+workflows, no hagas commits. Verifica con "pnpm run typecheck" dentro de esa carpeta (debe dar
+exit=0; ignora errores de lib/db y lib/api-zod).
+
+OBJETIVO: que SENTADILLA con VIDEO SUBIDO tenga el mismo sistema de dos pasadas que flexiones:
+primero una pasada de BÚSQUEDA DEL CUERPO sin contar, y luego la pasada de CONTEO. Así el conteo
+no se enreda porque aún no se detecta el cuerpo. Solo video subido de sentadilla: la cámara en
+vivo y los demás ejercicios NO cambian. No cambies las fases, umbrales ni reglas del tracker de
+sentadilla. Reutiliza la lógica genérica de flexiones en vez de copiarla. No uses números de
+ningún video concreto. Todo lo nuevo lleva // TEMP-DIAGNOSTICO solo en los logs.
+
+1. ACTIVACIÓN: en la decisión por ejercicio de startCamera, el scheduler, processFrame y
+   handleUploadedVideoEnded, añade sentadilla subida al flujo de búsqueda + replay. Añade
+   isUploadedSquatVideo (o equivalente) y deja intacto el flujo de flexiones y fondos.
+
+2. BÚSQUEDA DEL CUERPO (no cuenta repeticiones, el tracker de sentadilla permanece bloqueado):
+   - Un cuadro es válido si: guía de cámara en "lista", pose fresca, y cadera, rodilla y tobillo
+     del lado de medición visibles con confianza >= CAMERA_POINT_MIN_SCORE y coordenadas 3D.
+   - Se considera "cuerpo encontrado" al acumular un tiempo válido de video, con tolerancia a
+     huecos como en flexiones. Constantes con nombre y comentario:
+     SQUAT_BODY_DETECTION_HOLD_MS (valor inicial 2000) y
+     UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS (valor inicial 0.6). Un hueco mayor o un seek
+     hacia atrás reinicia el acumulado.
+   - Guarda el segundo del video donde empezó la ventana válida que terminó en detección.
+   - Si el video termina sin detectar el cuerpo: oculta el overlay, muestra el mensaje
+     "No se detectó el cuerpo completo; sube un video de lado con cuerpo entero visible" y no
+     cuentes nada. No añadas reintentos.
+
+3. PASADA DE CONTEO: al detectar el cuerpo, pausa, espera el cuadro en curso (con límite de
+   espera), y haz seek al segundo guardado de inicio de la ventana válida (NO a 0). Reinicia
+   filtros de pose, consistencia de lado, restricciones óseas, estabilidad y el tracker de
+   sentadilla; conserva el lado de medición. Constantes:
+   UPLOADED_SQUAT_PLAYBACK_RATE (inicial 0.5) y UPLOADED_SQUAT_ANALYSIS_FPS (inicial 12).
+   Reproduce hasta el final. Durante la transición no se cuenta.
+
+4. LOGS Y DESCARGA (solo informativos, sin intervenir en decisiones): líneas [sentadilla-busqueda]
+   (progreso, motivo de cuadro inválido, segundo de inicio de ventana y de detección),
+   [sentadilla-repeticion] en cada incremento del contador (rama con archivo:línea, clasificación,
+   segundo, fase previa, ángulo bruto, suavizado, mínimo de la bajada, cuadros estables),
+   [sentadilla-fase] en cada cambio de fase, y [sentadilla-linea-tiempo] cada ~0.2 s de video con
+   segundo, rodilla bruta y suavizada, fase, estado de vista, lado, cuadros estables y posiciones
+   verticales normalizadas de cadera, rodilla y tobillo con referencia fija (torso o muslo, indicada
+   en la línea). Guárdalas en un buffer limitado y publica window.descargarLogSentadillas() que
+   descargue un .txt, como window.descargarLogFondos().
+
+Responde con archivo:línea de lo cambiado, confirma que typecheck da exit=0, lista las constantes
+nuevas, y dime explícitamente qué partes del flujo de flexiones reutilizaste y qué copiaste.

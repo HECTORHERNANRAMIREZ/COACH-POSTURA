@@ -171,14 +171,21 @@ const UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_VIDEO_ANALYSIS_FPS
 const UPLOADED_DIP_TIMELINE_LOG_INTERVAL_SECONDS = 0.2;
 // TEMP-DIAGNOSTICO: máximo aproximado del registro descargable para contener su tamaño.
 const UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS = 1_500_000;
-// TEMP-DIAGNOSTICO: permite puentes breves entre cuadros válidos del video de sentadilla.
-const UPLOADED_SQUAT_VALIDITY_GAP_TOLERANCE_SECONDS = 0.5;
-// TEMP-DIAGNOSTICO: hitos de duración para observar la continuidad del cuerpo en sentadilla.
-const UPLOADED_SQUAT_VALIDITY_CANDIDATES_SECONDS = [0.5, 1, 2] as const;
+// TEMP-DIAGNOSTICO: tiempo de cuadros válidos necesario para encontrar el cuerpo en sentadilla.
+const SQUAT_BODY_DETECTION_HOLD_MS = 2000;
+// TEMP-DIAGNOSTICO: hueco máximo tolerado entre cuadros válidos durante la búsqueda de sentadilla.
+const UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS = 0.6;
+// TEMP-DIAGNOSTICO: velocidad de la pasada de conteo para sentadilla subida.
+const UPLOADED_SQUAT_PLAYBACK_RATE = 0.5;
+// TEMP-DIAGNOSTICO: frecuencia de análisis de la pasada de conteo para sentadilla subida.
+const UPLOADED_SQUAT_ANALYSIS_FPS = 12;
+const UPLOADED_SQUAT_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_SQUAT_ANALYSIS_FPS;
+// TEMP-DIAGNOSTICO: frecuencia del registro temporal informativo de sentadilla subida.
+const UPLOADED_SQUAT_TIMELINE_LOG_INTERVAL_SECONDS = 0.2;
 // TEMP-DIAGNOSTICO: limita los avisos de cuadro inválido por tiempo de video.
 const UPLOADED_SQUAT_INVALID_LOG_INTERVAL_SECONDS = 0.5;
 // TEMP-DIAGNOSTICO: evita confundir pequeñas variaciones temporales con un seek hacia atrás.
-const UPLOADED_SQUAT_BACKWARD_SEEK_THRESHOLD_SECONDS = 0.05;
+const UPLOADED_SQUAT_BACKWARD_SEEK_THRESHOLD_SECONDS = 0.001;
 // TEMP-DIAGNOSTICO: límite fijo para el buffer descargable de sentadillas.
 const UPLOADED_SQUAT_DIAGNOSTIC_LOG_MAX_LINES = 5_000;
 // Las flexiones subidas usan más muestras por segundo de video en el fondo de cada repetición.
@@ -548,17 +555,18 @@ type SquatTracker = {
   currentRepCounted: boolean;
 };
 // TEMP-DIAGNOSTICO: datos aislados de observación pasiva para un video subido de sentadillas.
-type UploadedSquatDiagnosticCandidate = {
-  durationSeconds: number;
-  videoSecond: number;
-};
 type UploadedSquatDiagnosticState = {
   lastObservedVideoTime: number | null;
   lastValidVideoTime: number | null;
   continuousValidSeconds: number;
   totalValidSeconds: number;
   lastInvalidLogVideoTime: number | null;
-  reachedCandidates: UploadedSquatDiagnosticCandidate[];
+  lastSearchLogVideoTime: number | null;
+  searchWindowStartVideoTime: number | null;
+  bodyDetected: boolean;
+  fixedThighReferenceLength: number | null;
+  fixedHipReferenceY: number | null;
+  lastTimelineLogVideoTime: number | null;
   finished: boolean;
 };
 type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
@@ -911,7 +919,12 @@ function createUploadedSquatDiagnosticState(): UploadedSquatDiagnosticState {
     continuousValidSeconds: 0,
     totalValidSeconds: 0,
     lastInvalidLogVideoTime: null,
-    reachedCandidates: [],
+    lastSearchLogVideoTime: null,
+    searchWindowStartVideoTime: null,
+    bodyDetected: false,
+    fixedThighReferenceLength: null,
+    fixedHipReferenceY: null,
+    lastTimelineLogVideoTime: null,
     finished: false,
   };
 }
@@ -940,15 +953,15 @@ function getUploadedSquatDiagnosticLogText() {
   return uploadedSquatDiagnosticLogLines.join('\n');
 }
 
-// TEMP-DIAGNOSTICO: observa frescura, guía, vista y continuidad sin alterar ninguna decisión.
+// TEMP-DIAGNOSTICO: valida y acumula la búsqueda de sentadilla subida; nunca cuenta repeticiones.
 function observeUploadedSquatBody(params: {
   state: UploadedSquatDiagnosticState;
   videoTimeSeconds: number;
   measurementSide: PoseSide | null;
   keypoints: PosePoint[] | undefined;
+  poseFresh: boolean;
   cameraGuideReady: boolean;
   viewStatus: ViewAlignmentState['status'];
-  tracker: SquatTracker;
 }) {
   const {
     state,
@@ -956,7 +969,6 @@ function observeUploadedSquatBody(params: {
     keypoints,
     cameraGuideReady,
     viewStatus,
-    tracker,
   } = params;
   const videoTime = Number.isFinite(params.videoTimeSeconds)
     ? Math.max(0, params.videoTimeSeconds)
@@ -969,73 +981,132 @@ function observeUploadedSquatBody(params: {
         ? 'bad'
         : 'unknown';
 
+  const resetWindow = (reason: string) => {
+    const accumulatedBeforeReset = state.continuousValidSeconds;
+    state.lastValidVideoTime = null;
+    state.continuousValidSeconds = 0;
+    state.searchWindowStartVideoTime = null;
+    state.fixedThighReferenceLength = null;
+    state.fixedHipReferenceY = null;
+    logUploadedSquatDiagnostic(
+      `[sentadilla-busqueda] reinicio motivo=${reason} `
+      + `segundoVideo=${videoTime.toFixed(3)} `
+      + `acumuladoAntes=${accumulatedBeforeReset.toFixed(3)}s acumuladoDespués=0.000s`,
+    );
+  };
+
   if (
     state.lastObservedVideoTime !== null
     && videoTime
       < state.lastObservedVideoTime - UPLOADED_SQUAT_BACKWARD_SEEK_THRESHOLD_SECONDS
   ) {
-    state.lastValidVideoTime = null;
-    state.continuousValidSeconds = 0;
+    resetWindow('seek-hacia-atras');
     state.lastInvalidLogVideoTime = null;
-    logUploadedSquatDiagnostic(
-      `[sentadilla-reset] motivo=seek-hacia-atras segundoVideo=${videoTime.toFixed(3)}`,
-    );
   }
   state.lastObservedVideoTime = videoTime;
 
   const invalidReasons: string[] = [];
+  const measurementPoints: Array<{ label: string; point: PosePoint | undefined }> = [];
   if (!measurementSide) {
-    invalidReasons.push('punto no fresco: lado de medición no disponible');
+    invalidReasons.push('lado de medición no disponible');
   } else {
     const indexes = sideKeypoints[measurementSide];
-    const measurementPoints = [
+    measurementPoints.push(
       { label: 'cadera', point: keypoints?.[indexes.hip] },
       { label: 'rodilla', point: keypoints?.[indexes.knee] },
       { label: 'tobillo', point: keypoints?.[indexes.ankle] },
-    ];
+    );
     measurementPoints.forEach(({ label, point }) => {
-      if (!point || point.held) invalidReasons.push(`punto no fresco:${label}`);
-      if (point && (point.score ?? 0) < CAMERA_POINT_MIN_SCORE) {
+      if (!point || isHeldPoint(point)) invalidReasons.push(`punto no fresco:${label}`);
+      if (!isVisibleCameraPoint(point, CAMERA_POINT_MIN_SCORE)) {
         invalidReasons.push(
-          `confianza baja:${label}=${(point.score ?? 0).toFixed(2)}`,
+          `punto no visible o confianza baja:${label}=${(point?.score ?? 0).toFixed(2)}`,
         );
+      }
+      if (!hasWorldCoordinates(point)) {
+        invalidReasons.push(`coordenadas 3D ausentes:${label}`);
       }
     });
   }
-  if (!cameraGuideReady) invalidReasons.push('guía no lista');
-  if (viewStatus === 'bad') invalidReasons.push('vista mala');
+  if (!cameraGuideReady) invalidReasons.push('guía de cámara no lista');
+  if (!params.poseFresh) invalidReasons.push('pose no fresca');
 
   if (!invalidReasons.length) {
     const previousValidVideoTime = state.lastValidVideoTime;
     if (previousValidVideoTime !== null) {
       const elapsedSinceValidFrame = videoTime - previousValidVideoTime;
-      if (elapsedSinceValidFrame > UPLOADED_SQUAT_VALIDITY_GAP_TOLERANCE_SECONDS) {
-        state.continuousValidSeconds = 0;
+      if (elapsedSinceValidFrame > UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS) {
+        resetWindow(
+          `hueco>${UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s`,
+        );
       } else if (elapsedSinceValidFrame > 0) {
         state.continuousValidSeconds += elapsedSinceValidFrame;
         state.totalValidSeconds += elapsedSinceValidFrame;
       }
     }
+    if (state.searchWindowStartVideoTime === null) {
+      state.searchWindowStartVideoTime = videoTime;
+    }
+    if (
+      state.fixedThighReferenceLength === null
+      && measurementPoints.length === 3
+      && hasWorldCoordinates(measurementPoints[0]?.point)
+      && hasWorldCoordinates(measurementPoints[1]?.point)
+    ) {
+      const hipWorld = measurementPoints[0].point.world;
+      const kneeWorld = measurementPoints[1].point.world;
+      const thighLength = Math.hypot(
+        hipWorld.x - kneeWorld.x,
+        hipWorld.y - kneeWorld.y,
+        hipWorld.z - kneeWorld.z,
+      );
+      if (Number.isFinite(thighLength) && thighLength > 0) {
+        state.fixedThighReferenceLength = thighLength;
+        state.fixedHipReferenceY = hipWorld.y;
+      }
+    }
     state.lastValidVideoTime = videoTime;
 
-    UPLOADED_SQUAT_VALIDITY_CANDIDATES_SECONDS.forEach((candidateSeconds) => {
-      const alreadyReached = state.reachedCandidates.some(
-        ({ durationSeconds }) => durationSeconds === candidateSeconds,
-      );
-      if (alreadyReached || state.continuousValidSeconds < candidateSeconds) return;
-      state.reachedCandidates.push({
-        durationSeconds: candidateSeconds,
-        videoSecond: videoTime,
-      });
+    if (
+      state.lastSearchLogVideoTime === null
+      || videoTime - state.lastSearchLogVideoTime
+        >= UPLOADED_SQUAT_INVALID_LOG_INTERVAL_SECONDS
+    ) {
+      state.lastSearchLogVideoTime = videoTime;
       logUploadedSquatDiagnostic(
-        `[sentadilla-deteccion] candidata=${candidateSeconds}s `
-        + `segundoVideo=${videoTime.toFixed(3)} `
-        + `repeticiones=${tracker.repetitions} fase=${tracker.phase} vista=${viewLabel}`,
+        `[sentadilla-busqueda] segundoVideo=${videoTime.toFixed(3)} `
+        + `progreso=${state.continuousValidSeconds.toFixed(3)}s/`
+        + `${(SQUAT_BODY_DETECTION_HOLD_MS / 1000).toFixed(2)}s `
+        + `cuadroValido=true inicioVentana=${state.searchWindowStartVideoTime.toFixed(3)}s `
+        + `vista=${viewLabel}`,
       );
-    });
-    return;
+    }
+
+    const detected = state.continuousValidSeconds * 1000 >= SQUAT_BODY_DETECTION_HOLD_MS;
+    if (detected && !state.bodyDetected) {
+      state.bodyDetected = true;
+      logUploadedSquatDiagnostic(
+        `[sentadilla-busqueda] cuerpo-detectado `
+        + `inicioVentana=${state.searchWindowStartVideoTime.toFixed(3)}s `
+        + `segundoDeteccion=${videoTime.toFixed(3)} `
+        + `progreso=${state.continuousValidSeconds.toFixed(3)}s `
+        + `lado=${measurementSide ?? 'ninguno'} vista=${viewLabel}`,
+      );
+    }
+    return {
+      accumulatedMs: state.continuousValidSeconds * 1000,
+      detected: state.bodyDetected,
+      detectionStartVideoTime: state.searchWindowStartVideoTime,
+    };
   }
 
+  if (
+    state.lastValidVideoTime !== null
+    && videoTime - state.lastValidVideoTime
+      > UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS
+  ) {
+    resetWindow(`hueco>${UPLOADED_SQUAT_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s`);
+  }
   const shouldLogInvalid = state.lastInvalidLogVideoTime === null
     || videoTime - state.lastInvalidLogVideoTime
       >= UPLOADED_SQUAT_INVALID_LOG_INTERVAL_SECONDS
@@ -1043,10 +1114,87 @@ function observeUploadedSquatBody(params: {
   if (shouldLogInvalid) {
     state.lastInvalidLogVideoTime = videoTime;
     logUploadedSquatDiagnostic(
-      `[sentadilla-invalido] segundoVideo=${videoTime.toFixed(3)} `
+      `[sentadilla-busqueda] segundoVideo=${videoTime.toFixed(3)} `
+      + `progreso=${state.continuousValidSeconds.toFixed(3)}s/`
+      + `${(SQUAT_BODY_DETECTION_HOLD_MS / 1000).toFixed(2)}s `
+      + `cuadroValido=false inicioVentana=`
+      + `${state.searchWindowStartVideoTime?.toFixed(3) ?? '—'}s `
       + `motivo=${invalidReasons.join('; ')} vista=${viewLabel}`,
     );
   }
+  return {
+    accumulatedMs: state.continuousValidSeconds * 1000,
+    detected: false,
+    detectionStartVideoTime: state.searchWindowStartVideoTime,
+  };
+}
+
+// TEMP-DIAGNOSTICO: registra posiciones de las piernas normalizadas por la longitud inicial fija del muslo.
+function logUploadedSquatTimeline(params: {
+  state: UploadedSquatDiagnosticState;
+  videoTimeSeconds: number;
+  rawAngle: number | null;
+  smoothedAngle: number | null;
+  phase: SquatPhase;
+  viewStatus: ViewAlignmentState['status'];
+  measurementSide: PoseSide | null;
+  stableFrames: number;
+  keypoints: PosePoint[] | undefined;
+}) {
+  const {
+    state,
+    rawAngle,
+    smoothedAngle,
+    phase,
+    viewStatus,
+    measurementSide,
+    stableFrames,
+    keypoints,
+  } = params;
+  const videoTime = Math.max(0, params.videoTimeSeconds);
+  if (
+    state.lastTimelineLogVideoTime !== null
+    && videoTime >= state.lastTimelineLogVideoTime
+    && videoTime - state.lastTimelineLogVideoTime
+      < UPLOADED_SQUAT_TIMELINE_LOG_INTERVAL_SECONDS
+  ) {
+    return;
+  }
+  state.lastTimelineLogVideoTime = videoTime;
+  const points = measurementSide
+    ? sideKeypoints[measurementSide]
+    : null;
+  const thighLength = state.fixedThighReferenceLength;
+  const hipReferenceY = state.fixedHipReferenceY;
+  const normalizedY = (index: number | undefined) => {
+    const point = index === undefined ? undefined : keypoints?.[index];
+    if (
+      !hasWorldCoordinates(point)
+      || thighLength === null
+      || hipReferenceY === null
+      || thighLength <= 0
+    ) {
+      return '—';
+    }
+    return ((point.world.y - hipReferenceY) / thighLength).toFixed(3);
+  };
+  const viewLabel = viewStatus === 'good'
+    ? 'lateral'
+    : viewStatus === 'acceptable'
+      ? 'aceptable'
+      : viewStatus === 'bad'
+        ? 'mala'
+        : 'desconocida';
+  logUploadedSquatDiagnostic(
+    `[sentadilla-linea-tiempo] segundo=${videoTime.toFixed(3)} `
+    + `rodillaBruta=${rawAngle?.toFixed(2) ?? '—'}° `
+    + `rodillaSuavizada=${smoothedAngle?.toFixed(2) ?? '—'}° `
+    + `fase=${phase} vista=${viewLabel} lado=${measurementSide ?? '—'} `
+    + `cuadrosEstables=${stableFrames} referencia=muslo-inicial `
+    + `caderaYnorm=${normalizedY(points?.hip)} `
+    + `rodillaYnorm=${normalizedY(points?.knee)} `
+    + `tobilloYnorm=${normalizedY(points?.ankle)}`,
+  );
 }
 
 // TEMP-DIAGNOSTICO: registra hitos una sola vez por pasada.
@@ -9695,7 +9843,12 @@ function Home() {
     reset: boolean;
   } | null>(null);
   const [uploadedPushupSearchOverlay, setUploadedPushupSearchOverlay] =
-    useState<{ visible: boolean; progressSeconds: number } | null>(null);
+    useState<{
+      visible: boolean;
+      progressSeconds: number;
+      targetSeconds: number;
+    } | null>(null);
+  const uploadedPushupSearchOverlayDurationMsRef = useRef(PUSHUP_BODY_DETECTION_HOLD_MS);
   const [uploadedPushupTransitionPaused, setUploadedPushupTransitionPaused] = useState(false);
   const uploadedPushupSearchOverlayActiveRef = useRef(false);
   const uploadedPushupSearchOverlayProgressSecondsRef = useRef(0);
@@ -9705,17 +9858,34 @@ function Home() {
   const uploadedPushupTransitionPauseResolveRef = useRef<
     ((completed: boolean) => void) | null
   >(null);
-  const showUploadedPushupSearchOverlay = useCallback(() => {
+  const uploadedSquatSearchActiveRef = useRef(false);
+  const uploadedSquatBodyDetectedRef = useRef(false);
+  const uploadedSquatCountingPassRef = useRef(false);
+  const uploadedSquatTransitioningRef = useRef(false);
+  const uploadedSquatVideoEndedRef = useRef(false);
+  const uploadedSquatPassGenerationRef = useRef(0);
+  const uploadedSquatDetectionStartVideoTimeRef = useRef<number | null>(null);
+  const uploadedSquatMeasurementSideRef = useRef<PoseSide | null>(null);
+  const scheduleNextFrameRef = useRef<(() => void) | null>(null);
+  const showUploadedPushupSearchOverlay = useCallback((
+    durationMs = PUSHUP_BODY_DETECTION_HOLD_MS,
+  ) => {
+    uploadedPushupSearchOverlayDurationMsRef.current = durationMs;
     uploadedPushupSearchOverlayActiveRef.current = true;
     uploadedPushupSearchOverlayProgressSecondsRef.current = 0;
     uploadedPushupSearchOverlayLastProgressSecondRef.current = 0;
-    setUploadedPushupSearchOverlay({ visible: true, progressSeconds: 0 });
+    setUploadedPushupSearchOverlay({
+      visible: true,
+      progressSeconds: 0,
+      targetSeconds: durationMs / 1000,
+    });
   }, []);
   const hideUploadedPushupSearchOverlay = useCallback((validMs?: number) => {
     if (!uploadedPushupSearchOverlayActiveRef.current) return;
+    const durationMs = uploadedPushupSearchOverlayDurationMsRef.current;
     if (validMs !== undefined) {
       uploadedPushupSearchOverlayProgressSecondsRef.current = Math.min(
-        PUSHUP_BODY_DETECTION_HOLD_MS,
+        durationMs,
         Math.max(0, validMs),
       ) / 1000;
     }
@@ -9723,6 +9893,7 @@ function Home() {
     setUploadedPushupSearchOverlay({
       visible: false,
       progressSeconds: uploadedPushupSearchOverlayProgressSecondsRef.current,
+      targetSeconds: durationMs / 1000,
     });
   }, []);
   const waitForUploadedPushupTransitionPause = useCallback(() => (
@@ -9764,17 +9935,22 @@ function Home() {
   const updateUploadedPushupSearchOverlayProgress = useCallback((
     videoTime: number,
     validMs: number,
+    durationMs = uploadedPushupSearchOverlayDurationMsRef.current,
   ) => {
     if (!uploadedPushupSearchOverlayActiveRef.current) return;
     const videoSecond = Math.floor(videoTime);
     if (uploadedPushupSearchOverlayLastProgressSecondRef.current === videoSecond) return;
     uploadedPushupSearchOverlayLastProgressSecondRef.current = videoSecond;
     const progressSeconds = Math.min(
-      PUSHUP_BODY_DETECTION_HOLD_MS,
+      durationMs,
       Math.max(0, validMs),
     ) / 1000;
     uploadedPushupSearchOverlayProgressSecondsRef.current = progressSeconds;
-    setUploadedPushupSearchOverlay({ visible: true, progressSeconds });
+    setUploadedPushupSearchOverlay({
+      visible: true,
+      progressSeconds,
+      targetSeconds: durationMs / 1000,
+    });
   }, []);
   const resetUploadedPullupSearch = useCallback((
     reason: string,
@@ -10379,6 +10555,14 @@ function Home() {
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     uploadedPushupAnalysisGenerationRef.current += 1;
     uploadedPushupAnalysisStartingRef.current = false;
+    uploadedSquatPassGenerationRef.current += 1;
+    uploadedSquatSearchActiveRef.current = false;
+    uploadedSquatBodyDetectedRef.current = false;
+    uploadedSquatCountingPassRef.current = false;
+    uploadedSquatTransitioningRef.current = false;
+    uploadedSquatVideoEndedRef.current = false;
+    uploadedSquatDetectionStartVideoTimeRef.current = null;
+    uploadedSquatMeasurementSideRef.current = null;
     uploadedPushupPreflightRef.current = false;
     uploadedPullupPreflightRef.current = false;
     uploadedPullupVideoEndedRef.current = false;
@@ -10714,6 +10898,188 @@ function Home() {
     }
   }, [hideUploadedPushupSearchOverlay, warmupUploadedDipFirstFrame]);
 
+  const startUploadedSquatCountingPass = useCallback(async (
+    video: HTMLVideoElement,
+    detectionStartVideoTime: number,
+  ) => {
+    if (
+      inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'sentadillas'
+      || !uploadedSquatBodyDetectedRef.current
+      || uploadedSquatTransitioningRef.current
+    ) {
+      return;
+    }
+    const generation = uploadedSquatPassGenerationRef.current;
+    uploadedSquatTransitioningRef.current = true;
+    uploadedSquatSearchActiveRef.current = false;
+    uploadedSquatVideoEndedRef.current = false;
+    uploadedPushupTransitionPauseRef.current = true;
+    setUploadedPushupTransitionPaused(true);
+    video.controls = true;
+    video.pause();
+    activeRef.current = false;
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (videoFrameCallbackRef.current !== null && video.cancelVideoFrameCallback) {
+      video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+      videoFrameCallbackRef.current = null;
+    }
+
+    let waitTimedOut = false;
+    if (processingFrameRef.current) {
+      waitTimedOut = await new Promise<boolean>((resolve) => {
+        let pollingTimer: number | null = null;
+        let settled = false;
+        const finish = (timedOut: boolean) => {
+          if (settled) return;
+          settled = true;
+          if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+          window.clearTimeout(deadlineTimer);
+          resolve(timedOut);
+        };
+        const deadlineTimer = window.setTimeout(() => finish(true), 2_000);
+        const checkForFrameCompletion = () => {
+          if (!processingFrameRef.current) {
+            finish(false);
+            return;
+          }
+          pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+        };
+        checkForFrameCompletion();
+      });
+    }
+    if (
+      generation !== uploadedSquatPassGenerationRef.current
+      || videoRef.current !== video
+      || inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'sentadillas'
+    ) {
+      return;
+    }
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const seekTarget = duration > 0
+      ? Math.min(Math.max(0, detectionStartVideoTime), duration)
+      : Math.max(0, detectionStartVideoTime);
+    const seeked = Math.abs(video.currentTime - seekTarget) <= 0.01
+      ? false
+      : await new Promise<boolean>((resolve) => {
+          let settled = false;
+          let timeoutId = 0;
+          const finishSeeking = (didSeek: boolean) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', handleSeeked);
+            resolve(didSeek);
+          };
+          const handleSeeked = () => finishSeeking(true);
+          video.addEventListener('seeked', handleSeeked, { once: true });
+          timeoutId = window.setTimeout(() => finishSeeking(false), 1_500);
+          video.currentTime = seekTarget;
+        });
+    if (
+      generation !== uploadedSquatPassGenerationRef.current
+      || videoRef.current !== video
+      || inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'sentadillas'
+    ) {
+      return;
+    }
+    if (Math.abs(video.currentTime - seekTarget) > 0.1) {
+      uploadedSquatTransitioningRef.current = false;
+      uploadedPushupTransitionPauseRef.current = false;
+      setUploadedPushupTransitionPaused(false);
+      hideUploadedPushupSearchOverlay();
+      setVideoExportStatus(
+        'No se pudo volver al inicio del cuerpo detectado; no se inició el conteo.',
+      );
+      logUploadedSquatDiagnostic(
+        `[sentadilla-busqueda] transición-abortada `
+        + `motivo=seek-no-confirmado destino=${seekTarget.toFixed(3)}s `
+        + `segundoActual=${video.currentTime.toFixed(3)}s seeked=${seeked}`,
+      );
+      return;
+    }
+
+    setVideoTimeSeconds(video.currentTime);
+    const transitionPauseCompleted = await waitForUploadedPushupTransitionPause();
+    if (
+      !transitionPauseCompleted
+      || generation !== uploadedSquatPassGenerationRef.current
+      || videoRef.current !== video
+    ) {
+      return;
+    }
+
+    poseFilterRef.current.reset();
+    poseFilterRef.current.setPersistentHold(false);
+    poseFilterRef.current.setTemporalJumpGuard(false);
+    sideConsistencyRef.current.reset();
+    boneConstraintRef.current.reset();
+    stabilityFramesRef.current = 0;
+    primaryPoseTrackRef.current = null;
+    lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+    squatTrackerRef.current = createSquatTracker();
+    setSquatRepetitions(0);
+    setSquatGoodRepetitions(0);
+    setSquatPhase('esperando arriba');
+    setSquatMinimumAngle(null);
+    setSquatFeedback(defaultSquatFeedback);
+    const diagnostics = uploadedSquatDiagnosticsRef.current;
+    diagnostics.lastTimelineLogVideoTime = null;
+    diagnostics.finished = false;
+
+    video.playbackRate = UPLOADED_SQUAT_PLAYBACK_RATE;
+    video.controls = true;
+    uploadedSquatCountingPassRef.current = true;
+    uploadedSquatSearchActiveRef.current = false;
+    uploadedSquatVideoEndedRef.current = false;
+    uploadedPushupTransitionPauseRef.current = false;
+    uploadedSquatTransitioningRef.current = false;
+    setUploadedPushupTransitionPaused(false);
+    hideUploadedPushupSearchOverlay(diagnostics.continuousValidSeconds * 1000);
+    exerciseStartedRef.current = true;
+    setExerciseStarted(true);
+    setVideoExportStatus(
+      `Conteo en curso desde ${seekTarget.toFixed(2)} s del video.`,
+    );
+    logUploadedSquatDiagnostic(
+      `[sentadilla-busqueda] inicio-pasada-conteo `
+      + `inicioVentana=${detectionStartVideoTime.toFixed(3)}s `
+      + `seekReal=${video.currentTime.toFixed(3)}s seeked=${seeked} `
+      + `esperaCuadroAgotada=${waitTimedOut} `
+      + `ladoConservado=${uploadedSquatMeasurementSideRef.current ?? 'ninguno'} `
+      + `playbackRate=${video.playbackRate.toFixed(2)} `
+      + `analysisFps=${UPLOADED_SQUAT_ANALYSIS_FPS}`,
+    );
+    activeRef.current = true;
+    try {
+      await video.play();
+      if (
+        generation === uploadedSquatPassGenerationRef.current
+        && activeRef.current
+      ) {
+        scheduleNextFrameRef.current?.();
+      }
+    } catch {
+      if (generation === uploadedSquatPassGenerationRef.current) {
+        activeRef.current = false;
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        setVideoExportStatus(
+          'No se pudo iniciar la pasada de conteo. Pulsa reproducir en el video.',
+        );
+      }
+    }
+  }, [
+    hideUploadedPushupSearchOverlay,
+    waitForUploadedPushupTransitionPause,
+  ]);
+
   // TEMP-DIAGNOSTICO: videoTime permite atribuir el análisis al segundo original del callback.
   const processFrame = useCallback(async (
     scheduledTimestamp?: number,
@@ -10778,6 +11144,13 @@ function Home() {
           );
       if (detectedResult === undefined) {
         throw new Error('El detector de pose no tiene un método de análisis disponible.');
+      }
+      if (
+        uploadedSquatTransitioningRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'sentadillas'
+      ) {
+        return;
       }
       if (isUploadedDipInference) {
         const inferenceMs = performance.now() - uploadedDipInferenceStartedAt;
@@ -11130,10 +11503,16 @@ function Home() {
       const stableLateralSide = sideViewStableFramesRef.current >= SIDE_VIEW_STABLE_FRAMES
         ? sideViewCandidateRef.current
         : null;
-      const measurementSide = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
+      const detectedMeasurementSide = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
         && stableLateralSide
         ? stableLateralSide
         : nextDominantSide;
+      const measurementSide = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'sentadillas'
+        && uploadedSquatCountingPassRef.current
+        && uploadedSquatMeasurementSideRef.current
+        ? uploadedSquatMeasurementSideRef.current
+        : detectedMeasurementSide;
       const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
         || selectedExerciseForFrame === 'dominadas-comando';
@@ -12516,6 +12895,12 @@ function Home() {
         )
       );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
+      let squatSmoothedAngleForLog = rawAngle === null
+        ? median(squatTrackerRef.current.samples)
+        : median([
+            ...squatTrackerRef.current.samples,
+            rawAngle,
+          ].slice(-SQUAT_SMOOTHING_SAMPLES));
       if (
         exerciseStartedRef.current
         && !uploadedPushupAnalysisStartingRef.current
@@ -12523,11 +12908,18 @@ function Home() {
         && frameCameraReady
         && frameDetectionStable
         && selectedExerciseRef.current === 'sentadillas'
+        && (
+          inputModeRef.current !== 'video'
+          || uploadedSquatCountingPassRef.current
+        )
         && rawAngle !== null
         && !frameMeasurementBlocked
       ) {
+        const previousSquatTracker = squatTrackerRef.current;
+        const previousSquatPhase = previousSquatTracker.phase;
         const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
         squatTrackerRef.current = squatUpdate.tracker;
+        squatSmoothedAngleForLog = squatUpdate.smoothedAngle;
         nextAngle = squatUpdate.smoothedAngle;
         setSquatRepetitions(squatUpdate.tracker.repetitions);
         setSquatGoodRepetitions(squatUpdate.tracker.goodRepetitions);
@@ -12559,21 +12951,101 @@ function Home() {
             detail: 'Mantén el control y vuelve a subir para completar la repetición.',
           });
         }
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseRef.current === 'sentadillas'
+          && uploadedSquatCountingPassRef.current
+        ) {
+          const videoTime = diagnosticVideoTime ?? video.currentTime;
+          if (squatUpdate.tracker.phase !== previousSquatPhase) {
+            logUploadedSquatDiagnostic(
+              `[sentadilla-fase] segundo=${videoTime.toFixed(3)} `
+              + `anterior=${previousSquatPhase} nueva=${squatUpdate.tracker.phase} `
+              + `rodillaBruta=${rawAngle.toFixed(2)}° `
+              + `rodillaSuavizada=${squatUpdate.smoothedAngle.toFixed(2)}°`,
+            );
+          }
+          if (squatUpdate.tracker.repetitions > previousSquatTracker.repetitions) {
+            const classification = squatUpdate.tracker.event === 'valid'
+              ? 'correcta'
+              : squatUpdate.tracker.event === 'too-deep'
+                ? 'incorrecta: muy profunda'
+                : squatUpdate.tracker.event === 'too-shallow'
+                  ? 'incorrecta: profundidad insuficiente'
+                  : 'sin clasificación';
+            logUploadedSquatDiagnostic(
+              `[sentadilla-repeticion] source=App.tsx:12920 `
+              + `clasificacion=${classification} segundo=${videoTime.toFixed(3)} `
+              + `fasePrevia=${previousSquatPhase} `
+              + `rodillaBruta=${rawAngle.toFixed(2)}° `
+              + `rodillaSuavizada=${squatUpdate.smoothedAngle.toFixed(2)}° `
+              + `minimoBajada=${(
+                squatUpdate.completedMinimumAngle
+                ?? squatUpdate.tracker.minimumAngle
+              )?.toFixed(2) ?? '—'}° `
+              + `cuadrosEstables=${stabilityFramesRef.current} `
+              + `repeticiones=${squatUpdate.tracker.repetitions}`,
+            );
+          }
+        }
       }
-      // TEMP-DIAGNOSTICO: observa únicamente cuadros de video subido de sentadillas.
+      // TEMP-DIAGNOSTICO: búsqueda y traza de sentadillas exclusivamente para video subido.
       if (
         inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'sentadillas'
       ) {
-        observeUploadedSquatBody({
-          state: uploadedSquatDiagnosticsRef.current,
-          videoTimeSeconds: diagnosticVideoTime ?? video.currentTime,
-          measurementSide,
-          keypoints: pose?.keypoints,
-          cameraGuideReady: frameCameraReady,
-          viewStatus: nextViewAlignment.status,
-          tracker: squatTrackerRef.current,
-        });
+        const diagnostics = uploadedSquatDiagnosticsRef.current;
+        const videoTime = diagnosticVideoTime ?? video.currentTime;
+        if (uploadedSquatSearchActiveRef.current) {
+          const search = observeUploadedSquatBody({
+            state: diagnostics,
+            videoTimeSeconds: videoTime,
+            measurementSide,
+            keypoints: pose?.keypoints,
+            poseFresh: hasFreshPose,
+            cameraGuideReady: rawCameraGuidance.tone === 'ready',
+            viewStatus: nextViewAlignment.status,
+          });
+          updateUploadedPushupSearchOverlayProgress(
+            videoTime,
+            search.accumulatedMs,
+            SQUAT_BODY_DETECTION_HOLD_MS,
+          );
+          if (
+            search.detected
+            && search.detectionStartVideoTime !== null
+            && !video.ended
+            && !uploadedSquatVideoEndedRef.current
+            && !uploadedSquatBodyDetectedRef.current
+          ) {
+            uploadedSquatBodyDetectedRef.current = true;
+            uploadedSquatDetectionStartVideoTimeRef.current
+              = search.detectionStartVideoTime;
+            uploadedSquatMeasurementSideRef.current = measurementSide;
+            logUploadedSquatDiagnostic(
+              `[sentadilla-busqueda] transición-solicitada `
+              + `inicioVentana=${search.detectionStartVideoTime.toFixed(3)}s `
+              + `segundoDeteccion=${videoTime.toFixed(3)} `
+              + `ladoConservado=${measurementSide ?? 'ninguno'}`,
+            );
+            void startUploadedSquatCountingPass(
+              video,
+              search.detectionStartVideoTime,
+            );
+          }
+        } else if (uploadedSquatCountingPassRef.current) {
+          logUploadedSquatTimeline({
+            state: diagnostics,
+            videoTimeSeconds: videoTime,
+            rawAngle,
+            smoothedAngle: squatSmoothedAngleForLog,
+            phase: squatTrackerRef.current.phase,
+            viewStatus: nextViewAlignment.status,
+            measurementSide,
+            stableFrames: stabilityFramesRef.current,
+            keypoints: pose?.keypoints,
+          });
+        }
       }
       if (
         (selectedExerciseRef.current === 'dominadas'
@@ -15037,6 +15509,7 @@ function Home() {
     updateDipPreparationCountdown,
     updateDipPreparationStage,
     hideUploadedPushupSearchOverlay,
+    startUploadedSquatCountingPass,
     startUploadedDipCountingPass,
     resetUploadedPullupSearch,
     recordUploadedPullupSearchFrame,
@@ -15090,13 +15563,19 @@ function Home() {
     // TEMP-DIAGNOSTICO: conserva el tiempo original del cuadro solo para observar sentadillas subidas.
     const isUploadedSquatPlayback = inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'sentadillas';
+    const isUploadedSquatCountingPlayback = isUploadedSquatPlayback
+      && uploadedSquatCountingPassRef.current;
     const uploadedVideoPlaybackHasEnded = (
       isUploadedPushupPlayback && uploadedPushupVideoEndedRef.current
     ) || (
       isUploadedPullupPlayback && uploadedPullupVideoEndedRef.current
+    ) || (
+      isUploadedSquatPlayback && uploadedSquatVideoEndedRef.current
     );
     const analysisIntervalSeconds = isUploadedPushupPlayback
       ? UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS
+      : isUploadedSquatCountingPlayback
+        ? UPLOADED_SQUAT_ANALYSIS_INTERVAL_SECONDS
       : UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS;
     if (
       !activeRef.current
@@ -15119,6 +15598,9 @@ function Home() {
         )
         || (
           isUploadedPullupPlayback && uploadedPullupVideoEndedRef.current
+        )
+        || (
+          isUploadedSquatPlayback && uploadedSquatVideoEndedRef.current
         )
       ) return;
       if (isUploadedDipPlayback) {
@@ -15186,6 +15668,7 @@ function Home() {
       runFrame(timestamp, video.currentTime);
     });
   }, [logUploadedPushupFpsDiagnostics, processFrame]);
+  scheduleNextFrameRef.current = scheduleNextFrame;
 
   useEffect(() => {
     const logUploadedPushupRepDiagnostics = () => {
@@ -15973,6 +16456,7 @@ function Home() {
     const isUploadedPushupVideo = Boolean(videoFile && activeExercise === 'flexiones');
     const isUploadedPullupVideo = Boolean(videoFile && activeExercise === 'dominadas');
     const isUploadedDipVideo = Boolean(videoFile && activeExercise === 'fondos');
+    const isUploadedSquatVideo = Boolean(videoFile && activeExercise === 'sentadillas');
     const uploadedPullupValidMsBeforeReset = isUploadedPullupVideo
       ? uploadedPullupLastCalibrationAccumulatedMsRef.current
       : 0;
@@ -15998,7 +16482,8 @@ function Home() {
     // preparación de cámara en vivo. Las flexiones conservan su calibración.
     const shouldStartUploadedExercise = Boolean(videoFile)
       && activeExercise !== 'flexiones'
-      && activeExercise !== 'dominadas';
+      && activeExercise !== 'dominadas'
+      && activeExercise !== 'sentadillas';
     const shouldStartExercise = videoFile
       ? shouldStartUploadedExercise
       : preserveExerciseStarted;
@@ -16066,8 +16551,23 @@ function Home() {
     uploadedPullupSearchPausedRef.current = false;
     setUploadedPullupPreflightActive(isUploadedPullupVideo);
     setUploadedPullupSearchPaused(false);
+    if (isUploadedSquatVideo) {
+      resetUploadedSquatDiagnosticLog();
+      uploadedSquatDiagnosticsRef.current = createUploadedSquatDiagnosticState();
+      uploadedSquatSearchActiveRef.current = true;
+      uploadedSquatBodyDetectedRef.current = false;
+      uploadedSquatCountingPassRef.current = false;
+      uploadedSquatTransitioningRef.current = false;
+      uploadedSquatVideoEndedRef.current = false;
+      uploadedSquatDetectionStartVideoTimeRef.current = null;
+      uploadedSquatMeasurementSideRef.current = null;
+      setVideoExportStatus('Buscando cuerpo…');
+    }
     if (isUploadedPushupVideo || isUploadedPullupVideo) {
       showUploadedPushupSearchOverlay();
+    }
+    if (isUploadedSquatVideo) {
+      showUploadedPushupSearchOverlay(SQUAT_BODY_DETECTION_HOLD_MS);
     }
     if (isUploadedDipVideo) {
       showUploadedPushupSearchOverlay();
@@ -16741,32 +17241,74 @@ function Home() {
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'dominadas'
     );
-    // TEMP-DIAGNOSTICO: cierra el resumen pasivo al terminar un video subido de sentadillas.
+    // TEMP-DIAGNOSTICO: finaliza la búsqueda o el conteo solo en sentadillas subidas.
     const isUploadedSquatVideo = (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'sentadillas'
     );
-    if (isUploadedSquatVideo) {
+    if (isUploadedSquatVideo && !uploadedSquatBodyDetectedRef.current) {
       const video = videoRef.current;
       const diagnostics = uploadedSquatDiagnosticsRef.current;
+      uploadedSquatVideoEndedRef.current = true;
+      uploadedSquatSearchActiveRef.current = false;
+      uploadedSquatCountingPassRef.current = false;
+      activeRef.current = false;
+      exerciseStartedRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video?.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+      if (processingFrameRef.current) {
+        await new Promise<void>((resolve) => {
+          let pollingTimer: number | null = null;
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+            window.clearTimeout(deadlineTimer);
+            resolve();
+          };
+          const deadlineTimer = window.setTimeout(finish, 2_000);
+          const checkForFrameCompletion = () => {
+            if (!processingFrameRef.current) {
+              finish();
+              return;
+            }
+            pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+          };
+          checkForFrameCompletion();
+        });
+      }
+      squatTrackerRef.current = createSquatTracker();
+      setSquatRepetitions(0);
+      setSquatGoodRepetitions(0);
+      setSquatPhase('esperando arriba');
+      setSquatMinimumAngle(null);
+      setSquatFeedback(defaultSquatFeedback);
+      exerciseStartedRef.current = false;
+      setExerciseStarted(false);
+      hideUploadedPushupSearchOverlay(diagnostics.continuousValidSeconds * 1000);
+      if (video) video.controls = true;
+      setVideoExportStatus(
+        'No se detectó el cuerpo completo; sube un video de lado con cuerpo entero visible',
+      );
       if (video && !diagnostics.finished) {
         diagnostics.finished = true;
-        const durationSeconds = Number.isFinite(video.duration)
-          ? video.duration.toFixed(3)
-          : 'desconocida';
-        const completedCandidates = diagnostics.reachedCandidates.length
-          ? diagnostics.reachedCandidates
-            .map(({ durationSeconds: candidate, videoSecond }) => (
-              `${candidate}s@${videoSecond.toFixed(3)}s`
-            ))
-            .join(', ')
-          : 'ninguna';
         logUploadedSquatDiagnostic(
-          `[sentadilla-fin] duracionTotal=${durationSeconds}s `
+          `[sentadilla-fin] estado=sin-cuerpo `
+          + `duracionTotal=${Number.isFinite(video.duration) ? video.duration.toFixed(3) : 'desconocida'}s `
           + `segundosValidosAcumulados=${diagnostics.totalValidSeconds.toFixed(3)} `
-          + `candidatas=${completedCandidates}`,
+          + `progresoUltimaVentana=${diagnostics.continuousValidSeconds.toFixed(3)}s `
+          + `inicioUltimaVentana=${diagnostics.searchWindowStartVideoTime?.toFixed(3) ?? '—'}s `
+          + `repeticiones=0`,
         );
       }
+      return;
     }
     if (isUploadedStandardPushup) {
       if (uploadedPushupVideoEndedRef.current) return;
@@ -17113,6 +17655,65 @@ function Home() {
           detectorRef.current,
         );
       }
+    }
+    if (isUploadedSquatVideo && uploadedSquatCountingPassRef.current) {
+      const video = videoRef.current;
+      uploadedSquatVideoEndedRef.current = true;
+      uploadedSquatSearchActiveRef.current = false;
+      activeRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video?.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+      let waitTimedOut = false;
+      if (processingFrameRef.current) {
+        waitTimedOut = await new Promise<boolean>((resolve) => {
+          let pollingTimer: number | null = null;
+          let settled = false;
+          const finish = (timedOut: boolean) => {
+            if (settled) return;
+            settled = true;
+            if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+            window.clearTimeout(deadlineTimer);
+            resolve(timedOut);
+          };
+          const deadlineTimer = window.setTimeout(() => finish(true), 2_000);
+          const checkForFrameCompletion = () => {
+            if (!processingFrameRef.current) {
+              finish(false);
+              return;
+            }
+            pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+          };
+          checkForFrameCompletion();
+        });
+      }
+      const tracker = squatTrackerRef.current;
+      const diagnostics = uploadedSquatDiagnosticsRef.current;
+      if (!diagnostics.finished) {
+        diagnostics.finished = true;
+        const durationLabel = video && Number.isFinite(video.duration)
+          ? `${video.duration.toFixed(3)}s`
+          : 'desconocida';
+        logUploadedSquatDiagnostic(
+          `[sentadilla-fin] estado=conteo-terminado `
+          + `duracionTotal=${durationLabel} `
+          + `segundosValidosBusqueda=${diagnostics.totalValidSeconds.toFixed(3)} `
+          + `inicioVentana=${uploadedSquatDetectionStartVideoTimeRef.current?.toFixed(3) ?? '—'}s `
+          + `repeticiones=${tracker.repetitions} correctas=${tracker.goodRepetitions} `
+          + `incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)} `
+          + `fase=${tracker.phase} esperaCuadroAgotada=${waitTimedOut}`,
+        );
+      }
+      uploadedSquatCountingPassRef.current = false;
+      uploadedSquatTransitioningRef.current = false;
+      uploadedPushupTransitionPauseRef.current = false;
+      setUploadedPushupTransitionPaused(false);
+      hideUploadedPushupSearchOverlay();
     }
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     if (videoRef.current) videoRef.current.controls = true;
@@ -18550,7 +19151,7 @@ function Home() {
                         <small>
                           {uploadedPushupSearchOverlay.progressSeconds.toFixed(1)}
                           {' / '}
-                          {(PUSHUP_BODY_DETECTION_HOLD_MS / 1000).toFixed(0)} s
+                          {uploadedPushupSearchOverlay.targetSeconds.toFixed(0)} s
                         </small>
                       )}
                   </div>
