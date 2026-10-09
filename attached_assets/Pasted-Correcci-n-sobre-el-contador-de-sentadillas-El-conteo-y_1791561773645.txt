@@ -1,0 +1,17 @@
+Corrección sobre el contador de sentadillas. El conteo ya es correcto (6 de 6 en un video real), pero la clasificación falla:
+
+1. Profundidad: eliminar el límite superior. Un valle más profundo que el exigido NUNCA es incorrecto. Eliminar la clasificación "too-deep" / "incorrecta: muy profunda" y el umbralAbajoMin como criterio de error. La repetición es correcta si el valle llega a umbralAbajoMax (con la tolerancia de 5°) o más abajo. Solo es incorrecta si no llega a esa profundidad. Mantener el resto de reglas.
+
+2. Los cuadros con cuadrosEstables=0 todavía no alimentan los extremos. En los logs, picoBruto nunca supera ~156° aunque la rodilla bruta llega a 169–173° en cuadros con cuadrosEstables=0, y los valles salen en 81–82° aunque llega a 74–76° en cuadros con cuadrosEstables=0. rodillaSuavizada también se congela en esos cuadros. Encuentra dónde se descartan (validez del cuadro, historial del filtro, EMA) y haz que TODO cuadro con cuadroValido=true entre a la mediana de 3, a pico/valle y al EMA, sin importar cuadrosEstables. Resultado esperado: picoBruto y valleBruto reflejan los extremos reales del ciclo, y la misma profundidad se clasifica igual en cada repetición.
+
+3. En [sentadilla-ciclo], rangoReferencia sale constante en 7.00° y ratioProfundidad en ~10: valores sin sentido. Corrígelos o elimínalos; no deben afectar el conteo ni la clasificación.
+
+4. Añadir un log [sentadilla-descartes] con cuántos cuadros se descartaron y el motivo, para poder verificarlo.
+
+Pruebas sintéticas nuevas (todas por parámetros, sin datos de ningún video):
+- Pausas de varios cuadros en el pico y en el valle, con cuadrosEstables=0 en esos cuadros: pico y valle deben ser los extremos reales.
+- Profundidades muy por debajo del umbral (por ejemplo 20° más profundas) deben clasificarse correctas.
+- Misma profundidad en 6 repeticiones seguidas con distintas pausas: misma clasificación en todas.
+- Profundidad 5° corta sigue siendo correcta; 15° corta sigue siendo incorrecta.
+
+Mismo alcance de antes: solo el contador de sentadillas, sin tocar UI, otros ejercicios, worker, pose3d, backend ni .replit. Al terminar: typecheck, build y pruebas correctos, y resumen breve.

@@ -16,6 +16,7 @@ type SyntheticSeriesOptions = {
   bottomPauseSeconds?: number;
   startPhase?: number;
   noiseAmplitude?: number;
+  simulateZeroStablePauses?: boolean;
 };
 
 function angleAt(
@@ -56,6 +57,7 @@ function runSyntheticSeries(options: SyntheticSeriesOptions) {
     bottomPauseSeconds = 0,
     startPhase = 0,
     noiseAmplitude = 0,
+    simulateZeroStablePauses = false,
   } = options;
   const movementDuration = amplitude / velocityDegreesPerSecond;
   const cycleDuration = 2 * movementDuration
@@ -66,6 +68,7 @@ function runSyntheticSeries(options: SyntheticSeriesOptions) {
   const sampleStepSeconds = playbackRate / analysisFps;
   let tracker = createSquatTracker();
   const completedCycles = [];
+  let zeroStablePauseFrames = 0;
   let frame = 0;
 
   for (
@@ -82,6 +85,14 @@ function runSyntheticSeries(options: SyntheticSeriesOptions) {
       bottomPauseSeconds,
     );
     const generatedNoise = noiseAmplitude * Math.sin(frame * 0.73);
+    const isPausedAtAnExtremum = generatedAngle === peak
+      || generatedAngle === peak - amplitude;
+    const simulatedStableFrames = isPausedAtAnExtremum ? 0 : 4;
+    if (simulateZeroStablePauses && simulatedStableFrames === 0) {
+      zeroStablePauseFrames += 1;
+    }
+    // Valid generated angles are all fed to the tracker, even when the simulated
+    // stability counter is zero at a top or bottom pause.
     const update = advanceSquatTracker(
       tracker,
       generatedAngle + generatedNoise,
@@ -92,6 +103,49 @@ function runSyntheticSeries(options: SyntheticSeriesOptions) {
     frame += 1;
   }
 
+  return { tracker, completedCycles, zeroStablePauseFrames };
+}
+
+function runSyntheticCyclesWithPauses(
+  options: SyntheticSeriesOptions,
+  pauses: Array<{ top: number; bottom: number }>,
+) {
+  const {
+    peak,
+    amplitude,
+    analysisFps,
+    playbackRate = 1,
+    velocityDegreesPerSecond,
+  } = options;
+  const stepSeconds = playbackRate / analysisFps;
+  const movementSteps = Math.ceil(
+    amplitude / velocityDegreesPerSecond / stepSeconds,
+  );
+  let tracker = createSquatTracker();
+  let timeSeconds = 0;
+  const completedCycles = [];
+  const feed = (angle: number) => {
+    const update = advanceSquatTracker(tracker, angle, timeSeconds);
+    tracker = update.tracker;
+    if (update.completedCycle) completedCycles.push(update.completedCycle);
+    timeSeconds += stepSeconds;
+  };
+
+  pauses.forEach(({ top, bottom }) => {
+    const topFrames = Math.max(2, Math.ceil(top / stepSeconds));
+    const bottomFrames = Math.max(2, Math.ceil(bottom / stepSeconds));
+    for (let frame = 0; frame < topFrames; frame += 1) feed(peak);
+    for (let step = 1; step <= movementSteps; step += 1) {
+      feed(peak - (amplitude * step) / movementSteps);
+    }
+    for (let frame = 0; frame < bottomFrames; frame += 1) {
+      feed(peak - amplitude);
+    }
+    for (let step = 1; step <= movementSteps; step += 1) {
+      feed(peak - amplitude + (amplitude * step) / movementSteps);
+    }
+  });
+  for (let frame = 0; frame < 3; frame += 1) feed(peak);
   return { tracker, completedCycles };
 }
 
@@ -203,6 +257,45 @@ test('accepts a bottom 5 degrees short and counts a 15-degree-short bottom as in
   ));
 });
 
+test('uses valid top and bottom extrema during pauses with zero stable frames', () => {
+  const peak = 150;
+  const valley = 65;
+  const { tracker, completedCycles, zeroStablePauseFrames } = runSyntheticSeries(
+    baseSeries({
+      peak,
+      amplitude: peak - valley,
+      repetitions: 2,
+      topPauseSeconds: 0.6,
+      bottomPauseSeconds: 0.6,
+      simulateZeroStablePauses: true,
+    }),
+  );
+
+  assert.ok(zeroStablePauseFrames > 0);
+  assert.equal(tracker.repetitions, 2);
+  assert.ok(completedCycles.every((cycle) => cycle.peakAngle === peak));
+  assert.ok(completedCycles.every((cycle) => cycle.valleyAngle === valley));
+});
+
+test('classifies six same-depth cycles the same despite changing pause durations', () => {
+  const { tracker, completedCycles } = runSyntheticCyclesWithPauses(
+    baseSeries({ peak: 165, amplitude: 80, repetitions: 6 }),
+    [
+      { top: 0.05, bottom: 0.65 },
+      { top: 0.55, bottom: 0.05 },
+      { top: 0.1, bottom: 0.3 },
+      { top: 0.75, bottom: 0.7 },
+      { top: 0.2, bottom: 0.15 },
+      { top: 0.4, bottom: 0.5 },
+    ],
+  );
+
+  assert.equal(tracker.repetitions, 6);
+  assert.equal(tracker.goodRepetitions, 6);
+  assert.equal(completedCycles.length, 6);
+  assert.ok(completedCycles.every((cycle) => cycle.classification === 'valid'));
+});
+
 test('keeps counts stable across generated speeds, analysis rates, and playback rates', () => {
   const scenarios = [
     { velocityDegreesPerSecond: 45, analysisFps: 8, playbackRate: 0.5 },
@@ -235,18 +328,17 @@ test('uses one angular tolerance for top and bottom thresholds and logs raw extr
 
   assert.ok(cycle);
   assert.equal(cycle.topThreshold, 135);
-  assert.equal(cycle.bottomMinThreshold, 78);
   assert.equal(cycle.bottomMaxThreshold, 95);
   assert.equal(cycle.toleranceDegrees, 5);
   assert.ok(cycle.peakAngle > cycle.valleyAngle);
-  assert.match(cycle.reason, /valle=.*dentro de 78–95°/);
+  assert.match(cycle.reason, /valle=.*<= 95°/);
 });
 
-test('counts varying movement amplitudes and classifies shallow or very deep cycles', () => {
+test('counts shallow cycles as incorrect but never rejects a deeper valid cycle', () => {
   const scenarios = [
     { peak: 178, amplitude: 88, expected: 'valid' },
     { peak: 158, amplitude: 58, expected: 'too-shallow' },
-    { peak: 170, amplitude: 100, expected: 'too-deep' },
+    { peak: 165, amplitude: 95, expected: 'valid' },
   ] as const;
 
   for (const scenario of scenarios) {

@@ -6,7 +6,7 @@ export type SquatPhase =
   | 'abajo'
   | 'subiendo';
 
-export type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
+export type SquatRepEvent = 'valid' | 'too-shallow' | null;
 export type SquatDirection = 'down' | 'up';
 
 export const SQUAT_VALID_MIN_ANGLE = 83;
@@ -49,11 +49,7 @@ export type SquatCompletedCycle = {
   peakAngle: number;
   valleyAngle: number;
   observedRange: number;
-  referenceRange: number;
-  depthRatio: number;
-  recoveryRatio: number;
   topThreshold: number;
-  bottomMinThreshold: number;
   bottomMaxThreshold: number;
   toleranceDegrees: number;
   classification: Exclude<SquatRepEvent, null>;
@@ -68,7 +64,6 @@ export type SquatTrackerUpdate = {
 };
 
 const TOP_ACCEPTANCE_THRESHOLD = SQUAT_TOP_THRESHOLD - TOLERANCIA_GRADOS;
-const BOTTOM_ACCEPTANCE_MIN = SQUAT_VALID_MIN_ANGLE - TOLERANCIA_GRADOS;
 const BOTTOM_ACCEPTANCE_MAX = SQUAT_VALID_MAX_ANGLE + TOLERANCIA_GRADOS;
 
 function median(values: number[]) {
@@ -276,13 +271,10 @@ export function advanceSquatTracker(
         cycleValleyAngle = filteredAngle;
       } else {
         const classification: Exclude<SquatRepEvent, null> = cycleValleyAngle
-          < BOTTOM_ACCEPTANCE_MIN
-          ? 'too-deep'
-          : cycleValleyAngle <= BOTTOM_ACCEPTANCE_MAX
-            ? 'valid'
-            : 'too-shallow';
+          <= BOTTOM_ACCEPTANCE_MAX
+          ? 'valid'
+          : 'too-shallow';
         const observedRange = Math.max(0, cyclePeakAngle - cycleValleyAngle);
-        const referenceRange = SQUAT_VALID_MAX_ANGLE - SQUAT_VALID_MIN_ANGLE;
         repetitions += 1;
         if (classification === 'valid') goodRepetitions += 1;
         event = classification;
@@ -291,27 +283,17 @@ export function advanceSquatTracker(
           peakAngle: cyclePeakAngle,
           valleyAngle: cycleValleyAngle,
           observedRange,
-          referenceRange,
-          depthRatio: referenceRange > 0 ? observedRange / referenceRange : 0,
-          recoveryRatio: observedRange > 0
-            ? Math.max(0, (filteredAngle - cycleValleyAngle) / observedRange)
-            : 0,
           topThreshold: TOP_ACCEPTANCE_THRESHOLD,
-          bottomMinThreshold: BOTTOM_ACCEPTANCE_MIN,
           bottomMaxThreshold: BOTTOM_ACCEPTANCE_MAX,
           toleranceDegrees: TOLERANCIA_GRADOS,
           classification,
           reason: classification === 'valid'
-            ? `valle=${cycleValleyAngle.toFixed(2)}° dentro de `
-              + `${BOTTOM_ACCEPTANCE_MIN}–${BOTTOM_ACCEPTANCE_MAX}°; `
+            ? `valle=${cycleValleyAngle.toFixed(2)}° <= `
+              + `${BOTTOM_ACCEPTANCE_MAX}° (profundidad suficiente, incluso más profunda); `
               + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`
-            : classification === 'too-shallow'
-              ? `valle=${cycleValleyAngle.toFixed(2)}° supera `
-                + `${BOTTOM_ACCEPTANCE_MAX}° (profundidad insuficiente); `
-                + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`
-              : `valle=${cycleValleyAngle.toFixed(2)}° menor que `
-                + `${BOTTOM_ACCEPTANCE_MIN}° (exceso de profundidad); `
-                + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`,
+            : `valle=${cycleValleyAngle.toFixed(2)}° supera `
+              + `${BOTTOM_ACCEPTANCE_MAX}° (profundidad insuficiente); `
+              + `retorno>=${TOP_ACCEPTANCE_THRESHOLD}°`,
         };
         phase = 'arriba';
         cyclePeakAngle = filteredAngle;
