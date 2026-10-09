@@ -30,6 +30,12 @@ import {
   Square,
   Upload,
 } from 'lucide-react';
+import {
+  advanceSquatTracker,
+  createSquatTracker,
+  type SquatPhase,
+  type SquatTracker,
+} from './squatTracker';
 import dipImage from '@assets/ChatGPT_Image_8_sept_2026__23_00_34-removebg-preview_1788926457927.png';
 import pullupImage from '@assets/ChatGPT_Image_8_sept_2026,_23_22_04_1788928280842.png';
 import supinePullupImage from '@assets/ChatGPT_Image_9_sept_2026,_12_18_29_a.m._1788931453217.png';
@@ -540,19 +546,6 @@ type TechniqueFeedback = {
   tone: TechniqueFeedbackTone;
   message: string;
   detail: string;
-};
-type SquatPhase = 'esperando arriba' | 'arriba' | 'bajando' | 'abajo';
-type SquatRepEvent = 'valid' | 'too-shallow' | 'too-deep' | null;
-type SquatTracker = {
-  phase: SquatPhase;
-  repetitions: number;
-  goodRepetitions: number;
-  minimumAngle: number | null;
-  descentStartAngle: number | null;
-  hasMeaningfulDescent: boolean;
-  samples: number[];
-  event: SquatRepEvent;
-  currentRepCounted: boolean;
 };
 // TEMP-DIAGNOSTICO: datos aislados de observación pasiva para un video subido de sentadillas.
 type UploadedSquatDiagnosticState = {
@@ -2675,7 +2668,6 @@ const SQUAT_VALID_MIN_ANGLE = 83;
 const SQUAT_VALID_MAX_ANGLE = 90;
 const SQUAT_TOP_THRESHOLD = 140;
 const SQUAT_RISE_THRESHOLD = 115;
-const SQUAT_MEANINGFUL_DESCENT = 30;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
@@ -4007,20 +3999,6 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
   }
 }
 
-function createSquatTracker(): SquatTracker {
-  return {
-    phase: 'esperando arriba',
-    repetitions: 0,
-    goodRepetitions: 0,
-    minimumAngle: null,
-    descentStartAngle: null,
-    hasMeaningfulDescent: false,
-    samples: [],
-    event: null,
-    currentRepCounted: false,
-  };
-}
-
 function createPullupTracker(): PullupTracker {
   return {
     phase: 'esperando abajo',
@@ -4056,82 +4034,6 @@ function smoothAngleReading(
     value,
   ].slice(-ANGLE_DISPLAY_SAMPLES);
   return median(samplesRef.current) ?? value;
-}
-
-type SquatTrackerUpdate = {
-  tracker: SquatTracker;
-  smoothedAngle: number;
-  completedMinimumAngle: number | null;
-};
-
-function advanceSquatTracker(tracker: SquatTracker, rawAngle: number): SquatTrackerUpdate {
-  const samples = [...tracker.samples, rawAngle].slice(-SQUAT_SMOOTHING_SAMPLES);
-  const smoothedAngle = median(samples);
-  if (smoothedAngle === null) {
-    return { tracker, smoothedAngle: rawAngle, completedMinimumAngle: null };
-  }
-
-  const nextTracker: SquatTracker = {
-    ...tracker,
-    samples,
-    event: null,
-  };
-  let completedMinimumAngle: number | null = null;
-
-  if (nextTracker.phase === 'esperando arriba') {
-    if (smoothedAngle >= SQUAT_TOP_THRESHOLD) {
-      nextTracker.phase = 'arriba';
-      nextTracker.minimumAngle = null;
-    }
-    return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
-  }
-
-  if (nextTracker.phase === 'arriba' && smoothedAngle < SQUAT_TOP_THRESHOLD) {
-    nextTracker.phase = 'bajando';
-    nextTracker.minimumAngle = smoothedAngle;
-    nextTracker.descentStartAngle = smoothedAngle;
-    nextTracker.hasMeaningfulDescent = false;
-    nextTracker.currentRepCounted = false;
-  } else if (nextTracker.phase === 'bajando') {
-    nextTracker.minimumAngle = nextTracker.minimumAngle === null
-      ? rawAngle
-      : Math.min(nextTracker.minimumAngle, rawAngle);
-    if (nextTracker.descentStartAngle !== null
-      && nextTracker.descentStartAngle - smoothedAngle >= SQUAT_MEANINGFUL_DESCENT) {
-      nextTracker.hasMeaningfulDescent = true;
-    }
-    if (rawAngle <= SQUAT_VALID_MAX_ANGLE || smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
-      nextTracker.phase = 'abajo';
-      nextTracker.currentRepCounted = true;
-      completedMinimumAngle = nextTracker.minimumAngle;
-      if (rawAngle < SQUAT_VALID_MIN_ANGLE) {
-        nextTracker.event = 'too-deep';
-      } else {
-        nextTracker.event = 'valid';
-        nextTracker.goodRepetitions += 1;
-      }
-      nextTracker.repetitions += 1;
-    } else if (nextTracker.hasMeaningfulDescent && smoothedAngle > SQUAT_RISE_THRESHOLD) {
-      completedMinimumAngle = nextTracker.minimumAngle;
-      nextTracker.phase = 'arriba';
-      nextTracker.currentRepCounted = true;
-      nextTracker.event = 'too-shallow';
-      nextTracker.repetitions += 1;
-    }
-  } else if (nextTracker.phase === 'abajo') {
-    nextTracker.minimumAngle = nextTracker.minimumAngle === null
-      ? rawAngle
-      : Math.min(nextTracker.minimumAngle, rawAngle);
-
-    if (smoothedAngle > SQUAT_RISE_THRESHOLD) {
-      nextTracker.phase = 'arriba';
-      nextTracker.currentRepCounted = true;
-      nextTracker.descentStartAngle = null;
-      nextTracker.hasMeaningfulDescent = false;
-    }
-  }
-
-  return { tracker: nextTracker, smoothedAngle, completedMinimumAngle };
 }
 
 type PullupTrackerUpdate = {
@@ -12895,18 +12797,12 @@ function Home() {
         )
       );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
-      let squatSmoothedAngleForLog = rawAngle === null
-        ? median(squatTrackerRef.current.samples)
-        : median([
-            ...squatTrackerRef.current.samples,
-            rawAngle,
-          ].slice(-SQUAT_SMOOTHING_SAMPLES));
+      let squatSmoothedAngleForLog = squatTrackerRef.current.smoothedAngle ?? rawAngle;
       if (
         exerciseStartedRef.current
         && !uploadedPushupAnalysisStartingRef.current
         && hasFreshPose
         && frameCameraReady
-        && frameDetectionStable
         && selectedExerciseRef.current === 'sentadillas'
         && (
           inputModeRef.current !== 'video'
@@ -12917,13 +12813,25 @@ function Home() {
       ) {
         const previousSquatTracker = squatTrackerRef.current;
         const previousSquatPhase = previousSquatTracker.phase;
-        const squatUpdate = advanceSquatTracker(squatTrackerRef.current, rawAngle);
+        const squatSampleTimeSeconds = inputModeRef.current === 'video'
+          ? diagnosticVideoTime ?? video.currentTime
+          : (scheduledTimestamp ?? performance.now()) / 1000;
+        const squatUpdate = advanceSquatTracker(
+          squatTrackerRef.current,
+          rawAngle,
+          frameDetectionStable,
+          squatSampleTimeSeconds,
+        );
         squatTrackerRef.current = squatUpdate.tracker;
         squatSmoothedAngleForLog = squatUpdate.smoothedAngle;
         nextAngle = squatUpdate.smoothedAngle;
         setSquatRepetitions(squatUpdate.tracker.repetitions);
         setSquatGoodRepetitions(squatUpdate.tracker.goodRepetitions);
-        setSquatPhase(squatUpdate.tracker.phase);
+        setSquatPhase(
+          squatUpdate.tracker.phase === 'desconocida'
+            ? 'esperando arriba'
+            : squatUpdate.tracker.phase,
+        );
         setSquatMinimumAngle(squatUpdate.tracker.minimumAngle ?? squatUpdate.completedMinimumAngle);
         if (squatUpdate.tracker.event === 'valid') {
           setSquatFeedback({
@@ -12986,6 +12894,23 @@ function Home() {
               + `cuadrosEstables=${stabilityFramesRef.current} `
               + `repeticiones=${squatUpdate.tracker.repetitions}`,
             );
+            if (squatUpdate.completedCycle) {
+              const completedCycle = squatUpdate.completedCycle;
+              // TEMP-DIAGNOSTICO: conserva la explicación del ciclo contado para comparar series.
+              logUploadedSquatDiagnostic(
+                `[sentadilla-ciclo] source=App.tsx:12819 `
+                + `repeticion=${squatUpdate.tracker.repetitions} `
+                + `segundo=${videoTime.toFixed(3)} `
+                + `clasificacion=valle-y-recuperacion-proporcionales `
+                + `picoPrevio=${completedCycle.peakAngle.toFixed(2)}° `
+                + `valle=${completedCycle.valleyAngle.toFixed(2)}° `
+                + `rangoObservado=${completedCycle.observedRange.toFixed(2)}° `
+                + `rangoReferencia=${completedCycle.referenceRange.toFixed(2)}° `
+                + `ratioProfundidad=${completedCycle.depthRatio.toFixed(3)} `
+                + `recuperacionProporcional=${completedCycle.recoveryRatio.toFixed(3)} `
+                + `motivo=${completedCycle.reason}`,
+              );
+            }
           }
         }
       }
