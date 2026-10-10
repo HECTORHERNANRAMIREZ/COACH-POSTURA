@@ -128,7 +128,12 @@ import {
   createBoneConstraintFilter,
   setDebugBoneConstraintsEnabled,
 } from '@/bone-constraints';
-import { createPoseFilter, MAX_HELD_FRAMES } from '@/pose-filters';
+import {
+  createPoseFilter,
+  MAX_HELD_FRAMES,
+  MIN_SCORE_BODY,
+  MIN_SCORE_LIMB,
+} from '@/pose-filters';
 import {
   createSideConsistencyFilter,
   getSideSwapConfirmFrames,
@@ -763,6 +768,44 @@ type DeclinedPushupCurvePoint = {
   discarded: boolean;
   reasons: string[];
 };
+type DeclinedPushupDiagnosticJoint =
+  | 'shoulder'
+  | 'elbow'
+  | 'wrist'
+  | 'hip'
+  | 'knee'
+  | 'ankle';
+type DeclinedPushupDiagnosticJointLabel =
+  | 'hombro'
+  | 'codo'
+  | 'muñeca'
+  | 'cadera'
+  | 'rodilla'
+  | 'tobillo';
+type DeclinedPushupDiagnosticSideLabel = 'izquierdo' | 'derecho';
+type DeclinedPushupDiagnosticJointCounts = {
+  umbralPoseOneEuro: number;
+  crudoSobreUmbral: number;
+  filtradoPresente: number;
+  filtradoRetenido: number;
+};
+type DeclinedPushupPointsSummary = {
+  framesAnalyzed: number;
+  countsBySide: Record<
+    DeclinedPushupDiagnosticSideLabel,
+    Record<DeclinedPushupDiagnosticJointLabel, DeclinedPushupDiagnosticJointCounts>
+  >;
+  chosenSideFrames: Record<DeclinedPushupDiagnosticSideLabel | 'ninguno', number>;
+  chosenSideChanges: number;
+  previousChosenSide: PoseSide | null;
+  oneSidedRawPresence: Record<
+    'codo' | 'muñeca' | 'rodilla',
+    {
+      izquierdoPresenteDerechoAusente: number;
+      derechoPresenteIzquierdoAusente: number;
+    }
+  >;
+};
 type DeclinedPushupVideoDiagnosticState = {
   repetitions: DeclinedPushupDiagnosticRepetition[];
   current: DeclinedPushupDiagnosticRepetition | null;
@@ -778,6 +821,7 @@ type DeclinedPushupVideoDiagnosticState = {
   curveMinimumRawElbowAngle: number | null;
   curveMaximumRawElbowAngle: number | null;
   lastCurveLogVideoTimeSeconds: number | null;
+  pointsSummary: DeclinedPushupPointsSummary;
   // TEMP-DIAGNOSTICO: emite una sola vez el primer cuadro que sí llegó al tracker.
   countEnabledLogged: boolean;
   finished: boolean;
@@ -3674,6 +3718,196 @@ function isWithinAngle(angle: number, min: number, max: number) {
   return angle >= min && angle <= max;
 }
 
+const DECLINED_PUSHUP_DIAGNOSTIC_JOINTS = [
+  { key: 'shoulder', label: 'hombro' },
+  { key: 'elbow', label: 'codo' },
+  { key: 'wrist', label: 'muñeca' },
+  { key: 'hip', label: 'cadera' },
+  { key: 'knee', label: 'rodilla' },
+  { key: 'ankle', label: 'tobillo' },
+] as const;
+const DECLINED_PUSHUP_DIAGNOSTIC_ASYMMETRIC_JOINTS = [
+  { key: 'elbow', label: 'codo' },
+  { key: 'wrist', label: 'muñeca' },
+  { key: 'knee', label: 'rodilla' },
+] as const;
+
+type DeclinedPushupPointsFrameInput = {
+  videoTimeSeconds: number;
+  chosenSide: PoseSide | null;
+  rawPose: Pose | undefined;
+  filteredPose: Pose | undefined;
+  sideSwapConfirmed: boolean;
+};
+
+function getDeclinedPushupPointsSideLabel(
+  side: PoseSide,
+): DeclinedPushupDiagnosticSideLabel {
+  return side === 'left' ? 'izquierdo' : 'derecho';
+}
+
+function getDeclinedPushupPointFilterThreshold(
+  joint: DeclinedPushupDiagnosticJoint,
+) {
+  return joint === 'wrist' || joint === 'ankle'
+    ? MIN_SCORE_LIMB
+    : MIN_SCORE_BODY;
+}
+
+function getDeclinedPushupDiagnosticPointScore(point: PosePoint | undefined) {
+  const score = point?.score;
+  return typeof score === 'number' && Number.isFinite(score)
+    ? Number(score.toFixed(2))
+    : null;
+}
+
+function createDeclinedPushupPointsSummary(): DeclinedPushupPointsSummary {
+  const createSideCounts = () => Object.fromEntries(
+    DECLINED_PUSHUP_DIAGNOSTIC_JOINTS.map(({ key, label }) => [
+      label,
+      {
+        umbralPoseOneEuro: getDeclinedPushupPointFilterThreshold(key),
+        crudoSobreUmbral: 0,
+        filtradoPresente: 0,
+        filtradoRetenido: 0,
+      },
+    ]),
+  ) as Record<DeclinedPushupDiagnosticJointLabel, DeclinedPushupDiagnosticJointCounts>;
+
+  return {
+    framesAnalyzed: 0,
+    countsBySide: {
+      izquierdo: createSideCounts(),
+      derecho: createSideCounts(),
+    },
+    chosenSideFrames: { izquierdo: 0, derecho: 0, ninguno: 0 },
+    chosenSideChanges: 0,
+    previousChosenSide: null,
+    oneSidedRawPresence: {
+      codo: {
+        izquierdoPresenteDerechoAusente: 0,
+        derechoPresenteIzquierdoAusente: 0,
+      },
+      muñeca: {
+        izquierdoPresenteDerechoAusente: 0,
+        derechoPresenteIzquierdoAusente: 0,
+      },
+      rodilla: {
+        izquierdoPresenteDerechoAusente: 0,
+        derechoPresenteIzquierdoAusente: 0,
+      },
+    },
+  };
+}
+
+function createDeclinedPushupPointsFrameLog(input: DeclinedPushupPointsFrameInput) {
+  const scoresBySide = {} as Record<DeclinedPushupDiagnosticSideLabel, {
+    average: number | null;
+    pointCount: number;
+  }>;
+  const rawBySide = {} as Record<
+    DeclinedPushupDiagnosticSideLabel,
+    Record<DeclinedPushupDiagnosticJointLabel, number | null>
+  >;
+  const filteredBySide = {} as Record<
+    DeclinedPushupDiagnosticSideLabel,
+    Record<DeclinedPushupDiagnosticJointLabel, { puntaje: number | null; retenido: boolean }>
+  >;
+
+  (['left', 'right'] as const).forEach((side) => {
+    const sideLabel = getDeclinedPushupPointsSideLabel(side);
+    const indexes = sideKeypoints[side];
+    const scores = Object.values(indexes)
+      .map((index) => input.filteredPose?.keypoints[index]?.score)
+      .filter((score): score is number => typeof score === 'number');
+    scoresBySide[sideLabel] = {
+      average: scores.length
+        ? Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(2))
+        : null,
+      pointCount: scores.length,
+    };
+    rawBySide[sideLabel] = {} as Record<
+      DeclinedPushupDiagnosticJointLabel,
+      number | null
+    >;
+    filteredBySide[sideLabel] = {} as Record<
+      DeclinedPushupDiagnosticJointLabel,
+      { puntaje: number | null; retenido: boolean }
+    >;
+    DECLINED_PUSHUP_DIAGNOSTIC_JOINTS.forEach(({ key, label }) => {
+      const index = indexes[key];
+      const rawPoint = input.rawPose?.keypoints[index];
+      const filteredPoint = input.filteredPose?.keypoints[index];
+      rawBySide[sideLabel][label] = getDeclinedPushupDiagnosticPointScore(rawPoint);
+      filteredBySide[sideLabel][label] = {
+        puntaje: getDeclinedPushupDiagnosticPointScore(filteredPoint),
+        retenido: Boolean(filteredPoint?.held),
+      };
+    });
+  });
+
+  return {
+    videoTimeSeconds: Number(input.videoTimeSeconds.toFixed(3)),
+    ladoElegido: input.chosenSide
+      ? getDeclinedPushupPointsSideLabel(input.chosenSide)
+      : null,
+    promedioIzquierdo: scoresBySide.izquierdo.average,
+    puntosEnPromedioIzquierdo: scoresBySide.izquierdo.pointCount,
+    promedioDerecho: scoresBySide.derecho.average,
+    puntosEnPromedioDerecho: scoresBySide.derecho.pointCount,
+    crudo: rawBySide,
+    filtrado: filteredBySide,
+    ladosIntercambiadosPorConsistencia: input.sideSwapConfirmed,
+  };
+}
+
+function updateDeclinedPushupPointsSummary(
+  summary: DeclinedPushupPointsSummary,
+  input: DeclinedPushupPointsFrameInput,
+) {
+  summary.framesAnalyzed += 1;
+  if (input.chosenSide === null) {
+    summary.chosenSideFrames.ninguno += 1;
+  } else {
+    const selectedLabel = getDeclinedPushupPointsSideLabel(input.chosenSide);
+    summary.chosenSideFrames[selectedLabel] += 1;
+    if (
+      summary.previousChosenSide !== null
+      && summary.previousChosenSide !== input.chosenSide
+    ) {
+      summary.chosenSideChanges += 1;
+    }
+    summary.previousChosenSide = input.chosenSide;
+  }
+
+  (['left', 'right'] as const).forEach((side) => {
+    const sideLabel = getDeclinedPushupPointsSideLabel(side);
+    const indexes = sideKeypoints[side];
+    DECLINED_PUSHUP_DIAGNOSTIC_JOINTS.forEach(({ key, label }) => {
+      const rawPoint = input.rawPose?.keypoints[indexes[key]];
+      const filteredPoint = input.filteredPose?.keypoints[indexes[key]];
+      const rawScore = rawPoint?.score;
+      const counts = summary.countsBySide[sideLabel][label];
+      if (typeof rawScore === 'number' && rawScore >= counts.umbralPoseOneEuro) {
+        counts.crudoSobreUmbral += 1;
+      }
+      if (filteredPoint) counts.filtradoPresente += 1;
+      if (filteredPoint?.held) counts.filtradoRetenido += 1;
+    });
+  });
+
+  DECLINED_PUSHUP_DIAGNOSTIC_ASYMMETRIC_JOINTS.forEach(({ key, label }) => {
+    const leftPresent = Boolean(input.rawPose?.keypoints[sideKeypoints.left[key]]);
+    const rightPresent = Boolean(input.rawPose?.keypoints[sideKeypoints.right[key]]);
+    const counts = summary.oneSidedRawPresence[label];
+    if (leftPresent && !rightPresent) {
+      counts.izquierdoPresenteDerechoAusente += 1;
+    } else if (rightPresent && !leftPresent) {
+      counts.derechoPresenteIzquierdoAusente += 1;
+    }
+  });
+}
+
 // TEMP-DIAGNOSTICO: reinicia solo el registro de observación del video declinado.
 function createDeclinedPushupVideoDiagnosticState(): DeclinedPushupVideoDiagnosticState {
   return {
@@ -3691,6 +3925,7 @@ function createDeclinedPushupVideoDiagnosticState(): DeclinedPushupVideoDiagnost
     curveMinimumRawElbowAngle: null,
     curveMaximumRawElbowAngle: null,
     lastCurveLogVideoTimeSeconds: null,
+    pointsSummary: createDeclinedPushupPointsSummary(),
     countEnabledLogged: false,
     finished: false,
   };
@@ -3831,6 +4066,7 @@ function recordDeclinedPushupCurveFrame(
   point: Omit<DeclinedPushupCurvePoint, 'videoTimeSeconds'> & {
     videoTimeSeconds: number;
   },
+  pointsInput: DeclinedPushupPointsFrameInput,
 ) {
   if (diagnostics.finished) return;
   const sample: DeclinedPushupCurvePoint = {
@@ -3848,6 +4084,8 @@ function recordDeclinedPushupCurveFrame(
       : Math.max(diagnostics.curveMaximumRawElbowAngle, sample.rawElbowAngle);
   }
   diagnostics.curvePoints.push(sample);
+  updateDeclinedPushupPointsSummary(diagnostics.pointsSummary, pointsInput);
+  const pointsSample = createDeclinedPushupPointsFrameLog(pointsInput);
 
   const previousLogTime = diagnostics.lastCurveLogVideoTimeSeconds;
   if (
@@ -3857,6 +4095,7 @@ function recordDeclinedPushupCurveFrame(
   ) {
     console.log(`[flexiones-declinadas-curva] ${JSON.stringify(sample)}`);
     diagnostics.lastCurveLogVideoTimeSeconds = sample.videoTimeSeconds;
+    console.log(`[flexiones-declinadas-puntos] ${JSON.stringify(pointsSample)}`);
   }
 }
 
@@ -4171,6 +4410,30 @@ function finishDeclinedPushupVideoDiagnostics(
       vallesCodoSuavizado: extrema.valleys,
       cuadrosAnalizados: diagnostics.curveFramesAnalyzed,
       cuadrosBloqueados: diagnostics.curveFramesBlocked,
+    })}`,
+  );
+  const countsBySide = {
+    izquierdo: Object.fromEntries(
+      DECLINED_PUSHUP_DIAGNOSTIC_JOINTS.map(({ label }) => [
+        label,
+        diagnostics.pointsSummary.countsBySide.izquierdo[label],
+      ]),
+    ),
+    derecho: Object.fromEntries(
+      DECLINED_PUSHUP_DIAGNOSTIC_JOINTS.map(({ label }) => [
+        label,
+        diagnostics.pointsSummary.countsBySide.derecho[label],
+      ]),
+    ),
+  };
+  console.log(
+    `[flexiones-declinadas-puntos-resumen] ${JSON.stringify({
+      cuadrosAnalizados: diagnostics.pointsSummary.framesAnalyzed,
+      porLadoYArticulacion: countsBySide,
+      cuadrosElegidosPorLado: diagnostics.pointsSummary.chosenSideFrames,
+      cambiosDeLadoElegido: diagnostics.pointsSummary.chosenSideChanges,
+      crudoPresenteEnUnLadoYAusenteEnElOtro:
+        diagnostics.pointsSummary.oneSidedRawPresence,
     })}`,
   );
 }
@@ -15979,6 +16242,12 @@ function Home() {
           blocked: frameMeasurementBlocked,
           discarded: !uploadedPushupTrackerWasCalled,
           reasons: curveReasons,
+        }, {
+          videoTimeSeconds: video.currentTime,
+          chosenSide: measurementSide,
+          rawPose: detectedPose,
+          filteredPose: pose,
+          sideSwapConfirmed: confirmedSideSwaps.length > 0,
         });
       }
       // TEMP-DIAGNOSTICO: una sola línea por cuadro de fondo candidato en video subido.
