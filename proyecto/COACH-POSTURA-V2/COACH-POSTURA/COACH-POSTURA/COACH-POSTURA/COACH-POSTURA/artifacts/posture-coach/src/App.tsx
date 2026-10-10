@@ -732,6 +732,7 @@ type UploadedDipVideoSegmentationState = {
   // TEMP-DIAGNOSTICO: posiciones normalizadas del hombro en la fase inicial y su mediana por repetición.
   startShoulderYNormalizedSamples: number[];
   repetitionStartShoulderYNormalized: number | null;
+  repetitionMaxShoulderYNormalized: number | null;
 };
 // TEMP-DIAGNOSTICO: traza del camino que ya incrementó el contador, solo para el log.
 type UploadedDipCountTrace = {
@@ -8868,6 +8869,7 @@ function createUploadedDipVideoSegmentationState(): UploadedDipVideoSegmentation
     // TEMP-DIAGNOSTICO: inicia una ventana nueva para medir la referencia alta de hombro.
     startShoulderYNormalizedSamples: [],
     repetitionStartShoulderYNormalized: null,
+    repetitionMaxShoulderYNormalized: null,
   };
 }
 
@@ -12425,6 +12427,19 @@ function Home() {
           uploadedDipShoulderYNormalized,
         );
       }
+      // TEMP-DIAGNOSTICO-2: nivel más bajo del hombro durante la repetición (misma escala que base y retorno).
+      if (
+        isUploadedDipVideo
+        && uploadedDipVideoSegmentation
+        && uploadedDipShoulderYNormalized !== null
+        && exerciseRepTrackerRef.current.phase !== 'inicio'
+      ) {
+        uploadedDipVideoSegmentation.repetitionMaxShoulderYNormalized = Math.max(
+          uploadedDipVideoSegmentation.repetitionMaxShoulderYNormalized
+            ?? uploadedDipShoulderYNormalized,
+          uploadedDipShoulderYNormalized,
+        );
+      }
       // TEMP-DIAGNOSTICO: si falta señal en cualquier cuadro observado del descenso, deja la regla actual.
       if (
         isUploadedDipVideo
@@ -14406,6 +14421,11 @@ function Home() {
             const difference = base !== null && returned !== null
               ? Math.abs(returned - base)
               : null;
+            const shoulderMaxLevel = segmentation?.repetitionMaxShoulderYNormalized ?? null;
+            // TEMP-DIAGNOSTICO-2: la bajada medida hasta la decisión queda corta; se usa también el recorrido real del hombro.
+            const shoulderExcursion = shoulderMaxLevel !== null && base !== null
+              ? shoulderMaxLevel - base
+              : null;
             const shoulderLevelRestored = (
               base !== null
               && returned !== null
@@ -14413,7 +14433,7 @@ function Home() {
               && descent > 0
               && difference !== null
               && difference
-                <= UPLOADED_DIP_SHOULDER_RETURN_DROP_FRACTION * descent
+                <= UPLOADED_DIP_SHOULDER_RETURN_DROP_FRACTION * Math.max(descent, shoulderExcursion ?? 0)
             );
             if (!shoulderLevelRestored) {
               uploadedDipShoulderReturnRejectedForFrame = true;
@@ -14436,7 +14456,8 @@ function Home() {
                 + `base=${base?.toFixed(4) ?? '—'} `
                 + `retorno=${returned?.toFixed(4) ?? '—'} `
                 + `bajada=${descent?.toFixed(4) ?? '—'} `
-                + `diferencia=${difference?.toFixed(4) ?? '—'}`,
+                + `diferencia=${difference?.toFixed(4) ?? '—'} `
+                + `recorridoHombro=${shoulderExcursion?.toFixed(4) ?? '—'}`,
               );
             }
           }
