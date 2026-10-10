@@ -6009,6 +6009,7 @@ function hasFreshPushupWristHeldExceptionMeasurement(
 function getPushupCalibrationPoints(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  variant: 'regular' | 'declined' = 'regular',
 ) {
   if (!keypoints || !side) return [];
 
@@ -6018,7 +6019,10 @@ function getPushupCalibrationPoints(
     { label: 'codo', point: keypoints[indexes.elbow] },
     { label: 'muñeca', point: keypoints[indexes.wrist] },
     { label: 'cadera', point: keypoints[indexes.hip] },
-    { label: 'tobillo', point: keypoints[indexes.ankle] },
+    {
+      label: variant === 'declined' ? 'rodilla' : 'tobillo',
+      point: keypoints[variant === 'declined' ? indexes.knee : indexes.ankle],
+    },
   ];
 }
 
@@ -10867,6 +10871,8 @@ function Home() {
   const [inputMode, setInputMode] = useState<'camera' | 'video'>('camera');
   const inputModeRef = useRef<'camera' | 'video'>('camera');
   const uploadedPushupPreflightRef = useRef(false);
+  const uploadedDeclinedPushupPreflightRef = useRef(false);
+  const uploadedDeclinedPushupMeasurementSideRef = useRef<PoseSide | null>(null);
   const uploadedPullupPreflightRef = useRef(false);
   const uploadedPullupVideoEndedRef = useRef(false);
   const uploadedDipSearchActiveRef = useRef(false);
@@ -11645,6 +11651,8 @@ function Home() {
     uploadedSquatDetectionStartVideoTimeRef.current = null;
     uploadedSquatMeasurementSideRef.current = null;
     uploadedPushupPreflightRef.current = false;
+    uploadedDeclinedPushupPreflightRef.current = false;
+    uploadedDeclinedPushupMeasurementSideRef.current = null;
     uploadedPullupPreflightRef.current = false;
     uploadedPullupVideoEndedRef.current = false;
     uploadedPullupSearchPausedRef.current = false;
@@ -12178,7 +12186,10 @@ function Home() {
       return;
     }
     const canInspectPausedPushupVideo = inputModeRef.current === 'video'
-      && uploadedPushupPreflightRef.current
+      && (
+        uploadedPushupPreflightRef.current
+        || uploadedDeclinedPushupPreflightRef.current
+      )
       && !pushupCalibrationSuccessfulRef.current;
     if (
       inputModeRef.current === 'video'
@@ -12590,12 +12601,20 @@ function Home() {
         && stableLateralSide
         ? stableLateralSide
         : nextDominantSide;
-      const measurementSide = inputModeRef.current === 'video'
-        && selectedExerciseForFrame === 'sentadillas'
-        && uploadedSquatCountingPassRef.current
-        && uploadedSquatMeasurementSideRef.current
-        ? uploadedSquatMeasurementSideRef.current
-        : detectedMeasurementSide;
+      const uploadedDeclinedPushupMeasurementSide = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones-declinadas'
+        && !uploadedDeclinedPushupPreflightRef.current
+        ? uploadedDeclinedPushupMeasurementSideRef.current
+        : null;
+      const measurementSide = uploadedDeclinedPushupMeasurementSide
+        ?? (
+          inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'sentadillas'
+          && uploadedSquatCountingPassRef.current
+          && uploadedSquatMeasurementSideRef.current
+            ? uploadedSquatMeasurementSideRef.current
+            : detectedMeasurementSide
+        );
       const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
         || selectedExerciseForFrame === 'dominadas-comando';
@@ -12897,19 +12916,33 @@ function Home() {
           }
         }
       }
+      const isUploadedDeclinedPushupPreflight =
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones-declinadas'
+        && uploadedDeclinedPushupPreflightRef.current;
       if (
-        selectedExerciseForFrame === 'flexiones'
+        (
+          selectedExerciseForFrame === 'flexiones'
+          || isUploadedDeclinedPushupPreflight
+        )
         && !pushupCalibrationSuccessfulRef.current
         && !exerciseStartedRef.current
       ) {
+        const isDeclinedPushupCalibration = isUploadedDeclinedPushupPreflight;
         const uploadedPushupPreflight = inputModeRef.current === 'video'
-          && uploadedPushupPreflightRef.current;
+          && (
+            uploadedPushupPreflightRef.current
+            || uploadedDeclinedPushupPreflightRef.current
+          );
         const calibrationPoints = getPushupCalibrationPoints(
           pose?.keypoints,
           measurementSide,
+          isDeclinedPushupCalibration ? 'declined' : 'regular',
         );
         const calibrationWrist = calibrationPoints.find(({ label }) => label === 'muñeca')?.point;
         const uploadedPushupCalibrationWristHeldAccepted = Boolean(
+          !isDeclinedPushupCalibration
+          &&
           uploadedPushupPreflight
           && isHeldPoint(calibrationWrist)
           && (calibrationWrist?.score ?? 0) >= CAMERA_POINT_MIN_SCORE
@@ -12921,7 +12954,7 @@ function Home() {
           if (!point) return [`${label}: punto ausente`];
           if (
             isHeldPoint(point)
-            && !(label === 'muñeca' && uploadedPushupCalibrationWristHeldAccepted)
+              && !(label === 'muñeca' && uploadedPushupCalibrationWristHeldAccepted)
           ) {
             return [`${label}: punto retenido/no fresco, confianza=${(point.score ?? 0).toFixed(2)}`];
           }
@@ -12943,11 +12976,19 @@ function Home() {
         ].filter((reason): reason is string => reason !== null);
         const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
           && calibrationPoints.length === 5
-          && calibrationPoints.every(({ label, point }) => (
-            label === 'muñeca' && uploadedPushupCalibrationWristHeldAccepted
-              ? Boolean(point && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE)
-              : isFreshPushupCalibrationPoint(point)
-          ));
+          && (
+            isDeclinedPushupCalibration
+              ? hasFreshPushupMeasurement(
+                  pose?.keypoints,
+                  measurementSide,
+                  'declined',
+                )
+              : calibrationPoints.every(({ label, point }) => (
+                  label === 'muñeca' && uploadedPushupCalibrationWristHeldAccepted
+                    ? Boolean(point && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE)
+                    : isFreshPushupCalibrationPoint(point)
+                ))
+          );
 
         if (calibrationFrameReady) {
           let calibrationElapsed: number;
@@ -13078,12 +13119,13 @@ function Home() {
             }
             pushupCalibrationReadyVideoTimeRef.current = null;
             const calibrationRepetitionAngle = calculateRepetitionAngle(
-              'flexiones',
+              isDeclinedPushupCalibration ? 'flexiones-declinadas' : 'flexiones',
               pose?.keypoints,
               measurementSide,
             );
             if (
-              uploadedPushupPreflightRef.current
+              !isDeclinedPushupCalibration
+              && uploadedPushupPreflightRef.current
               && !uploadedPushupInitialPositionDecidedRef.current
               && calibrationRepetitionAngle !== null
             ) {
@@ -13100,7 +13142,11 @@ function Home() {
                 + `| t=${video.currentTime.toFixed(3)}s`,
               );
             }
-            pushupLockedMeasurementSideRef.current = measurementSide;
+            if (isDeclinedPushupCalibration) {
+              uploadedDeclinedPushupMeasurementSideRef.current = measurementSide;
+            } else {
+              pushupLockedMeasurementSideRef.current = measurementSide;
+            }
             if (uploadedPushupPreflight) {
               poseFilterRef.current.reset();
               poseFilterRef.current.setPersistentHold(false);
@@ -13108,7 +13154,9 @@ function Home() {
               sideConsistencyRef.current.reset();
               boneConstraintRef.current.reset();
               stabilityFramesRef.current = 0;
-              uploadedPushupPostSeekFilterStageRef.current = 'awaiting-seek';
+              if (!isDeclinedPushupCalibration) {
+                uploadedPushupPostSeekFilterStageRef.current = 'awaiting-seek';
+              }
               console.log(
                 `[flexiones-video] filtro reiniciado motivo=detección antes del salto atrás `
                 + `t=${video.currentTime.toFixed(2)}s`,
@@ -13147,24 +13195,26 @@ function Home() {
               updatePushupPreparationStage('active');
               updatePushupPreparationCountdown(null);
               setVideoExportStatus('Cuerpo detectado. Preparando conteo…');
-              console.log(
-                `[flexiones-video] t=${video.currentTime.toFixed(2)}s cuerpo detectado `
-                + `ventanaDeteccionInicio=${detectionStartVideoTime.toFixed(2)}s, `
-                + `conteoDesde=0.00s tras transición `
-                + `lado=${measurementSide ?? 'ninguno'}`,
-              );
-              console.log(
-                `[flexiones-video] t=${video.currentTime.toFixed(2)}s arranque del conteo `
-                + `contadoresAntes=${JSON.stringify(trackerCountsBeforeReset)} `
-                + `contadoresDespués={"total":0,"correctas":0,"incorrectas":0} `
-                + `banderas=${JSON.stringify({
-                  deteccionCompletada: pushupCalibrationSuccessfulRef.current,
-                  ejercicioIniciado: exerciseStartedRef.current,
-                  analisisIniciando: uploadedPushupAnalysisStartingRef.current,
-                  preflightActivo: uploadedPushupPreflightRef.current,
-                  trackerLlamado: false,
-                })}`,
-              );
+              if (!isDeclinedPushupCalibration) {
+                console.log(
+                  `[flexiones-video] t=${video.currentTime.toFixed(2)}s cuerpo detectado `
+                  + `ventanaDeteccionInicio=${detectionStartVideoTime.toFixed(2)}s, `
+                  + `conteoDesde=0.00s tras transición `
+                  + `lado=${measurementSide ?? 'ninguno'}`,
+                );
+                console.log(
+                  `[flexiones-video] t=${video.currentTime.toFixed(2)}s arranque del conteo `
+                  + `contadoresAntes=${JSON.stringify(trackerCountsBeforeReset)} `
+                  + `contadoresDespués={"total":0,"correctas":0,"incorrectas":0} `
+                  + `banderas=${JSON.stringify({
+                    deteccionCompletada: pushupCalibrationSuccessfulRef.current,
+                    ejercicioIniciado: exerciseStartedRef.current,
+                    analisisIniciando: uploadedPushupAnalysisStartingRef.current,
+                    preflightActivo: uploadedPushupPreflightRef.current,
+                    trackerLlamado: false,
+                  })}`,
+                );
+              }
             } else {
               pushupPreparationStartedAtRef.current = now;
               updatePushupPreparationStage('pushup-preparation');
@@ -15923,6 +15973,8 @@ function Home() {
       if (
         inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'flexiones-declinadas'
+        && !uploadedDeclinedPushupPreflightRef.current
+        && !uploadedPushupAnalysisStartingRef.current
       ) {
         // TEMP-DIAGNOSTICO: explica por qué el tracker aún no reconoce el punto de inicio.
         const declinedDiagnostics = uploadedDeclinedPushupDiagnosticsRef.current;
@@ -17216,7 +17268,10 @@ function Home() {
     const canInspectPausedPushupVideo = Boolean(
       video?.paused
       && inputModeRef.current === 'video'
-      && uploadedPushupPreflightRef.current
+      && (
+        uploadedPushupPreflightRef.current
+        || uploadedDeclinedPushupPreflightRef.current
+      )
       && !pushupCalibrationSuccessfulRef.current,
     );
     const isUploadedPushupPlayback = inputModeRef.current === 'video'
@@ -17613,6 +17668,11 @@ function Home() {
 
   const startUploadedPushupPlayback = useCallback(async (calibrationStartVideoTime?: number) => {
     const video = videoRef.current;
+    const isUploadedStandardPushup = selectedExerciseRef.current === 'flexiones'
+      && uploadedPushupPreflightRef.current;
+    const isUploadedDeclinedPushup =
+      selectedExerciseRef.current === 'flexiones-declinadas'
+      && uploadedDeclinedPushupPreflightRef.current;
     const detectedStartVideoTime = calibrationStartVideoTime
       ?? uploadedPushupDetectionStartVideoTimeRef.current;
     const isCalibrationTriggeredStart = detectedStartVideoTime !== null;
@@ -17620,7 +17680,7 @@ function Home() {
       !video
       || uploadedPushupTransitionPauseRef.current
       || inputModeRef.current !== 'video'
-      || !uploadedPushupPreflightRef.current
+      || (!isUploadedStandardPushup && !isUploadedDeclinedPushup)
       || !pushupCalibrationSuccessfulRef.current
       || (exerciseStartedRef.current && !isCalibrationTriggeredStart)
       || (uploadedPushupAnalysisStartingRef.current && !isCalibrationTriggeredStart)
@@ -17674,12 +17734,20 @@ function Home() {
             - exerciseRepTrackerRef.current.goodRepetitions,
         ),
       };
-      uploadedPushupPreflightRef.current = false;
+      if (isUploadedStandardPushup) {
+        uploadedPushupPreflightRef.current = false;
+      } else {
+        uploadedDeclinedPushupPreflightRef.current = false;
+        uploadedDeclinedPushupDiagnosticsRef.current
+          = createDeclinedPushupVideoDiagnosticState();
+      }
       hideUploadedPushupSearchOverlay();
       updatePushupPreparationStage('active');
       updatePushupPreparationCountdown(null);
       setTechniqueFeedback(defaultTechniqueFeedback);
-      video.playbackRate = UPLOADED_PUSHUP_PLAYBACK_RATE;
+      if (isUploadedStandardPushup) {
+        video.playbackRate = UPLOADED_PUSHUP_PLAYBACK_RATE;
+      }
 
       video.controls = true;
       const playbackStartTime = 0;
@@ -17690,14 +17758,18 @@ function Home() {
         sideConsistencyRef.current.reset();
         boneConstraintRef.current.reset();
         stabilityFramesRef.current = 0;
-        uploadedPushupPostSeekFilterStageRef.current = 'awaiting-stable-frames';
+        uploadedPushupPostSeekFilterStageRef.current = isUploadedStandardPushup
+          ? 'awaiting-stable-frames'
+          : null;
         const initialTracker = createExerciseRepTracker();
-        if (uploadedPushupStartsAtBottomRef.current) {
+        if (isUploadedStandardPushup && uploadedPushupStartsAtBottomRef.current) {
           initialTracker.phase = 'final';
           initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
           initialTracker.currentRepCorrect = true;
         }
-        uploadedPushupStartsAtBottomRef.current = false;
+        if (isUploadedStandardPushup) {
+          uploadedPushupStartsAtBottomRef.current = false;
+        }
         exerciseRepTrackerRef.current = initialTracker;
         setExerciseRepetitions(0);
         setExerciseGoodRepetitions(0);
@@ -17803,12 +17875,14 @@ function Home() {
       setVideoExportStatus('Conteo en curso desde el inicio del video.');
       uploadedPushupAnalysisStartingRef.current = false;
       activeRef.current = true;
-      const fpsMetrics = uploadedPushupFpsDiagnosticsRef.current;
-      fpsMetrics.active = true;
-      fpsMetrics.lastReportSourceTime = video.currentTime;
-      fpsMetrics.analyzedSamples = 0;
-      fpsMetrics.detectorMs = 0;
-      fpsMetrics.busySkipped = 0;
+      if (isUploadedStandardPushup) {
+        const fpsMetrics = uploadedPushupFpsDiagnosticsRef.current;
+        fpsMetrics.active = true;
+        fpsMetrics.lastReportSourceTime = video.currentTime;
+        fpsMetrics.analyzedSamples = 0;
+        fpsMetrics.detectorMs = 0;
+        fpsMetrics.busySkipped = 0;
+      }
       await video.play();
       if (
         generation === uploadedPushupAnalysisGenerationRef.current
@@ -17820,12 +17894,18 @@ function Home() {
       return;
     } catch {
       if (generation === uploadedPushupAnalysisGenerationRef.current) {
-        uploadedPushupFpsDiagnosticsRef.current.active = false;
+        if (isUploadedStandardPushup) {
+          uploadedPushupFpsDiagnosticsRef.current.active = false;
+        }
         uploadedPushupAnalysisStartingRef.current = false;
         activeRef.current = false;
         exerciseStartedRef.current = false;
         setExerciseStarted(false);
-        uploadedPushupPreflightRef.current = true;
+        if (isUploadedStandardPushup) {
+          uploadedPushupPreflightRef.current = true;
+        } else {
+          uploadedDeclinedPushupPreflightRef.current = true;
+        }
         video.controls = true;
         setVideoExportStatus('No se pudo completar el análisis del video. Revisa el archivo e inténtalo otra vez.');
       }
@@ -17852,6 +17932,24 @@ function Home() {
     if (
       inputMode !== 'video'
       || selectedExercise !== 'flexiones'
+      || pushupCalibrationStatus !== 'ready'
+    ) {
+      return;
+    }
+    const detectionStartVideoTime = uploadedPushupDetectionStartVideoTimeRef.current;
+    if (detectionStartVideoTime === null) return;
+    void startUploadedPushupPlayback(detectionStartVideoTime);
+  }, [
+    inputMode,
+    selectedExercise,
+    pushupCalibrationStatus,
+    startUploadedPushupPlayback,
+  ]);
+  useEffect(() => {
+    if (
+      inputMode !== 'video'
+      || selectedExercise !== 'flexiones-declinadas'
+      || !uploadedDeclinedPushupPreflightRef.current
       || pushupCalibrationStatus !== 'ready'
     ) {
       return;
@@ -17953,6 +18051,18 @@ function Home() {
     if (
       selectedExerciseRef.current === 'flexiones'
       && uploadedPushupPreflightRef.current
+      && !exerciseStartedRef.current
+    ) {
+      if (!pushupCalibrationSuccessfulRef.current) {
+        if (activeRef.current) scheduleNextFrame();
+        return;
+      }
+      void startUploadedPushupPlayback();
+      return;
+    }
+    if (
+      selectedExerciseRef.current === 'flexiones-declinadas'
+      && uploadedDeclinedPushupPreflightRef.current
       && !exerciseStartedRef.current
     ) {
       if (!pushupCalibrationSuccessfulRef.current) {
@@ -18137,7 +18247,7 @@ function Home() {
           correctas: pullupTrackerRef.current.goodRepetitions,
         }
       : null;
-    if (isUploadedPushupVideo) {
+    if (isUploadedPushupVideo || isUploadedDeclinedPushupVideo) {
       uploadedPushupSearchLastLoggedSecondRef.current = null;
       uploadedPushupResetLastLoggedSecondRef.current = null;
       uploadedPushupTrackerBlockedLastLoggedSecondRef.current = null;
@@ -18191,6 +18301,7 @@ function Home() {
     // preparación de cámara en vivo. Las flexiones conservan su calibración.
     const shouldStartUploadedExercise = Boolean(videoFile)
       && activeExercise !== 'flexiones'
+      && activeExercise !== 'flexiones-declinadas'
       && activeExercise !== 'dominadas'
       && activeExercise !== 'sentadillas';
     const shouldStartExercise = videoFile
@@ -18268,6 +18379,8 @@ function Home() {
       uploadedDipStopLoggedRef.current = false;
     }
     uploadedPushupPreflightRef.current = isUploadedPushupVideo;
+    uploadedDeclinedPushupPreflightRef.current = isUploadedDeclinedPushupVideo;
+    uploadedDeclinedPushupMeasurementSideRef.current = null;
     uploadedPullupPreflightRef.current = isUploadedPullupVideo;
     uploadedPullupSearchPausedRef.current = false;
     setUploadedPullupPreflightActive(isUploadedPullupVideo);
@@ -18284,7 +18397,11 @@ function Home() {
       uploadedSquatMeasurementSideRef.current = null;
       setVideoExportStatus('Buscando cuerpo…');
     }
-    if (isUploadedPushupVideo || isUploadedPullupVideo) {
+    if (
+      isUploadedPushupVideo
+      || isUploadedDeclinedPushupVideo
+      || isUploadedPullupVideo
+    ) {
       showUploadedPushupSearchOverlay();
     }
     if (isUploadedSquatVideo) {
@@ -18294,6 +18411,7 @@ function Home() {
       showUploadedPushupSearchOverlay();
     }
     if (isUploadedDipVideo) setVideoExportStatus('Buscando cuerpo…');
+    if (isUploadedDeclinedPushupVideo) setVideoExportStatus('Buscando cuerpo…');
     setPoseDetected(false);
     setFaceDetected(false);
     setDetectionStable(false);
@@ -18419,7 +18537,9 @@ function Home() {
         }
         video.pause();
         video.srcObject = null;
-        video.controls = !isUploadedPushupVideo && !isUploadedPullupVideo
+        video.controls = !isUploadedPushupVideo
+          && !isUploadedDeclinedPushupVideo
+          && !isUploadedPullupVideo
           && selectedExerciseRef.current !== 'flexiones';
         video.muted = false;
         const metadataLoaded = new Promise<void>((resolve, reject) => {
@@ -18553,7 +18673,11 @@ function Home() {
       }
       if (videoFile) {
         video.muted = true;
-        if (isUploadedPushupVideo || isUploadedPullupVideo) {
+        if (
+          isUploadedPushupVideo
+          || isUploadedDeclinedPushupVideo
+          || isUploadedPullupVideo
+        ) {
           setVideoExportStatus('Buscando cuerpo…');
           try {
             await video.play();
@@ -18706,7 +18830,10 @@ function Home() {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
       if (inputModeRef.current === 'video') {
-        const pushupPlaybackStartupPending = selectedExerciseRef.current === 'flexiones'
+        const pushupPlaybackStartupPending = (
+          selectedExerciseRef.current === 'flexiones'
+          || selectedExerciseRef.current === 'flexiones-declinadas'
+        )
           && uploadedPushupAnalysisStartingRef.current;
         if (pushupPlaybackStartupPending) {
           uploadedPushupAnalysisGenerationRef.current += 1;
@@ -18808,6 +18935,28 @@ function Home() {
         pushupPreparationCountdownRef.current = null;
         setPushupPreparationStage('body-detection');
         setPushupPreparationCountdown(null);
+      } else if (
+        selectedExerciseRef.current === 'flexiones-declinadas'
+        && inputModeRef.current === 'video'
+      ) {
+        hideUploadedPushupSearchOverlay();
+        if (videoRef.current) videoRef.current.controls = false;
+        uploadedDeclinedPushupPreflightRef.current = true;
+        uploadedDeclinedPushupMeasurementSideRef.current = null;
+        pushupCalibrationSuccessfulRef.current = false;
+        pushupCalibrationReadySinceRef.current = null;
+        pushupCalibrationReadyVideoTimeRef.current = null;
+        uploadedPushupDetectionStartVideoTimeRef.current = null;
+        uploadedPushupLastCalibrationAccumulatedMsRef.current = 0;
+        uploadedPushupCalibrationRunBaseMsRef.current = 0;
+        uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
+        uploadedPushupSearchGapRef.current = null;
+        updatePushupCalibrationStatus('pending');
+        pushupPreparationStageRef.current = 'body-detection';
+        pushupPreparationStartedAtRef.current = null;
+        pushupPreparationCountdownRef.current = null;
+        setPushupPreparationStage('body-detection');
+        setPushupPreparationCountdown(null);
       } else if (isLiveDipCamera()) {
         resetDipPreparation();
       }
@@ -18872,6 +19021,28 @@ function Home() {
         logUploadedPushupButtonState('después');
         return;
       }
+      if (
+        selectedExerciseRef.current === 'flexiones-declinadas'
+        && uploadedDeclinedPushupPreflightRef.current
+      ) {
+        if (pushupCalibrationSuccessfulRef.current) {
+          void startUploadedPushupPlayback();
+          return;
+        }
+        if (video.paused) {
+          showUploadedPushupSearchOverlay();
+          activeRef.current = true;
+          void video.play().then(() => {
+            if (activeRef.current) scheduleNextFrame();
+          }).catch(() => {
+            activeRef.current = false;
+            setVideoExportStatus('No se pudo reanudar la búsqueda. Pulsa Reproducir video para intentarlo otra vez.');
+          });
+        } else {
+          setVideoExportStatus('Buscando cuerpo…');
+        }
+        return;
+      }
 
       exerciseStartedRef.current = true;
       setExerciseStarted(true);
@@ -18927,6 +19098,7 @@ function Home() {
     scheduleNextFrame,
     isLiveDipCamera,
     hideUploadedPushupSearchOverlay,
+    showUploadedPushupSearchOverlay,
     cancelUploadedPushupTransitionPause,
     resetUploadedPullupSearch,
     resetDipPreparation,
@@ -19635,6 +19807,8 @@ function Home() {
   const canExportPullupDiagnostics = canExportDiagnostics && isPullupExerciseSelected;
   const isStandardPullupSelected = selectedExercise === 'dominadas';
   const isStandardPushupSelected = selectedExercise === 'flexiones';
+  const isUploadedDeclinedPushupSelected = inputMode === 'video'
+    && selectedExercise === 'flexiones-declinadas';
   const isLiveSquatSelected = inputMode === 'camera' && selectedExercise === 'sentadillas';
   const isLiveDipCameraSelected = isLiveDipCamera();
   const personDetected = poseDetected || faceDetected;
@@ -19673,7 +19847,8 @@ function Home() {
             : pullupPreparationCountdown !== null
               ? `Prepárate en la barra · ${pullupPreparationCountdown}`
               : 'Cuerpo registrado ✓ · cuélgate en la barra'
-        : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
+        : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+          && pushupPreparationStage === 'body-detection'
           ? inputMode === 'video'
             ? pushupPreparationCountdown !== null
               ? `Calibrando postura · ${pushupPreparationCountdown}s`
@@ -19683,7 +19858,8 @@ function Home() {
               : pushupCalibrationStatus === 'calibrating'
                 ? 'Mantén hombro, codo, muñeca, cadera y tobillo visibles'
                 : 'Buscando y registrando tu cuerpo...'
-        : isStandardPushupSelected && pushupPreparationStage === 'pushup-preparation'
+        : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+          && pushupPreparationStage === 'pushup-preparation'
                         ? inputMode === 'video'
                           ? 'Cuerpo detectado ✓ · pulsa reproducir'
                           : pushupPreparationCountdown !== null
@@ -20236,13 +20412,15 @@ function Home() {
                           : pullupPreparationCountdown !== null
                             ? `Cuélgate en la barra · ${pullupPreparationCountdown}`
                             : 'Prepárate en la barra'
-                      : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
+                      : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+                        && pushupPreparationStage === 'body-detection'
                         ? inputMode === 'video'
                           ? 'Detectando el cuerpo en el video...'
                           : pushupPreparationCountdown !== null
                             ? `Registrando cuerpo · ${pushupPreparationCountdown}`
                             : 'Buscando tu cuerpo...'
-                      : isStandardPushupSelected && pushupPreparationStage === 'pushup-preparation'
+                      : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+                        && pushupPreparationStage === 'pushup-preparation'
                         ? inputMode === 'video'
                           ? 'Video listo para reproducir'
                           : pushupPreparationCountdown !== null
@@ -20288,11 +20466,15 @@ function Home() {
                         ? 'Mantén cabeza, hombros, codos, muñecas, caderas, rodillas y tobillos visibles para registrar tu cuerpo.'
                         : isStandardPullupSelected && pullupPreparationStage === 'bar-preparation'
                           ? 'Cuélgate en la barra. Al terminar la cuenta regresiva se activarán automáticamente el monitoreo y el conteo.'
-                        : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
+                        : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+                          && pushupPreparationStage === 'body-detection'
                           ? inputMode === 'video'
-                            ? 'El video está pausado. Deja visibles hombro, codo, muñeca, cadera y tobillo; puedes avanzar a un fotograma claro.'
+                            ? isUploadedDeclinedPushupSelected
+                              ? 'El video está pausado. Deja visibles hombro, codo, muñeca, cadera y rodilla; puedes avanzar a un fotograma claro.'
+                              : 'El video está pausado. Deja visibles hombro, codo, muñeca, cadera y tobillo; puedes avanzar a un fotograma claro.'
                             : 'Mantén hombro, codo, muñeca, cadera y tobillo visibles durante 5 segundos para fijar tu cuerpo.'
-                        : isStandardPushupSelected && pushupPreparationStage === 'pushup-preparation'
+                        : (isStandardPushupSelected || isUploadedDeclinedPushupSelected)
+                          && pushupPreparationStage === 'pushup-preparation'
                           ? inputMode === 'video'
                             ? 'El cuerpo quedó fijado. Pulsa reproducir para analizar el video desde el inicio.'
                             : 'Acomódate en la posición inicial. Al terminar la cuenta regresiva comenzarán automáticamente la evaluación y el conteo.'
@@ -20843,6 +21025,10 @@ function Home() {
                     )
                     && (
                       selectedExercise !== 'flexiones'
+                      || pushupCalibrationStatus === 'ready'
+                    )
+                    && (
+                      selectedExercise !== 'flexiones-declinadas'
                       || pushupCalibrationStatus === 'ready'
                     )
                   }
