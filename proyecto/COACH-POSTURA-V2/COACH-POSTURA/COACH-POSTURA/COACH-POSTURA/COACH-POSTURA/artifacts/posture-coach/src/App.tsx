@@ -673,7 +673,18 @@ type DeclinedPushupCurvePoint = {
   smoothedElbowAngle: number | null;
   trackerPhase: ExerciseRepPhase;
   elbowTorsoAngle: number | null;
+  elbowTorsoRange: [number, number];
+  elbowTorsoAffectsValidity: false;
   bodyLineAngle: number | null;
+  bodyLineTargetRange: [number, number];
+  bodyLineAcceptedRange: [number, number];
+  bodyLineToleranceDegrees: number;
+  knee: {
+    score: number | null;
+    normalizedX: number | null;
+    normalizedY: number | null;
+    outsideMargin: boolean | null;
+  };
   // TEMP-DIAGNOSTICO: valores numéricos de los bloqueos, solo para declinadas.
   cameraGuidance: {
     tone: string;
@@ -690,6 +701,7 @@ type DeclinedPushupCurvePoint = {
       videoHeightPx: number;
       horizontalMarginPx: number;
       verticalMarginPx: number;
+      marginToleranceByJoint: typeof DECLINED_PUSHUP_FRAME_MARGIN_TOLERANCE;
       violatingJoints: Array<{
         joint: string;
         normalizedX: number;
@@ -697,6 +709,7 @@ type DeclinedPushupCurvePoint = {
         outsideEdges: string[];
         nearestEdge: string;
         nearestEdgeDistancePx: number;
+        toleratedByDeclinedMargin: boolean;
       }>;
     };
   };
@@ -729,14 +742,14 @@ type DeclinedPushupCurvePoint = {
     elbow: number | null;
     wrist: number | null;
     hip: number | null;
-    ankle: number | null;
+    knee: number | null;
   };
   heldLandmarks: {
     shoulder: boolean;
     elbow: boolean;
     wrist: boolean;
     hip: boolean;
-    ankle: boolean;
+    knee: boolean;
   };
   bodyInclinationFromHorizontalDeg: number | null;
   torsoInclinationFromHorizontalDeg: number | null;
@@ -1921,16 +1934,19 @@ const exercises: ExerciseDefinition[] = [
     name: 'Flexiones declinadas',
     muscleGroup: 'pecho',
     description: 'Eleva los pies y mantén el cuerpo firme mientras bajas con control.',
-    angleLabel: 'Codo 30–60° · cuerpo 162–180°',
-    cameraNote: 'Nota: vista lateral; la cámara puede estar baja o inclinada.',
+    angleLabel: 'Línea hombro–cadera–rodilla: objetivo 162–180°, acepta 152° con tolerancia provisional de 10°',
+    cameraNote: 'Nota: vista lateral; mantén hombro, codo, muñeca, cadera y rodilla visibles. El tobillo no se requiere.',
     trackedJoints: [
       { joint: 'hip', label: 'cadera' },
       { joint: 'shoulder', label: 'hombro' },
       { joint: 'elbow', label: 'codo' },
       { joint: 'wrist', label: 'muñeca' },
-      { joint: 'ankle', label: 'tobillo' },
+      { joint: 'knee', label: 'rodilla' },
     ],
-    trackedAngleLabels: ['Codo respecto al torso: 30–60°', 'Línea hombro–cadera–tobillo: 162–180°', 'Flexión del codo: final 70–105°'],
+    trackedAngleLabels: [
+      'Línea hombro–cadera–rodilla: objetivo 162–180°; acepta 152° con tolerancia de 10°',
+      'Flexión del codo: final 70–105°',
+    ],
   },
   {
     id: 'flexiones-pica',
@@ -3011,6 +3027,11 @@ const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 70;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
 const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
+// Solo declinadas: tolerancia provisional ajustable de 10° sobre el mínimo
+// nominal de 162°, por lo que se acepta una línea hombro–cadera–rodilla desde 152°.
+const DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES = 10;
+const DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE =
+  PUSHUP_BODY_LINE_MIN_ANGLE - DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES;
 const PUSHUP_PERSISTENT_HOLD_MAX_FRAMES = 2;
 const PUSHUP_COUNT_STABLE_FRAMES = 2;
 // Calibración del recorrido de flexiones a partir de la ejecución de referencia:
@@ -3118,6 +3139,18 @@ const HELD_POINT_ALPHA = 0.5;
 // Solo advertimos si una articulación está prácticamente cortada por el borde.
 // La cámara puede estar baja, inclinada o rotada; no exigimos una posición nivelada.
 const CAMERA_FRAME_MARGIN = 0.02;
+// En declinadas se tolera el margen completo vigente por articulación,
+// pero nunca una coordenada fuera de la imagen.
+const DECLINED_PUSHUP_FRAME_MARGIN_TOLERANCE: Record<
+  'hombro' | 'codo' | 'muñeca' | 'cadera' | 'rodilla',
+  number
+> = {
+  hombro: CAMERA_FRAME_MARGIN,
+  codo: CAMERA_FRAME_MARGIN,
+  muñeca: CAMERA_FRAME_MARGIN,
+  cadera: CAMERA_FRAME_MARGIN,
+  rodilla: CAMERA_FRAME_MARGIN,
+};
 const MUSCLE_UP_ANGLE_KEYS: MuscleUpAngleKey[] = [
   'leftElbow',
   'rightElbow',
@@ -3751,11 +3784,10 @@ function getDeclinedPushupTechniqueReasons(
       );
     }
   };
-  describeRange('codo/torso', repetition.elbowTorso, 30, 60);
   describeRange(
     'línea corporal',
     repetition.bodyLine,
-    PUSHUP_BODY_LINE_MIN_ANGLE,
+    DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
     PUSHUP_BODY_LINE_MAX_ANGLE,
   );
   if (
@@ -3969,7 +4001,7 @@ function recordDeclinedPushupTrackerUpdate(
     observeDeclinedPushupRange(
       repetition.bodyLine,
       techniqueAngles.bodyLineAngle,
-      PUSHUP_BODY_LINE_MIN_ANGLE,
+      DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
       PUSHUP_BODY_LINE_MAX_ANGLE,
     );
   }
@@ -4488,7 +4520,7 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
       return [
         `Inicio / regreso: codo ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}°`,
         `Final: codo ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
-        `Codo / torso 30–60° · cuerpo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
+        `Línea hombro–cadera–rodilla: objetivo ${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}° · acepta desde ${DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE}° (tolerancia ${DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES}°)`,
       ];
     case 'flexiones-pica':
       return [
@@ -5607,6 +5639,7 @@ function hasFreshPullupMeasurement(keypoints: PosePoint[] | undefined) {
 function hasFreshPushupMeasurement(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  variant: 'regular' | 'declined' = 'regular',
 ) {
   if (!keypoints || !side) return false;
 
@@ -5616,7 +5649,7 @@ function hasFreshPushupMeasurement(
     indexes.elbow,
     indexes.wrist,
     indexes.hip,
-    indexes.ankle,
+    variant === 'declined' ? indexes.knee : indexes.ankle,
   ].every((index) => isFreshPullupMeasurementPoint(keypoints[index]));
 }
 
@@ -5788,6 +5821,9 @@ function getCameraGuidance(
   const requiredPoints = getTrackedPointsForExercise(exercise, keypoints, side);
   const missingLabels = requiredPoints
     .filter(({ label, point }) => {
+      if (exercise === 'flexiones-declinadas') {
+        return !point || (point.score ?? 0) < CAMERA_POINT_MIN_SCORE;
+      }
       const minimumScore = (exercise === 'remo-barra'
         || exercise === 'remos-australianos-elevados')
         && (label.startsWith('codo') || label.startsWith('muñeca'))
@@ -5808,16 +5844,27 @@ function getCameraGuidance(
     };
   }
 
-  const framePoints = requiredPoints.map(({ point }) => point).filter(
-    (point): point is PosePoint => Boolean(point),
-  );
   const hasValidFrame = videoWidth > 0 && videoHeight > 0;
-  const outsideFrame = hasValidFrame && framePoints.some((point) => (
-    point.x < videoWidth * CAMERA_FRAME_MARGIN
-    || point.x > videoWidth * (1 - CAMERA_FRAME_MARGIN)
-    || point.y < videoHeight * CAMERA_FRAME_MARGIN
-    || point.y > videoHeight * (1 - CAMERA_FRAME_MARGIN)
-  ));
+  const outsideFrame = hasValidFrame && requiredPoints.some(({ label, point }) => {
+    if (!point) return true;
+    if (exercise === 'flexiones-declinadas') {
+      const joint = label.toLowerCase() as keyof typeof DECLINED_PUSHUP_FRAME_MARGIN_TOLERANCE;
+      const marginTolerance = DECLINED_PUSHUP_FRAME_MARGIN_TOLERANCE[joint] ?? 0;
+      const remainingMargin = Math.max(0, CAMERA_FRAME_MARGIN - marginTolerance);
+      return point.x < videoWidth * remainingMargin
+        || point.x > videoWidth * (1 - remainingMargin)
+        || point.y < videoHeight * remainingMargin
+        || point.y > videoHeight * (1 - remainingMargin)
+        || point.x < 0
+        || point.x >= videoWidth
+        || point.y < 0
+        || point.y >= videoHeight;
+    }
+    return point.x < videoWidth * CAMERA_FRAME_MARGIN
+      || point.x > videoWidth * (1 - CAMERA_FRAME_MARGIN)
+      || point.y < videoHeight * CAMERA_FRAME_MARGIN
+      || point.y > videoHeight * (1 - CAMERA_FRAME_MARGIN);
+  });
 
   if (outsideFrame) {
     return {
@@ -6193,6 +6240,7 @@ const commandoPullupReferenceFeedback: TechniqueFeedback = {
 function calculatePushupTechniqueAngles(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
+  variant: 'regular' | 'declined' = 'regular',
 ) {
   if (!keypoints || !side) {
     return {
@@ -6211,7 +6259,7 @@ function calculatePushupTechniqueAngles(
     bodyLineAngle: calculateAngle(
       keypoints[indexes.shoulder],
       keypoints[indexes.hip],
-      keypoints[indexes.ankle],
+      keypoints[variant === 'declined' ? indexes.knee : indexes.ankle],
     ),
   };
 }
@@ -6221,21 +6269,28 @@ function isPushupTechniqueValid(
   side: PoseSide | null,
   variant: 'regular' | 'declined' = 'regular',
 ) {
-  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(keypoints, side);
+  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(
+    keypoints,
+    side,
+    variant,
+  );
+  const minimumBodyLineAngle = variant === 'declined'
+    ? DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE
+    : PUSHUP_BODY_LINE_MIN_ANGLE;
   const elbowMin = variant === 'declined' ? 30 : PUSHUP_ELBOW_TORSO_MIN_ANGLE;
   const elbowMax = variant === 'declined'
     ? 60
     : PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE;
-  return elbowTorsoAngle !== null
+  const elbowTorsoValid = variant === 'declined'
+    || (
+      elbowTorsoAngle !== null
+      && isWithinAngle(elbowTorsoAngle, elbowMin, elbowMax)
+    );
+  return elbowTorsoValid
     && bodyLineAngle !== null
     && isWithinAngle(
-      elbowTorsoAngle,
-      elbowMin,
-      elbowMax,
-    )
-    && isWithinAngle(
       bodyLineAngle,
-      PUSHUP_BODY_LINE_MIN_ANGLE,
+      minimumBodyLineAngle,
       PUSHUP_BODY_LINE_MAX_ANGLE,
     );
 }
@@ -6253,8 +6308,11 @@ function getPushupTechniqueFeedback(
   const elbow = keypoints[indexes.elbow];
   const wrist = keypoints[indexes.wrist];
   const hip = keypoints[indexes.hip];
-  const ankle = keypoints[indexes.ankle];
-  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(keypoints, side);
+  const { elbowTorsoAngle, bodyLineAngle } = calculatePushupTechniqueAngles(
+    keypoints,
+    side,
+    variant,
+  );
   const neckAngle = calculateAngle(nose, shoulder, hip);
 
   if (
@@ -6277,20 +6335,22 @@ function getPushupTechniqueFeedback(
         wristCoordinates.z - shoulderCoordinates.z,
       ) / torsoLength
     : 1;
-  const bodyLineDeviation = Math.abs(180 - bodyLineAngle);
+  const minimumBodyLineAngle = variant === 'declined'
+    ? DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE
+    : PUSHUP_BODY_LINE_MIN_ANGLE;
   const elbowMinAngle = variant === 'declined' ? 30 : PUSHUP_ELBOW_TORSO_MIN_ANGLE;
   const elbowMaxAngle = variant === 'declined'
     ? 60
     : PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE;
 
-  if (elbowTorsoAngle > elbowMaxAngle) {
+  if (variant !== 'declined' && elbowTorsoAngle > elbowMaxAngle) {
     return {
       tone: 'warning',
       message: 'Acerca los codos al torso',
       detail: `Están a ${elbowTorsoAngle}°. Busca ${PUSHUP_ELBOW_TORSO_MIN_ANGLE}°–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}° y desciende con control.`,
     };
   }
-  if (elbowTorsoAngle < elbowMinAngle) {
+  if (variant !== 'declined' && elbowTorsoAngle < elbowMinAngle) {
     return {
       tone: 'danger',
       message: 'No cierres demasiado los codos',
@@ -6304,7 +6364,7 @@ function getPushupTechniqueFeedback(
       detail: 'Ajusta la posición de las manos antes de continuar.',
     };
   }
-  if (bodyLineDeviation > 18) {
+  if (bodyLineAngle < minimumBodyLineAngle) {
     return {
       tone: 'danger',
       message: 'Mantén una línea recta',
@@ -6323,7 +6383,7 @@ function getPushupTechniqueFeedback(
     tone: 'success',
     message: variant === 'declined' ? 'Flexión declinada correcta' : 'Postura correcta',
     detail: variant === 'declined'
-      ? `Codos a ${elbowTorsoAngle}° · cuerpo ${bodyLineAngle}°. Baja el pecho con control y mantén los pies firmes en el apoyo.`
+      ? `Línea corporal a ${bodyLineAngle}°. Baja el pecho con control y mantén los pies firmes en el apoyo.`
       : `Codos a ${elbowTorsoAngle}°. Baja el pecho de forma controlada y extiende sin bloquear bruscamente.`,
   };
 }
@@ -8970,13 +9030,18 @@ function calculateLiveAngleReadings(
       case 'flexiones':
       case 'flexiones-declinadas':
         return [
+          ...(exercise === 'flexiones'
+            ? [empty(
+                'Codo / torso',
+                `${PUSHUP_ELBOW_TORSO_MIN_ANGLE}–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}°`,
+              )]
+            : []),
           empty(
-            'Codo / torso',
-            exercise === 'flexiones'
-              ? `${PUSHUP_ELBOW_TORSO_MIN_ANGLE}–${PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE}°`
-              : '30–60°',
+            'Alineación',
+            exercise === 'flexiones-declinadas'
+              ? `${DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}° aceptado · tolerancia ${DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES}°`
+              : `${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`,
           ),
-          empty('Alineación', '162–180°'),
           empty(
             'Flexión',
             `Inicio ${PUSHUP_REP_START_MIN_ANGLE}–${PUSHUP_REP_START_MAX_ANGLE}° · activa <${PUSHUP_REP_ACTIVATION_ANGLE}° · final ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
@@ -9276,14 +9341,38 @@ function calculateLiveAngleReadings(
       ];
     case 'flexiones':
     case 'flexiones-declinadas': {
-      const pushupAngles = calculatePushupTechniqueAngles(keypoints, side);
+      const pushupAngles = calculatePushupTechniqueAngles(
+        keypoints,
+        side,
+        exercise === 'flexiones-declinadas' ? 'declined' : 'regular',
+      );
       const elbowMin = exercise === 'flexiones' ? PUSHUP_ELBOW_TORSO_MIN_ANGLE : 30;
       const elbowMax = exercise === 'flexiones'
         ? PUSHUP_ELBOW_TORSO_MAX_ANGLE + PUSHUP_ELBOW_TORSO_TOLERANCE
         : 60;
+      const minimumBodyLineAngle = exercise === 'flexiones-declinadas'
+        ? DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE
+        : PUSHUP_BODY_LINE_MIN_ANGLE;
+      const bodyLineTarget = exercise === 'flexiones-declinadas'
+        ? `${minimumBodyLineAngle}–${PUSHUP_BODY_LINE_MAX_ANGLE}° aceptado · tolerancia ${DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES}°`
+        : `${PUSHUP_BODY_LINE_MIN_ANGLE}–${PUSHUP_BODY_LINE_MAX_ANGLE}°`;
       return [
-        createLiveAngleReading('Codo / torso', pushupAngles.elbowTorsoAngle, `${elbowMin}–${elbowMax}°`, elbowMin, elbowMax),
-        createLiveAngleReading('Alineación', pushupAngles.bodyLineAngle, '162–180°', PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE),
+        ...(exercise === 'flexiones'
+          ? [createLiveAngleReading(
+              'Codo / torso',
+              pushupAngles.elbowTorsoAngle,
+              `${elbowMin}–${elbowMax}°`,
+              elbowMin,
+              elbowMax,
+            )]
+          : []),
+        createLiveAngleReading(
+          'Alineación',
+          pushupAngles.bodyLineAngle,
+          bodyLineTarget,
+          minimumBodyLineAngle,
+          PUSHUP_BODY_LINE_MAX_ANGLE,
+        ),
         value(
           elbow,
           'Flexión',
@@ -12211,7 +12300,11 @@ function Home() {
       // una lectura válida para contar o evaluar una flexión.
       const pushupMeasurementBlocked = isPushupExercise
         && (
-          !hasFreshPushupMeasurement(pose?.keypoints, measurementSide)
+          !hasFreshPushupMeasurement(
+            pose?.keypoints,
+            measurementSide,
+            selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
+          )
           || !frameCameraReady
         );
       const frameMeasurementBlocked = frameLowConfidence
@@ -12365,6 +12458,10 @@ function Home() {
       stabilityFramesRef.current = frameCanMeasure
         ? Math.min(8, stabilityFramesRef.current + 1)
         : 0;
+      const requiredStableFramesForFrame = selectedExerciseForFrame === 'flexiones'
+        || selectedExerciseForFrame === 'flexiones-declinadas'
+        ? PUSHUP_COUNT_STABLE_FRAMES
+        : 4;
       if (
         inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'flexiones'
@@ -12384,7 +12481,9 @@ function Home() {
           + 'cuadros estables después del salto atrás',
         );
       }
-      const frameDetectionStable = stabilityFramesRef.current >= 4;
+      const frameDetectionStable = selectedExerciseForFrame === 'flexiones'
+        ? stabilityFramesRef.current >= 4
+        : stabilityFramesRef.current >= requiredStableFramesForFrame;
       const standardPushupFrameStable = selectedExerciseForFrame === 'flexiones'
         && stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES;
       const standardPushupCountFrameReady = selectedExerciseForFrame === 'flexiones'
@@ -13448,7 +13547,11 @@ function Home() {
         || selectedExerciseForFrame === 'flexiones-pica'
       )
         && !pushupMeasurementBlocked
-        ? calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide)
+        ? calculatePushupTechniqueAngles(
+            pose?.keypoints,
+            nextDominantSide,
+            selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
+          )
         : { elbowTorsoAngle: null, bodyLineAngle: null };
       const muscleUpAnglesForFrame = selectedExerciseForFrame === 'muscle-up'
         ? calculateMuscleUpAngles(pose?.keypoints)
@@ -15358,7 +15461,11 @@ function Home() {
             video.currentTime,
             repetitionAngle,
             exerciseRepUpdate.smoothedAngle,
-            calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide),
+            calculatePushupTechniqueAngles(
+              pose?.keypoints,
+              nextDominantSide,
+              'declined',
+            ),
           );
         }
         uploadedPushupTrackerWasCalled = true;
@@ -15477,6 +15584,7 @@ function Home() {
         const techniqueAngles = calculatePushupTechniqueAngles(
           pose?.keypoints,
           nextDominantSide,
+          'declined',
         );
         if (
           declinedConfig
@@ -15509,7 +15617,7 @@ function Home() {
           observeDeclinedPushupRange(
             discardedRepetition.bodyLine,
             techniqueAngles.bodyLineAngle,
-            PUSHUP_BODY_LINE_MIN_ANGLE,
+            DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
             PUSHUP_BODY_LINE_MAX_ANGLE,
           );
           declinedDiagnostics.repetitions.push(discardedRepetition);
@@ -15556,7 +15664,7 @@ function Home() {
             !hasFreshPose ? 'pose no fresca' : null,
             !frameCameraReady ? 'cámara o encuadre no listo' : null,
             !frameDetectionStable
-              ? `detección inestable (${stabilityFramesRef.current}/4 cuadros)`
+              ? `detección inestable (${stabilityFramesRef.current}/${requiredStableFramesForFrame} cuadros)`
               : null,
             !countFrameReady ? 'frame de conteo no listo' : null,
             repetitionAngle === null ? 'ángulo del codo no disponible' : null,
@@ -15586,7 +15694,16 @@ function Home() {
                   codoBruto: repetitionAngle,
                   codoTorso: techniqueAngles.elbowTorsoAngle,
                   líneaCorporal: techniqueAngles.bodyLineAngle,
-                  rangosTécnicos: { codoTorso: [30, 60], líneaCorporal: [162, 180] },
+                  rangosTécnicos: {
+                    codoTorso: [30, 60],
+                    codoTorsoAfectaValidez: false,
+                    líneaCorporal: [162, 180],
+                    líneaCorporalAceptada: [
+                      DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
+                      PUSHUP_BODY_LINE_MAX_ANGLE,
+                    ],
+                    toleranciaLíneaCorporal: DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES,
+                  },
                   listoParaConteo: countFrameReady,
                   técnicaVálida: pushupTechniqueReady,
                   motivos: blockingReasons,
@@ -15660,6 +15777,12 @@ function Home() {
                 outsideEdges,
                 nearestEdge: nearestEdge.edge,
                 nearestEdgeDistancePx: Number(nearestEdge.distancePx.toFixed(1)),
+                toleratedByDeclinedMargin: selectedExerciseForFrame === 'flexiones-declinadas'
+                  && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+                  && point.x >= 0
+                  && point.x < video.videoWidth
+                  && point.y >= 0
+                  && point.y < video.videoHeight,
               }];
             })
           : [];
@@ -15678,8 +15801,8 @@ function Home() {
         const diagnosticHip = diagnosticMeasurementIndexes
           ? pose?.keypoints?.[diagnosticMeasurementIndexes.hip]
           : undefined;
-        const diagnosticAnkle = diagnosticMeasurementIndexes
-          ? pose?.keypoints?.[diagnosticMeasurementIndexes.ankle]
+        const diagnosticKnee = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.knee]
           : undefined;
         const diagnosticLeftShoulder = pose?.keypoints?.[sideKeypoints.left.shoulder];
         const diagnosticRightShoulder = pose?.keypoints?.[sideKeypoints.right.shoulder];
@@ -15717,7 +15840,7 @@ function Home() {
           ? diagnosticShoulderWidthPx / diagnosticTorsoLengthPx
           : null;
         const diagnosticBodyTopCoordinates = getAngleMeasurementCoordinates(diagnosticShoulder);
-        const diagnosticBodyBottomCoordinates = getAngleMeasurementCoordinates(diagnosticAnkle);
+        const diagnosticBodyBottomCoordinates = getAngleMeasurementCoordinates(diagnosticKnee);
         const diagnosticBodyHorizontalDistance = (
           diagnosticBodyTopCoordinates && diagnosticBodyBottomCoordinates
         )
@@ -15741,7 +15864,7 @@ function Home() {
           !hasFreshPose ? 'pose no fresca' : null,
           !frameCameraReady ? 'cámara o encuadre no listo' : null,
           !frameDetectionStable
-            ? `detección inestable (${stabilityFramesRef.current}/4 cuadros)`
+            ? `detección inestable (${stabilityFramesRef.current}/${requiredStableFramesForFrame} cuadros)`
             : null,
           !countFrameReady ? 'frame de conteo no listo' : null,
           repetitionAngle === null ? 'ángulo del codo no disponible' : null,
@@ -15758,7 +15881,33 @@ function Home() {
           smoothedElbowAngle: median(tracker.samples),
           trackerPhase: tracker.phase,
           elbowTorsoAngle: techniqueAngles.elbowTorsoAngle,
+          elbowTorsoRange: [30, 60],
+          elbowTorsoAffectsValidity: false,
           bodyLineAngle: techniqueAngles.bodyLineAngle,
+          bodyLineTargetRange: [
+            PUSHUP_BODY_LINE_MIN_ANGLE,
+            PUSHUP_BODY_LINE_MAX_ANGLE,
+          ],
+          bodyLineAcceptedRange: [
+            DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
+            PUSHUP_BODY_LINE_MAX_ANGLE,
+          ],
+          bodyLineToleranceDegrees: DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES,
+          knee: {
+            score: diagnosticKnee?.score ?? null,
+            normalizedX: diagnosticKnee && video.videoWidth > 0
+              ? Number((diagnosticKnee.x / video.videoWidth).toFixed(4))
+              : null,
+            normalizedY: diagnosticKnee && video.videoHeight > 0
+              ? Number((diagnosticKnee.y / video.videoHeight).toFixed(4))
+              : null,
+            outsideMargin: diagnosticKnee && video.videoWidth > 0 && video.videoHeight > 0
+              ? diagnosticKnee.x < diagnosticFrameMarginX
+                || diagnosticKnee.x > video.videoWidth - diagnosticFrameMarginX
+                || diagnosticKnee.y < diagnosticFrameMarginY
+                || diagnosticKnee.y > video.videoHeight - diagnosticFrameMarginY
+              : null,
+          },
           // TEMP-DIAGNOSTICO: comparación directa con el guard de vista y el encuadre.
           cameraGuidance: {
             tone: rawCameraGuidance.tone,
@@ -15774,6 +15923,7 @@ function Home() {
               videoHeightPx: video.videoHeight,
               horizontalMarginPx: Number(diagnosticFrameMarginX.toFixed(1)),
               verticalMarginPx: Number(diagnosticFrameMarginY.toFixed(1)),
+              marginToleranceByJoint: DECLINED_PUSHUP_FRAME_MARGIN_TOLERANCE,
               violatingJoints: diagnosticFrameMarginViolatingJoints,
             },
           },
@@ -15797,7 +15947,7 @@ function Home() {
             blocking: effectiveViewBlocksFrame,
           },
           stableFrames: stabilityFramesRef.current,
-          minimumStableFrames: 4,
+          minimumStableFrames: requiredStableFramesForFrame,
           visiblePoints,
           minimumVisiblePoints: 5,
           visiblePointScoreThreshold: 0.3,
@@ -15807,14 +15957,14 @@ function Home() {
             elbow: diagnosticElbow?.score ?? null,
             wrist: diagnosticWrist?.score ?? null,
             hip: diagnosticHip?.score ?? null,
-            ankle: diagnosticAnkle?.score ?? null,
+            knee: diagnosticKnee?.score ?? null,
           },
           heldLandmarks: {
             shoulder: Boolean(diagnosticShoulder?.held),
             elbow: Boolean(diagnosticElbow?.held),
             wrist: Boolean(diagnosticWrist?.held),
             hip: Boolean(diagnosticHip?.held),
-            ankle: Boolean(diagnosticAnkle?.held),
+            knee: Boolean(diagnosticKnee?.held),
           },
           bodyInclinationFromHorizontalDeg: diagnosticBodyInclinationFromHorizontalDeg,
           torsoInclinationFromHorizontalDeg: viewEstimate.pitchDeg === null
@@ -15872,6 +16022,7 @@ function Home() {
             hasFreshPushupMeasurement: hasFreshPushupMeasurement(
               pose?.keypoints,
               diagnosticMeasurementSide,
+              'declined',
             ),
             measurementSide: diagnosticMeasurementSide,
             shoulder: {
@@ -16174,7 +16325,7 @@ function Home() {
         stabilityFrames: stabilityFramesRef.current,
         requiredStabilityFrames: selectedExerciseForFrame === 'flexiones'
           ? PUSHUP_COUNT_STABLE_FRAMES
-          : 4,
+          : requiredStableFramesForFrame,
         measurementBlocked: frameMeasurementBlocked,
         measurementBlockingReasons: pushupBlockingReasonsForFrame,
         repetitionFrameReady,
@@ -17666,8 +17817,13 @@ function Home() {
               sumaAlRegreso: config.countOnReturn ?? false,
             },
             técnica: {
-              codoRespectoAlTorso: [30, 60],
-              líneaDelCuerpo: [PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE],
+              codoRespectoAlTorsoSoloRegistro: [30, 60],
+              líneaDelCuerpoObjetivo: [PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE],
+              líneaDelCuerpoAceptada: [
+                DECLINED_PUSHUP_BODY_LINE_MIN_ACCEPTED_ANGLE,
+                PUSHUP_BODY_LINE_MAX_ANGLE,
+              ],
+              toleranciaLíneaDelCuerpo: DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES,
               debeMantenerseDuranteElRecorrido: config.techniqueMustHoldThroughout !== false,
             },
             soloCuentaSiLaTécnicaEsCorrecta: config.countOnlyWhenCorrect === true,
