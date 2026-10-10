@@ -145,6 +145,8 @@ import {
   type DebugPanelSnapshot,
 } from '@/debug-overlay';
 import {
+  VIEW_ACCEPTABLE_EXTRA_DEG, // TEMP-DIAGNOSTICO: umbral informativo de la curva declinada.
+  VIEW_MIN_SCORE, // TEMP-DIAGNOSTICO: confianza mínima usada por la estimación de vista.
   VIEW_TOLERANCE_DEFAULT_DEG,
   VIEW_SEMIPROFILE_TOLERANCE_DEG,
   VIEW_BACK_ESTABLISH_SECONDS,
@@ -644,6 +646,7 @@ type DeclinedPushupDiagnosticVerdict =
   | 'incompleta';
 type DeclinedPushupDiagnosticRepetition = {
   repetition: number;
+  openingCondition: string;
   startVideoTimeSeconds: number | null;
   startElbowAngle: number | null;
   activationVideoTimeSeconds: number | null;
@@ -663,6 +666,90 @@ type DeclinedPushupDiagnosticRepetition = {
   reason: string | null;
   blockingReasons: string[];
 };
+// TEMP-DIAGNOSTICO: puntos de curva registrados aparte del contador para videos declinados.
+type DeclinedPushupCurvePoint = {
+  videoTimeSeconds: number;
+  rawElbowAngle: number | null;
+  smoothedElbowAngle: number | null;
+  trackerPhase: ExerciseRepPhase;
+  elbowTorsoAngle: number | null;
+  bodyLineAngle: number | null;
+  // TEMP-DIAGNOSTICO: valores numéricos de los bloqueos, solo para declinadas.
+  cameraGuidance: {
+    tone: string;
+    message: string;
+    detail: string;
+    shoulderWidthPx: number | null;
+    torsoLengthPx: number | null;
+    shoulderWidthToTorsoRatio: number | null;
+    frontViewRatioThreshold: number;
+    frameMarginRatio: number;
+    // TEMP-DIAGNOSTICO: articulaciones que incumplen el margen, sin afectar la guía.
+    frameMargin: {
+      videoWidthPx: number;
+      videoHeightPx: number;
+      horizontalMarginPx: number;
+      verticalMarginPx: number;
+      violatingJoints: Array<{
+        joint: string;
+        normalizedX: number;
+        normalizedY: number;
+        outsideEdges: string[];
+        nearestEdge: string;
+        nearestEdgeDistancePx: number;
+      }>;
+    };
+  };
+  viewAlignment: {
+    yawDeg: number | null;
+    shoulderYawDeg: number | null;
+    hipYawDeg: number | null;
+    landmarkScoreThreshold: number;
+    landmarkScores: {
+      leftShoulder: number | null;
+      rightShoulder: number | null;
+      leftHip: number | null;
+      rightHip: number | null;
+    };
+    deviationDeg: number | null;
+    toleranceDeg: number;
+    badViewThresholdDeg: number;
+    estimatedView: string;
+    status: string;
+    blocking: boolean;
+  };
+  stableFrames: number;
+  minimumStableFrames: number;
+  visiblePoints: number;
+  minimumVisiblePoints: number;
+  visiblePointScoreThreshold: number;
+  visibilityThreshold: number;
+  visibilityScores: {
+    shoulder: number | null;
+    elbow: number | null;
+    wrist: number | null;
+    hip: number | null;
+    ankle: number | null;
+  };
+  heldLandmarks: {
+    shoulder: boolean;
+    elbow: boolean;
+    wrist: boolean;
+    hip: boolean;
+    ankle: boolean;
+  };
+  bodyInclinationFromHorizontalDeg: number | null;
+  torsoInclinationFromHorizontalDeg: number | null;
+  frameCameraReady: boolean;
+  frameCanMeasure: boolean;
+  frameDetectionStable: boolean;
+  hasFreshPose: boolean;
+  rawAngleAvailable: boolean;
+  countFrameReady: boolean;
+  blocked: boolean;
+  discarded: boolean;
+  reasons: string[];
+};
 type DeclinedPushupVideoDiagnosticState = {
   repetitions: DeclinedPushupDiagnosticRepetition[];
   current: DeclinedPushupDiagnosticRepetition | null;
@@ -671,6 +758,15 @@ type DeclinedPushupVideoDiagnosticState = {
   armedStartElbowAngle: number | null;
   startNotReachedLogged: boolean;
   lastBlockLog: { signature: string; videoTimeSeconds: number } | null;
+  // TEMP-DIAGNOSTICO: curva completa y contadores para resumen, sin intervención en el tracker.
+  curvePoints: DeclinedPushupCurvePoint[];
+  curveFramesAnalyzed: number;
+  curveFramesBlocked: number;
+  curveMinimumRawElbowAngle: number | null;
+  curveMaximumRawElbowAngle: number | null;
+  lastCurveLogVideoTimeSeconds: number | null;
+  // TEMP-DIAGNOSTICO: emite una sola vez el primer cuadro que sí llegó al tracker.
+  countEnabledLogged: boolean;
   finished: boolean;
 };
 type UploadedDipDiagnosticAngle = {
@@ -3555,6 +3651,14 @@ function createDeclinedPushupVideoDiagnosticState(): DeclinedPushupVideoDiagnost
     armedStartElbowAngle: null,
     startNotReachedLogged: false,
     lastBlockLog: null,
+    // TEMP-DIAGNOSTICO: inicia el registro de curva para cada análisis de video declinado.
+    curvePoints: [],
+    curveFramesAnalyzed: 0,
+    curveFramesBlocked: 0,
+    curveMinimumRawElbowAngle: null,
+    curveMaximumRawElbowAngle: null,
+    lastCurveLogVideoTimeSeconds: null,
+    countEnabledLogged: false,
     finished: false,
   };
 }
@@ -3598,9 +3702,11 @@ function createDeclinedPushupDiagnosticRepetition(
   videoTimeSeconds: number,
   elbowAngle: number | null,
   trackerTechniqueValidAtStart: boolean,
+  openingCondition: string,
 ): DeclinedPushupDiagnosticRepetition {
   return {
     repetition,
+    openingCondition,
     startVideoTimeSeconds: Number(videoTimeSeconds.toFixed(3)),
     startElbowAngle: elbowAngle,
     activationVideoTimeSeconds: null,
@@ -3687,6 +3793,68 @@ function getDeclinedPushupAdditionalReasons(
   ]));
 }
 
+// TEMP-DIAGNOSTICO: conserva y muestrea la curva sin leerla para ninguna decisión del contador.
+function recordDeclinedPushupCurveFrame(
+  diagnostics: DeclinedPushupVideoDiagnosticState,
+  point: Omit<DeclinedPushupCurvePoint, 'videoTimeSeconds'> & {
+    videoTimeSeconds: number;
+  },
+) {
+  if (diagnostics.finished) return;
+  const sample: DeclinedPushupCurvePoint = {
+    ...point,
+    videoTimeSeconds: Number(point.videoTimeSeconds.toFixed(3)),
+  };
+  diagnostics.curveFramesAnalyzed += 1;
+  if (sample.blocked) diagnostics.curveFramesBlocked += 1;
+  if (sample.rawElbowAngle !== null && Number.isFinite(sample.rawElbowAngle)) {
+    diagnostics.curveMinimumRawElbowAngle = diagnostics.curveMinimumRawElbowAngle === null
+      ? sample.rawElbowAngle
+      : Math.min(diagnostics.curveMinimumRawElbowAngle, sample.rawElbowAngle);
+    diagnostics.curveMaximumRawElbowAngle = diagnostics.curveMaximumRawElbowAngle === null
+      ? sample.rawElbowAngle
+      : Math.max(diagnostics.curveMaximumRawElbowAngle, sample.rawElbowAngle);
+  }
+  diagnostics.curvePoints.push(sample);
+
+  const previousLogTime = diagnostics.lastCurveLogVideoTimeSeconds;
+  if (
+    previousLogTime === null
+    || sample.videoTimeSeconds < previousLogTime
+    || sample.videoTimeSeconds - previousLogTime >= 0.25
+  ) {
+    console.log(`[flexiones-declinadas-curva] ${JSON.stringify(sample)}`);
+    diagnostics.lastCurveLogVideoTimeSeconds = sample.videoTimeSeconds;
+  }
+}
+
+// TEMP-DIAGNOSTICO: obtiene extremos locales de la mediana almacenada, solo para el resumen.
+function getDeclinedPushupCurveExtrema(
+  curvePoints: DeclinedPushupCurvePoint[],
+) {
+  const measuredPoints = curvePoints.filter(
+    (point) => point.smoothedElbowAngle !== null
+      && Number.isFinite(point.smoothedElbowAngle),
+  );
+  const peaks: Array<{ videoTimeSeconds: number; angle: number }> = [];
+  const valleys: Array<{ videoTimeSeconds: number; angle: number }> = [];
+  for (let index = 1; index < measuredPoints.length - 1; index += 1) {
+    const previous = measuredPoints[index - 1]!;
+    const current = measuredPoints[index]!;
+    const next = measuredPoints[index + 1]!;
+    const previousAngle = previous.smoothedElbowAngle!;
+    const currentAngle = current.smoothedElbowAngle!;
+    const nextAngle = next.smoothedElbowAngle!;
+    if (currentAngle >= previousAngle && currentAngle > nextAngle) {
+      peaks.push({ videoTimeSeconds: current.videoTimeSeconds, angle: currentAngle });
+    }
+    if (currentAngle <= previousAngle && currentAngle < nextAngle) {
+      valleys.push({ videoTimeSeconds: current.videoTimeSeconds, angle: currentAngle });
+    }
+  }
+  return { peaks, valleys };
+}
+
 // TEMP-DIAGNOSTICO: registra transiciones ya decididas por advanceExerciseRepTracker.
 function recordDeclinedPushupTrackerUpdate(
   diagnostics: DeclinedPushupVideoDiagnosticState,
@@ -3721,6 +3889,9 @@ function recordDeclinedPushupTrackerUpdate(
       now,
       rawElbowAngle,
       nextTracker.currentRepCorrect,
+      `el tracker cambió de "esperando inicio" a "inicio": mediana del codo `
+        + `${smoothedElbowAngle.toFixed(2)}° dentro del rango de inicio `
+        + `${config.startMinAngle}–${config.startMaxAngle}°`,
     );
     diagnostics.nextRepetition += 1;
     diagnostics.armedStartVideoTimeSeconds = null;
@@ -3731,11 +3902,35 @@ function recordDeclinedPushupTrackerUpdate(
     && previousTracker.phase === 'inicio'
     && nextTracker.phase === 'en movimiento'
   ) {
+    // TEMP-DIAGNOSTICO: identifica qué lectura cumplió la activación ya decidida por el tracker.
+    const smoothedActivated = config.direction === 'decrease'
+      ? smoothedElbowAngle < config.activationAngle
+      : smoothedElbowAngle > config.activationAngle;
+    const rawActivated = config.rawAngleCanReachEnd
+      && rawElbowAngle !== null
+      && (
+        config.direction === 'decrease'
+          ? rawElbowAngle < config.activationAngle
+          : rawElbowAngle > config.activationAngle
+      );
+    const activationSource = [
+      smoothedActivated
+        ? `mediana ${config.direction === 'decrease' ? '<' : '>'} ${config.activationAngle}°`
+        : null,
+      rawActivated
+        ? `bruto ${config.direction === 'decrease' ? '<' : '>'} ${config.activationAngle}°`
+        : null,
+    ].filter((source): source is string => source !== null).join(' y ')
+      || 'condición de activación del tracker';
     diagnostics.current = createDeclinedPushupDiagnosticRepetition(
       diagnostics.nextRepetition,
       diagnostics.armedStartVideoTimeSeconds ?? now,
       diagnostics.armedStartElbowAngle ?? rawElbowAngle,
       previousTracker.currentRepCorrect,
+      `inicio ya reconocido; el tracker cambió de "inicio" a "en movimiento" `
+        + `al cumplirse ${activationSource} `
+        + `(bruto=${formatUploadedPushupDiagnosticAngle(rawElbowAngle)}, `
+        + `mediana=${smoothedElbowAngle.toFixed(2)}°)`,
     );
     diagnostics.nextRepetition += 1;
     diagnostics.armedStartVideoTimeSeconds = null;
@@ -3932,6 +4127,18 @@ function finishDeclinedPushupVideoDiagnostics(
       faseFinal: tracker.phase,
       esperaCuadroAgotada: waitTimedOut,
       repeticiones: diagnostics.repetitions,
+    })}`,
+  );
+  // TEMP-DIAGNOSTICO: resumen de curva y cobertura de cuadros al finalizar el video.
+  const extrema = getDeclinedPushupCurveExtrema(diagnostics.curvePoints);
+  console.log(
+    `[flexiones-declinadas-curva-resumen] ${JSON.stringify({
+      codoBrutoMáximo: diagnostics.curveMaximumRawElbowAngle,
+      codoBrutoMínimo: diagnostics.curveMinimumRawElbowAngle,
+      picosCodoSuavizado: extrema.peaks,
+      vallesCodoSuavizado: extrema.valleys,
+      cuadrosAnalizados: diagnostics.curveFramesAnalyzed,
+      cuadrosBloqueados: diagnostics.curveFramesBlocked,
     })}`,
   );
 }
@@ -15283,6 +15490,9 @@ function Home() {
             video.currentTime,
             repetitionAngle,
             false,
+            `candidato descartado mientras el tracker seguía esperando: codo bruto `
+              + `${repetitionAngle.toFixed(2)}° por debajo del mínimo de inicio `
+              + `${declinedConfig.startMinAngle}°`,
           );
           declinedDiagnostics.nextRepetition += 1;
           discardedRepetition.verdict = 'descartada';
@@ -15389,6 +15599,237 @@ function Home() {
             }
           }
         }
+        // TEMP-DIAGNOSTICO: marca el primer cuadro que queda listo para conteo.
+        if (
+          countFrameReady
+          && exerciseStartedRef.current
+          && !declinedDiagnostics.countEnabledLogged
+        ) {
+          declinedDiagnostics.countEnabledLogged = true;
+          console.log(
+            `[flexiones-declinadas-conteo-habilitado] ${JSON.stringify({
+              segundoVideo: Number(video.currentTime.toFixed(3)),
+              countFrameReady,
+              trackerGatePassed: uploadedPushupTrackerGatePassed,
+              trackerWasCalled: uploadedPushupTrackerWasCalled,
+              cuadrosEstables: stabilityFramesRef.current,
+              faseTracker: tracker.phase,
+            })}`,
+          );
+        }
+        // TEMP-DIAGNOSTICO: registra cada cuadro del video declinado, incluidos bloqueos y descartes.
+        const diagnosticMeasurementSide = pushupLockedMeasurementSideRef.current
+          ?? measurementSide;
+        // TEMP-DIAGNOSTICO: identifica los puntos que activan exactamente el margen vigente.
+        const diagnosticFrameMarginX = video.videoWidth * CAMERA_FRAME_MARGIN;
+        const diagnosticFrameMarginY = video.videoHeight * CAMERA_FRAME_MARGIN;
+        const diagnosticFrameMarginViolatingJoints = (
+          video.videoWidth > 0 && video.videoHeight > 0
+        )
+          ? getTrackedPointsForExercise(
+              'flexiones-declinadas',
+              pose?.keypoints,
+              diagnosticMeasurementSide,
+            ).flatMap(({ label, point }) => {
+              if (!point) return [];
+              const outsideEdges: string[] = [];
+              if (point.x < diagnosticFrameMarginX) outsideEdges.push('left');
+              if (point.x > video.videoWidth - diagnosticFrameMarginX) {
+                outsideEdges.push('right');
+              }
+              if (point.y < diagnosticFrameMarginY) outsideEdges.push('top');
+              if (point.y > video.videoHeight - diagnosticFrameMarginY) {
+                outsideEdges.push('bottom');
+              }
+              if (!outsideEdges.length) return [];
+              const edgeDistances = [
+                { edge: 'left', distancePx: Math.abs(point.x) },
+                { edge: 'right', distancePx: Math.abs(video.videoWidth - point.x) },
+                { edge: 'top', distancePx: Math.abs(point.y) },
+                { edge: 'bottom', distancePx: Math.abs(video.videoHeight - point.y) },
+              ];
+              const nearestEdge = edgeDistances.reduce(
+                (nearest, candidate) => (
+                  candidate.distancePx < nearest.distancePx ? candidate : nearest
+                ),
+              );
+              return [{
+                joint: label,
+                normalizedX: Number((point.x / video.videoWidth).toFixed(4)),
+                normalizedY: Number((point.y / video.videoHeight).toFixed(4)),
+                outsideEdges,
+                nearestEdge: nearestEdge.edge,
+                nearestEdgeDistancePx: Number(nearestEdge.distancePx.toFixed(1)),
+              }];
+            })
+          : [];
+        const diagnosticMeasurementIndexes = diagnosticMeasurementSide
+          ? sideKeypoints[diagnosticMeasurementSide]
+          : null;
+        const diagnosticShoulder = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.shoulder]
+          : undefined;
+        const diagnosticElbow = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.elbow]
+          : undefined;
+        const diagnosticWrist = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.wrist]
+          : undefined;
+        const diagnosticHip = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.hip]
+          : undefined;
+        const diagnosticAnkle = diagnosticMeasurementIndexes
+          ? pose?.keypoints?.[diagnosticMeasurementIndexes.ankle]
+          : undefined;
+        const diagnosticLeftShoulder = pose?.keypoints?.[sideKeypoints.left.shoulder];
+        const diagnosticRightShoulder = pose?.keypoints?.[sideKeypoints.right.shoulder];
+        const diagnosticLeftHip = pose?.keypoints?.[sideKeypoints.left.hip];
+        const diagnosticRightHip = pose?.keypoints?.[sideKeypoints.right.hip];
+        const diagnosticFrontViewPointsReady = [
+          diagnosticLeftShoulder,
+          diagnosticRightShoulder,
+          diagnosticLeftHip,
+          diagnosticRightHip,
+        ].every((point) => isVisibleCameraPoint(point, CAMERA_POINT_MIN_SCORE));
+        const diagnosticShoulderWidthPx = diagnosticFrontViewPointsReady
+          ? Math.hypot(
+              diagnosticRightShoulder!.x - diagnosticLeftShoulder!.x,
+              diagnosticRightShoulder!.y - diagnosticLeftShoulder!.y,
+            )
+          : null;
+        const diagnosticTorsoLengthPx = diagnosticFrontViewPointsReady
+          ? Math.max(
+              Math.hypot(
+                diagnosticLeftShoulder!.x - diagnosticLeftHip!.x,
+                diagnosticLeftShoulder!.y - diagnosticLeftHip!.y,
+              ),
+              Math.hypot(
+                diagnosticRightShoulder!.x - diagnosticRightHip!.x,
+                diagnosticRightShoulder!.y - diagnosticRightHip!.y,
+              ),
+            )
+          : null;
+        const diagnosticShoulderWidthToTorsoRatio = (
+          diagnosticShoulderWidthPx !== null
+          && diagnosticTorsoLengthPx !== null
+          && diagnosticTorsoLengthPx > 0
+        )
+          ? diagnosticShoulderWidthPx / diagnosticTorsoLengthPx
+          : null;
+        const diagnosticBodyTopCoordinates = getAngleMeasurementCoordinates(diagnosticShoulder);
+        const diagnosticBodyBottomCoordinates = getAngleMeasurementCoordinates(diagnosticAnkle);
+        const diagnosticBodyHorizontalDistance = (
+          diagnosticBodyTopCoordinates && diagnosticBodyBottomCoordinates
+        )
+          ? Math.hypot(
+              diagnosticBodyBottomCoordinates.x - diagnosticBodyTopCoordinates.x,
+              diagnosticBodyBottomCoordinates.z - diagnosticBodyTopCoordinates.z,
+            )
+          : null;
+        const diagnosticBodyInclinationFromHorizontalDeg = (
+          diagnosticBodyTopCoordinates
+          && diagnosticBodyBottomCoordinates
+          && diagnosticBodyHorizontalDistance !== null
+        )
+          ? Math.atan2(
+              Math.abs(diagnosticBodyBottomCoordinates.y - diagnosticBodyTopCoordinates.y),
+              diagnosticBodyHorizontalDistance,
+            ) * (180 / Math.PI)
+          : null;
+        const curveReasons = [
+          !exerciseStartedRef.current ? 'ejercicio aún no iniciado' : null,
+          !hasFreshPose ? 'pose no fresca' : null,
+          !frameCameraReady ? 'cámara o encuadre no listo' : null,
+          !frameDetectionStable
+            ? `detección inestable (${stabilityFramesRef.current}/4 cuadros)`
+            : null,
+          !countFrameReady ? 'frame de conteo no listo' : null,
+          repetitionAngle === null ? 'ángulo del codo no disponible' : null,
+          frameMeasurementBlocked
+            ? `medición bloqueada (puntos retenidos=${frameLowConfidence}; vista=${effectiveViewBlocksFrame}; medición de flexión=${pushupMeasurementBlocked})`
+            : null,
+          !uploadedPushupTrackerWasCalled
+            ? 'tracker no actualizado en este cuadro'
+            : null,
+        ].filter((reason): reason is string => reason !== null);
+        recordDeclinedPushupCurveFrame(declinedDiagnostics, {
+          videoTimeSeconds: video.currentTime,
+          rawElbowAngle: repetitionAngle,
+          smoothedElbowAngle: median(tracker.samples),
+          trackerPhase: tracker.phase,
+          elbowTorsoAngle: techniqueAngles.elbowTorsoAngle,
+          bodyLineAngle: techniqueAngles.bodyLineAngle,
+          // TEMP-DIAGNOSTICO: comparación directa con el guard de vista y el encuadre.
+          cameraGuidance: {
+            tone: rawCameraGuidance.tone,
+            message: rawCameraGuidance.message,
+            detail: rawCameraGuidance.detail,
+            shoulderWidthPx: diagnosticShoulderWidthPx,
+            torsoLengthPx: diagnosticTorsoLengthPx,
+            shoulderWidthToTorsoRatio: diagnosticShoulderWidthToTorsoRatio,
+            frontViewRatioThreshold: MAX_FRONT_VIEW_RATIO,
+            frameMarginRatio: CAMERA_FRAME_MARGIN,
+            frameMargin: {
+              videoWidthPx: video.videoWidth,
+              videoHeightPx: video.videoHeight,
+              horizontalMarginPx: Number(diagnosticFrameMarginX.toFixed(1)),
+              verticalMarginPx: Number(diagnosticFrameMarginY.toFixed(1)),
+              violatingJoints: diagnosticFrameMarginViolatingJoints,
+            },
+          },
+          viewAlignment: {
+            yawDeg: nextViewAlignment.yawDeg,
+            shoulderYawDeg: viewEstimate.shoulderYawDeg,
+            hipYawDeg: viewEstimate.hipYawDeg,
+            landmarkScoreThreshold: VIEW_MIN_SCORE,
+            landmarkScores: {
+              leftShoulder: diagnosticLeftShoulder?.score ?? null,
+              rightShoulder: diagnosticRightShoulder?.score ?? null,
+              leftHip: diagnosticLeftHip?.score ?? null,
+              rightHip: diagnosticRightHip?.score ?? null,
+            },
+            deviationDeg: nextViewAlignment.deviationDeg,
+            toleranceDeg: nextViewAlignment.toleranceDeg,
+            badViewThresholdDeg: nextViewAlignment.toleranceDeg
+              + VIEW_ACCEPTABLE_EXTRA_DEG,
+            estimatedView: nextViewAlignment.estimatedView,
+            status: nextViewAlignment.status,
+            blocking: effectiveViewBlocksFrame,
+          },
+          stableFrames: stabilityFramesRef.current,
+          minimumStableFrames: 4,
+          visiblePoints,
+          minimumVisiblePoints: 5,
+          visiblePointScoreThreshold: 0.3,
+          visibilityThreshold: CAMERA_POINT_MIN_SCORE,
+          visibilityScores: {
+            shoulder: diagnosticShoulder?.score ?? null,
+            elbow: diagnosticElbow?.score ?? null,
+            wrist: diagnosticWrist?.score ?? null,
+            hip: diagnosticHip?.score ?? null,
+            ankle: diagnosticAnkle?.score ?? null,
+          },
+          heldLandmarks: {
+            shoulder: Boolean(diagnosticShoulder?.held),
+            elbow: Boolean(diagnosticElbow?.held),
+            wrist: Boolean(diagnosticWrist?.held),
+            hip: Boolean(diagnosticHip?.held),
+            ankle: Boolean(diagnosticAnkle?.held),
+          },
+          bodyInclinationFromHorizontalDeg: diagnosticBodyInclinationFromHorizontalDeg,
+          torsoInclinationFromHorizontalDeg: viewEstimate.pitchDeg === null
+            ? null
+            : Number((90 - viewEstimate.pitchDeg).toFixed(1)),
+          frameCameraReady,
+          frameCanMeasure,
+          frameDetectionStable,
+          hasFreshPose,
+          rawAngleAvailable: rawAngle !== null,
+          countFrameReady,
+          blocked: frameMeasurementBlocked,
+          discarded: !uploadedPushupTrackerWasCalled,
+          reasons: curveReasons,
+        });
       }
       // TEMP-DIAGNOSTICO: una sola línea por cuadro de fondo candidato en video subido.
       if (
