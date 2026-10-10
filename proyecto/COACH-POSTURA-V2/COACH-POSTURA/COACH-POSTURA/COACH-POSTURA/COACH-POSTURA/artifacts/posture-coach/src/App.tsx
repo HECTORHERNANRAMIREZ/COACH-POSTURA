@@ -3737,7 +3737,7 @@ type DeclinedPushupPointsFrameInput = {
   chosenSide: PoseSide | null;
   rawPose: Pose | undefined;
   filteredPose: Pose | undefined;
-  sideSwapConfirmed: boolean;
+  sidesSwappedByConsistency: boolean;
 };
 
 function getDeclinedPushupPointsSideLabel(
@@ -3857,7 +3857,7 @@ function createDeclinedPushupPointsFrameLog(input: DeclinedPushupPointsFrameInpu
     puntosEnPromedioDerecho: scoresBySide.derecho.pointCount,
     crudo: rawBySide,
     filtrado: filteredBySide,
-    ladosIntercambiadosPorConsistencia: input.sideSwapConfirmed,
+    ladosIntercambiadosPorConsistencia: input.sidesSwappedByConsistency,
   };
 }
 
@@ -16247,7 +16247,8 @@ function Home() {
           chosenSide: measurementSide,
           rawPose: detectedPose,
           filteredPose: pose,
-          sideSwapConfirmed: confirmedSideSwaps.length > 0,
+          sidesSwappedByConsistency: confirmedSideSwaps.length > 0
+            || Boolean(sideConsistentPose?.keypoints.some((point) => point?.swapped === true)),
         });
       }
       // TEMP-DIAGNOSTICO: una sola línea por cuadro de fondo candidato en video subido.
