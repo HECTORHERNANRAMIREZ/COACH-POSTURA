@@ -812,6 +812,7 @@ type DeclinedPushupVideoDiagnosticState = {
   nextRepetition: number;
   armedStartVideoTimeSeconds: number | null;
   armedStartElbowAngle: number | null;
+  armedStartTechniqueValid: boolean | null;
   startNotReachedLogged: boolean;
   lastBlockLog: { signature: string; videoTimeSeconds: number } | null;
   // TEMP-DIAGNOSTICO: curva completa y contadores para resumen, sin intervención en el tracker.
@@ -3801,6 +3802,9 @@ function createDeclinedPushupPointsSummary(): DeclinedPushupPointsSummary {
 }
 
 function createDeclinedPushupPointsFrameLog(input: DeclinedPushupPointsFrameInput) {
+  const requiredPointMetrics = getDeclinedPushupSideMeasurementMetrics(
+    input.filteredPose?.keypoints,
+  );
   const scoresBySide = {} as Record<DeclinedPushupDiagnosticSideLabel, {
     average: number | null;
     pointCount: number;
@@ -3855,6 +3859,10 @@ function createDeclinedPushupPointsFrameLog(input: DeclinedPushupPointsFrameInpu
     puntosEnPromedioIzquierdo: scoresBySide.izquierdo.pointCount,
     promedioDerecho: scoresBySide.derecho.average,
     puntosEnPromedioDerecho: scoresBySide.derecho.pointCount,
+    puntosRequeridosValidosIzquierdo:
+      requiredPointMetrics.find(({ side }) => side === 'left')?.validPointCount ?? 0,
+    puntosRequeridosValidosDerecho:
+      requiredPointMetrics.find(({ side }) => side === 'right')?.validPointCount ?? 0,
     crudo: rawBySide,
     filtrado: filteredBySide,
     ladosIntercambiadosPorConsistencia: input.sidesSwappedByConsistency,
@@ -3916,6 +3924,7 @@ function createDeclinedPushupVideoDiagnosticState(): DeclinedPushupVideoDiagnost
     nextRepetition: 1,
     armedStartVideoTimeSeconds: null,
     armedStartElbowAngle: null,
+    armedStartTechniqueValid: null,
     startNotReachedLogged: false,
     lastBlockLog: null,
     // TEMP-DIAGNOSTICO: inicia el registro de curva para cada análisis de video declinado.
@@ -3969,7 +3978,7 @@ function createDeclinedPushupDiagnosticRepetition(
   repetition: number,
   videoTimeSeconds: number,
   elbowAngle: number | null,
-  trackerTechniqueValidAtStart: boolean,
+  trackerTechniqueValidAtStart: boolean | null,
   openingCondition: string,
 ): DeclinedPushupDiagnosticRepetition {
   return {
@@ -4167,6 +4176,7 @@ function recordDeclinedPushupTrackerUpdate(
     diagnostics.nextRepetition += 1;
     diagnostics.armedStartVideoTimeSeconds = null;
     diagnostics.armedStartElbowAngle = null;
+    diagnostics.armedStartTechniqueValid = null;
     diagnostics.startNotReachedLogged = false;
   } else if (
     !diagnostics.current
@@ -4197,7 +4207,7 @@ function recordDeclinedPushupTrackerUpdate(
       diagnostics.nextRepetition,
       diagnostics.armedStartVideoTimeSeconds ?? now,
       diagnostics.armedStartElbowAngle ?? rawElbowAngle,
-      previousTracker.currentRepCorrect,
+      diagnostics.armedStartTechniqueValid,
       `inicio ya reconocido; el tracker cambió de "inicio" a "en movimiento" `
         + `al cumplirse ${activationSource} `
         + `(bruto=${formatUploadedPushupDiagnosticAngle(rawElbowAngle)}, `
@@ -4206,6 +4216,7 @@ function recordDeclinedPushupTrackerUpdate(
     diagnostics.nextRepetition += 1;
     diagnostics.armedStartVideoTimeSeconds = null;
     diagnostics.armedStartElbowAngle = null;
+    diagnostics.armedStartTechniqueValid = null;
   }
 
   const repetition = diagnostics.current;
@@ -4216,6 +4227,7 @@ function recordDeclinedPushupTrackerUpdate(
     ) {
       diagnostics.armedStartVideoTimeSeconds = now;
       diagnostics.armedStartElbowAngle = rawElbowAngle;
+      diagnostics.armedStartTechniqueValid = nextTracker.currentRepCorrect;
       diagnostics.startNotReachedLogged = false;
     }
     return;
@@ -4334,6 +4346,7 @@ function recordDeclinedPushupTrackerUpdate(
   ) {
     diagnostics.armedStartVideoTimeSeconds = now;
     diagnostics.armedStartElbowAngle = rawElbowAngle;
+    diagnostics.armedStartTechniqueValid = nextTracker.currentRepCorrect;
     diagnostics.startNotReachedLogged = false;
   }
 }
@@ -5653,6 +5666,65 @@ function getDominantSide(
     previous
     && previous.count >= 3
     && previous.average >= 0.3
+    && strongest.side !== previous.side
+    && strongest.average - previous.average < 0.18,
+  );
+  const selected = shouldKeepPreviousSide && previous ? previous : strongest;
+
+  return { side: selected.side, average: selected.average };
+}
+
+function getDeclinedPushupSideMeasurementMetrics(keypoints: PosePoint[] | undefined) {
+  return (['left', 'right'] as const).map((side) => {
+    const indexes = sideKeypoints[side];
+    const requiredPoints = [
+      keypoints?.[indexes.shoulder],
+      keypoints?.[indexes.elbow],
+      keypoints?.[indexes.wrist],
+      keypoints?.[indexes.hip],
+      keypoints?.[indexes.knee],
+    ];
+    const validPoints = requiredPoints.filter(
+      (point): point is PosePoint => isFreshPullupMeasurementPoint(point),
+    );
+
+    return {
+      side,
+      requiredPointCount: requiredPoints.length,
+      validPointCount: validPoints.length,
+      average: validPoints.length
+        ? validPoints.reduce((sum, point) => sum + (point.score ?? 0), 0)
+          / validPoints.length
+        : 0,
+    };
+  });
+}
+
+function getDeclinedPushupDominantSide(
+  keypoints: PosePoint[] | undefined,
+  previousSide: PoseSide | null = null,
+): DominantSideResult | null {
+  if (!keypoints) return null;
+
+  const sideMetrics = getDeclinedPushupSideMeasurementMetrics(keypoints);
+  if (!sideMetrics.some(
+    ({ requiredPointCount, validPointCount }) => validPointCount === requiredPointCount,
+  )) {
+    return getDominantSide(keypoints, previousSide);
+  }
+
+  const strongest = [...sideMetrics].sort((first, second) => (
+    second.validPointCount - first.validPointCount
+    || second.average - first.average
+  ))[0];
+  const previous = previousSide
+    ? sideMetrics.find((candidate) => candidate.side === previousSide)
+    : null;
+  const shouldKeepPreviousSide = Boolean(
+    previous
+    && previous.validPointCount >= 3
+    && previous.average >= 0.3
+    && strongest.validPointCount === previous.validPointCount
     && strongest.side !== previous.side
     && strongest.average - previous.average < 0.18,
   );
@@ -12424,7 +12496,9 @@ function Home() {
         ? getBarbellRowDominantSide(pose?.keypoints, previousSideRef.current)
         : selectedExerciseForFrame === 'remos-australianos-elevados'
           ? getElevatedAustralianRowDominantSide(pose?.keypoints, previousSideRef.current)
-        : getDominantSide(pose?.keypoints, previousSideRef.current);
+        : selectedExerciseForFrame === 'flexiones-declinadas'
+          ? getDeclinedPushupDominantSide(pose?.keypoints, previousSideRef.current)
+          : getDominantSide(pose?.keypoints, previousSideRef.current);
       const lockedPushupSide = selectedExerciseForFrame === 'flexiones'
         ? pushupLockedMeasurementSideRef.current
         : null;
@@ -14833,6 +14907,16 @@ function Home() {
                 : true,
           uploadedDipRawPhaseRescue,
         );
+        if (
+          selectedExerciseForFrame === 'flexiones-declinadas'
+          && previousExerciseRepTracker.phase === 'final'
+          && exerciseRepUpdate.tracker.phase === 'inicio'
+        ) {
+          exerciseRepUpdate.tracker = {
+            ...exerciseRepUpdate.tracker,
+            currentRepCorrect: pushupTechniqueValidForTracker,
+          };
+        }
       // TEMP-DIAGNOSTICO: copia el estado observado junto al incremento normal del tracker.
       let uploadedDipCountTraceForFrame: UploadedDipCountTrace | null = (
         isUploadedDipVideo
