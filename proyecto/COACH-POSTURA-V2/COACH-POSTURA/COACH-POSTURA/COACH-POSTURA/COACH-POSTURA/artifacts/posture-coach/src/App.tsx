@@ -628,6 +628,51 @@ type ExerciseRepTrackerUpdate = {
   smoothedAngle: number;
   completedEndpointAngle: number | null;
 };
+// TEMP-DIAGNOSTICO: observación independiente del contador para flexiones declinadas en video subido.
+type DeclinedPushupRangeObservation = {
+  minimum: number | null;
+  maximum: number | null;
+  firstFailingValue: number | null;
+  missingMeasurements: number;
+  stayedWithinRange: boolean;
+};
+type DeclinedPushupDiagnosticVerdict =
+  | 'en curso'
+  | 'correcta'
+  | 'incorrecta-no-contada'
+  | 'descartada'
+  | 'incompleta';
+type DeclinedPushupDiagnosticRepetition = {
+  repetition: number;
+  startVideoTimeSeconds: number | null;
+  startElbowAngle: number | null;
+  activationVideoTimeSeconds: number | null;
+  bottomVideoTimeSeconds: number | null;
+  returnVideoTimeSeconds: number | null;
+  minimumElbowAngleRaw: number | null;
+  minimumElbowAngleSmoothed: number | null;
+  maximumElbowAngleRawOnReturn: number | null;
+  maximumElbowAngleSmoothedOnReturn: number | null;
+  elbowTorso: DeclinedPushupRangeObservation;
+  bodyLine: DeclinedPushupRangeObservation;
+  trackerTechniqueValidAtStart: boolean | null;
+  trackerTechniqueValidAtActivation: boolean | null;
+  counted: boolean;
+  correct: boolean | null;
+  verdict: DeclinedPushupDiagnosticVerdict;
+  reason: string | null;
+  blockingReasons: string[];
+};
+type DeclinedPushupVideoDiagnosticState = {
+  repetitions: DeclinedPushupDiagnosticRepetition[];
+  current: DeclinedPushupDiagnosticRepetition | null;
+  nextRepetition: number;
+  armedStartVideoTimeSeconds: number | null;
+  armedStartElbowAngle: number | null;
+  startNotReachedLogged: boolean;
+  lastBlockLog: { signature: string; videoTimeSeconds: number } | null;
+  finished: boolean;
+};
 type UploadedDipDiagnosticAngle = {
   angle: number | null;
   status: string;
@@ -3498,6 +3543,397 @@ function createExerciseRepTracker(): ExerciseRepTracker {
 
 function isWithinAngle(angle: number, min: number, max: number) {
   return angle >= min && angle <= max;
+}
+
+// TEMP-DIAGNOSTICO: reinicia solo el registro de observación del video declinado.
+function createDeclinedPushupVideoDiagnosticState(): DeclinedPushupVideoDiagnosticState {
+  return {
+    repetitions: [],
+    current: null,
+    nextRepetition: 1,
+    armedStartVideoTimeSeconds: null,
+    armedStartElbowAngle: null,
+    startNotReachedLogged: false,
+    lastBlockLog: null,
+    finished: false,
+  };
+}
+
+// TEMP-DIAGNOSTICO: crea y actualiza lecturas técnicas sin intervenir en el tracker real.
+function createDeclinedPushupRangeObservation(): DeclinedPushupRangeObservation {
+  return {
+    minimum: null,
+    maximum: null,
+    firstFailingValue: null,
+    missingMeasurements: 0,
+    stayedWithinRange: true,
+  };
+}
+
+function observeDeclinedPushupRange(
+  observation: DeclinedPushupRangeObservation,
+  angle: number | null,
+  minimum: number,
+  maximum: number,
+) {
+  if (angle === null || !Number.isFinite(angle)) {
+    observation.missingMeasurements += 1;
+    observation.stayedWithinRange = false;
+    return;
+  }
+  observation.minimum = observation.minimum === null
+    ? angle
+    : Math.min(observation.minimum, angle);
+  observation.maximum = observation.maximum === null
+    ? angle
+    : Math.max(observation.maximum, angle);
+  if (!isWithinAngle(angle, minimum, maximum)) {
+    observation.firstFailingValue ??= angle;
+    observation.stayedWithinRange = false;
+  }
+}
+
+function createDeclinedPushupDiagnosticRepetition(
+  repetition: number,
+  videoTimeSeconds: number,
+  elbowAngle: number | null,
+  trackerTechniqueValidAtStart: boolean,
+): DeclinedPushupDiagnosticRepetition {
+  return {
+    repetition,
+    startVideoTimeSeconds: Number(videoTimeSeconds.toFixed(3)),
+    startElbowAngle: elbowAngle,
+    activationVideoTimeSeconds: null,
+    bottomVideoTimeSeconds: null,
+    returnVideoTimeSeconds: null,
+    minimumElbowAngleRaw: elbowAngle,
+    minimumElbowAngleSmoothed: null,
+    maximumElbowAngleRawOnReturn: null,
+    maximumElbowAngleSmoothedOnReturn: null,
+    elbowTorso: createDeclinedPushupRangeObservation(),
+    bodyLine: createDeclinedPushupRangeObservation(),
+    trackerTechniqueValidAtStart,
+    trackerTechniqueValidAtActivation: null,
+    counted: false,
+    correct: null,
+    verdict: 'en curso',
+    reason: null,
+    blockingReasons: [],
+  };
+}
+
+function getDeclinedPushupTechniqueReasons(
+  repetition: DeclinedPushupDiagnosticRepetition,
+) {
+  const reasons: string[] = [];
+  const describeRange = (
+    label: string,
+    observation: DeclinedPushupRangeObservation,
+    minimum: number,
+    maximum: number,
+  ) => {
+    if (observation.firstFailingValue !== null) {
+      const value = observation.firstFailingValue;
+      const boundary = value < minimum ? `<${minimum}°` : `>${maximum}°`;
+      reasons.push(
+        `${label}=${value.toFixed(2)}° (${boundary}; rango ${minimum}–${maximum}°)`,
+      );
+    }
+    if (observation.missingMeasurements > 0) {
+      reasons.push(
+        `${label}: sin lectura en ${observation.missingMeasurements} cuadro(s)`,
+      );
+    }
+  };
+  describeRange('codo/torso', repetition.elbowTorso, 30, 60);
+  describeRange(
+    'línea corporal',
+    repetition.bodyLine,
+    PUSHUP_BODY_LINE_MIN_ANGLE,
+    PUSHUP_BODY_LINE_MAX_ANGLE,
+  );
+  if (
+    !reasons.length
+    && repetition.trackerTechniqueValidAtActivation === false
+  ) {
+    reasons.push(
+      'el tracker ya tenía la técnica marcada como inválida al activar, '
+      + 'aunque las lecturas técnicas guardadas no muestran un valor fuera de rango',
+    );
+  }
+  return reasons;
+}
+
+function getDeclinedPushupNoBottomReason(
+  repetition: DeclinedPushupDiagnosticRepetition,
+) {
+  const raw = repetition.minimumElbowAngleRaw === null
+    ? 'sin lectura'
+    : `${repetition.minimumElbowAngleRaw.toFixed(2)}°`;
+  const smoothed = repetition.minimumElbowAngleSmoothed === null
+    ? 'sin lectura'
+    : `${repetition.minimumElbowAngleSmoothed.toFixed(2)}°`;
+  return `el tracker no observó un ángulo suavizado del codo dentro de `
+    + `${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}° `
+    + `(mínimo bruto=${raw}; mínimo suavizado=${smoothed})`;
+}
+
+function getDeclinedPushupAdditionalReasons(
+  repetition: DeclinedPushupDiagnosticRepetition,
+) {
+  return Array.from(new Set([
+    ...getDeclinedPushupTechniqueReasons(repetition),
+    ...repetition.blockingReasons,
+  ]));
+}
+
+// TEMP-DIAGNOSTICO: registra transiciones ya decididas por advanceExerciseRepTracker.
+function recordDeclinedPushupTrackerUpdate(
+  diagnostics: DeclinedPushupVideoDiagnosticState,
+  previousTracker: ExerciseRepTracker,
+  nextTracker: ExerciseRepTracker,
+  videoTimeSeconds: number,
+  rawElbowAngle: number | null,
+  smoothedElbowAngle: number,
+  techniqueAngles: { elbowTorsoAngle: number | null; bodyLineAngle: number | null },
+) {
+  const config = repetitionConfigs['flexiones-declinadas'];
+  if (!config) return;
+  const now = Number(videoTimeSeconds.toFixed(3));
+  const initialStart = previousTracker.phase === 'esperando inicio'
+    && nextTracker.phase === 'inicio';
+
+  diagnostics.lastBlockLog = null;
+  if (initialStart) {
+    if (diagnostics.current) {
+      diagnostics.current.verdict = 'incompleta';
+      diagnostics.current.reason = [
+        'el tracker inició otra fase antes de cerrar este intento',
+        ...getDeclinedPushupAdditionalReasons(diagnostics.current),
+      ].join('; ');
+      diagnostics.repetitions.push(diagnostics.current);
+      console.log(
+        `[flexiones-declinadas-repeticion] ${JSON.stringify(diagnostics.current)}`,
+      );
+    }
+    diagnostics.current = createDeclinedPushupDiagnosticRepetition(
+      diagnostics.nextRepetition,
+      now,
+      rawElbowAngle,
+      nextTracker.currentRepCorrect,
+    );
+    diagnostics.nextRepetition += 1;
+    diagnostics.armedStartVideoTimeSeconds = null;
+    diagnostics.armedStartElbowAngle = null;
+    diagnostics.startNotReachedLogged = false;
+  } else if (
+    !diagnostics.current
+    && previousTracker.phase === 'inicio'
+    && nextTracker.phase === 'en movimiento'
+  ) {
+    diagnostics.current = createDeclinedPushupDiagnosticRepetition(
+      diagnostics.nextRepetition,
+      diagnostics.armedStartVideoTimeSeconds ?? now,
+      diagnostics.armedStartElbowAngle ?? rawElbowAngle,
+      previousTracker.currentRepCorrect,
+    );
+    diagnostics.nextRepetition += 1;
+    diagnostics.armedStartVideoTimeSeconds = null;
+    diagnostics.armedStartElbowAngle = null;
+  }
+
+  const repetition = diagnostics.current;
+  if (!repetition) {
+    if (
+      nextTracker.phase === 'inicio'
+      && isWithinAngle(smoothedElbowAngle, config.startMinAngle, config.startMaxAngle)
+    ) {
+      diagnostics.armedStartVideoTimeSeconds = now;
+      diagnostics.armedStartElbowAngle = rawElbowAngle;
+      diagnostics.startNotReachedLogged = false;
+    }
+    return;
+  }
+
+  const techniqueWasEvaluated = initialStart
+    || (
+      previousTracker.phase === 'inicio'
+      && nextTracker.phase === 'en movimiento'
+    )
+    || previousTracker.phase === 'en movimiento';
+  if (techniqueWasEvaluated) {
+    if (rawElbowAngle !== null) {
+      repetition.minimumElbowAngleRaw = repetition.minimumElbowAngleRaw === null
+        ? rawElbowAngle
+        : Math.min(repetition.minimumElbowAngleRaw, rawElbowAngle);
+    }
+    repetition.minimumElbowAngleSmoothed = repetition.minimumElbowAngleSmoothed === null
+      ? smoothedElbowAngle
+      : Math.min(repetition.minimumElbowAngleSmoothed, smoothedElbowAngle);
+    observeDeclinedPushupRange(repetition.elbowTorso, techniqueAngles.elbowTorsoAngle, 30, 60);
+    observeDeclinedPushupRange(
+      repetition.bodyLine,
+      techniqueAngles.bodyLineAngle,
+      PUSHUP_BODY_LINE_MIN_ANGLE,
+      PUSHUP_BODY_LINE_MAX_ANGLE,
+    );
+  }
+
+  if (
+    previousTracker.phase === 'inicio'
+    && nextTracker.phase === 'en movimiento'
+  ) {
+    repetition.activationVideoTimeSeconds = now;
+    repetition.trackerTechniqueValidAtActivation = nextTracker.currentRepCorrect;
+  }
+  if (previousTracker.phase === 'final' && rawElbowAngle !== null) {
+    repetition.maximumElbowAngleRawOnReturn = repetition.maximumElbowAngleRawOnReturn === null
+      ? rawElbowAngle
+      : Math.max(repetition.maximumElbowAngleRawOnReturn, rawElbowAngle);
+    repetition.maximumElbowAngleSmoothedOnReturn = (
+      repetition.maximumElbowAngleSmoothedOnReturn === null
+        ? smoothedElbowAngle
+        : Math.max(repetition.maximumElbowAngleSmoothedOnReturn, smoothedElbowAngle)
+    );
+  }
+  if (
+    previousTracker.phase === 'en movimiento'
+    && nextTracker.phase === 'final'
+  ) {
+    repetition.bottomVideoTimeSeconds = now;
+    repetition.counted = nextTracker.repetitions > previousTracker.repetitions;
+    repetition.correct = nextTracker.goodRepetitions > previousTracker.goodRepetitions;
+    repetition.verdict = repetition.correct ? 'correcta' : 'incorrecta-no-contada';
+    repetition.reason = repetition.correct
+      ? 'fondo alcanzado y condiciones técnicas válidas; el tracker sumó la repetición'
+      : getDeclinedPushupTechniqueReasons(repetition).join('; ')
+        || 'el tracker no sumó: técnica no válida en una fase de la repetición';
+  }
+
+  if (
+    previousTracker.phase === 'en movimiento'
+    && nextTracker.phase === 'inicio'
+  ) {
+    repetition.returnVideoTimeSeconds = now;
+    if (rawElbowAngle !== null) {
+      repetition.maximumElbowAngleRawOnReturn = Math.max(
+        repetition.maximumElbowAngleRawOnReturn ?? rawElbowAngle,
+        rawElbowAngle,
+      );
+    }
+    repetition.maximumElbowAngleSmoothedOnReturn = Math.max(
+      repetition.maximumElbowAngleSmoothedOnReturn ?? smoothedElbowAngle,
+      smoothedElbowAngle,
+    );
+    repetition.verdict = 'descartada';
+    repetition.reason = [
+      getDeclinedPushupNoBottomReason(repetition),
+      ...getDeclinedPushupAdditionalReasons(repetition),
+    ].join('; ');
+    diagnostics.repetitions.push(repetition);
+    console.log(`[flexiones-declinadas-repeticion] ${JSON.stringify(repetition)}`);
+    diagnostics.current = null;
+  } else if (
+    previousTracker.phase === 'final'
+    && nextTracker.phase === 'inicio'
+  ) {
+    repetition.returnVideoTimeSeconds = now;
+    if (!repetition.correct) {
+      repetition.verdict = 'incorrecta-no-contada';
+      repetition.reason = getDeclinedPushupAdditionalReasons(repetition).join('; ')
+        || repetition.reason
+        || 'el tracker no sumó la repetición por técnica no válida';
+    }
+    diagnostics.repetitions.push(repetition);
+    console.log(`[flexiones-declinadas-repeticion] ${JSON.stringify(repetition)}`);
+    diagnostics.current = null;
+  } else if (
+    previousTracker.phase === 'inicio'
+    && nextTracker.phase === 'esperando inicio'
+  ) {
+    repetition.verdict = 'descartada';
+    repetition.reason = [
+      `perdió el rango de inicio ${config.startMinAngle}–${config.startMaxAngle}° antes de activar (<${config.activationAngle}°)`,
+      ...getDeclinedPushupAdditionalReasons(repetition),
+    ].join('; ');
+    diagnostics.repetitions.push(repetition);
+    console.log(`[flexiones-declinadas-repeticion] ${JSON.stringify(repetition)}`);
+    diagnostics.current = null;
+  }
+
+  if (
+    !diagnostics.current
+    && nextTracker.phase === 'inicio'
+    && isWithinAngle(smoothedElbowAngle, config.startMinAngle, config.startMaxAngle)
+  ) {
+    diagnostics.armedStartVideoTimeSeconds = now;
+    diagnostics.armedStartElbowAngle = rawElbowAngle;
+    diagnostics.startNotReachedLogged = false;
+  }
+}
+
+// TEMP-DIAGNOSTICO: cierra una medición abierta y resume datos sin cambiar el contador.
+function finishDeclinedPushupVideoDiagnostics(
+  diagnostics: DeclinedPushupVideoDiagnosticState,
+  tracker: ExerciseRepTracker,
+  videoTimeSeconds: number,
+  waitTimedOut: boolean,
+) {
+  if (diagnostics.finished) return;
+  if (diagnostics.current) {
+    const repetition = diagnostics.current;
+    if (repetition.bottomVideoTimeSeconds === null) {
+      repetition.verdict = 'incompleta';
+      repetition.reason = [
+        `fin del video antes de observar el fondo ${PUSHUP_REP_END_MIN_ANGLE}–${PUSHUP_REP_END_MAX_ANGLE}°`,
+        getDeclinedPushupNoBottomReason(repetition),
+        ...getDeclinedPushupAdditionalReasons(repetition),
+      ].join('; ');
+    } else if (repetition.correct === false) {
+      repetition.verdict = 'incorrecta-no-contada';
+      repetition.reason = getDeclinedPushupAdditionalReasons(repetition).join('; ')
+        || repetition.reason
+        || 'técnica no válida; el tracker no sumó la repetición';
+    } else if (repetition.returnVideoTimeSeconds === null) {
+      repetition.reason = `${repetition.reason ?? 'repetición contada'}; `
+        + 'el video terminó antes de observar el regreso';
+    }
+    diagnostics.repetitions.push(repetition);
+    console.log(`[flexiones-declinadas-repeticion] ${JSON.stringify(repetition)}`);
+    diagnostics.current = null;
+  }
+  diagnostics.finished = true;
+  const uncountedAttempts = diagnostics.repetitions.filter((repetition) => (
+    repetition.verdict === 'incorrecta-no-contada'
+    || repetition.verdict === 'descartada'
+    || repetition.verdict === 'incompleta'
+  ));
+  const correctRepetitions = diagnostics.repetitions.filter(
+    (repetition) => repetition.verdict === 'correcta',
+  ).length;
+  const incorrectRepetitions = diagnostics.repetitions.filter(
+    (repetition) => repetition.verdict === 'incorrecta-no-contada',
+  ).length;
+  const discardedOrIncomplete = diagnostics.repetitions.filter((repetition) => (
+    repetition.verdict === 'descartada'
+    || repetition.verdict === 'incompleta'
+  )).length;
+  console.log(
+    `[flexiones-declinadas-resumen] ${JSON.stringify({
+      segundoFinal: Number(videoTimeSeconds.toFixed(3)),
+      total: diagnostics.repetitions.length,
+      correctas: correctRepetitions,
+      incorrectas: incorrectRepetitions,
+      descartadasOIncompletas: discardedOrIncomplete,
+      intentosNoContados: uncountedAttempts.length,
+      totalContadorApp: tracker.repetitions,
+      correctasContadorApp: tracker.goodRepetitions,
+      incorrectasContadasApp: Math.max(0, tracker.repetitions - tracker.goodRepetitions),
+      faseFinal: tracker.phase,
+      esperaCuadroAgotada: waitTimedOut,
+      repeticiones: diagnostics.repetitions,
+    })}`,
+  );
 }
 
 function isWithinPullupAngle(angle: number, min: number, max: number) {
@@ -10278,6 +10714,10 @@ function Home() {
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  // TEMP-DIAGNOSTICO: datos de observación aislados del tracker compartido.
+  const uploadedDeclinedPushupDiagnosticsRef = useRef<DeclinedPushupVideoDiagnosticState>(
+    createDeclinedPushupVideoDiagnosticState(),
+  );
   const dipLiveRawElbowMinimumRef = useRef<number | null>(null);
   const uploadedPushupTechniqueActivationSampleRef = useRef<{
     videoTimeSeconds: number;
@@ -14699,6 +15139,21 @@ function Home() {
           );
           uploadedPushupTechniqueActivationSampleRef.current = null;
         }
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones-declinadas'
+        ) {
+          // TEMP-DIAGNOSTICO: copia mediciones y fases después de la decisión original del tracker.
+          recordDeclinedPushupTrackerUpdate(
+            uploadedDeclinedPushupDiagnosticsRef.current,
+            previousExerciseRepTracker,
+            exerciseRepUpdate.tracker,
+            video.currentTime,
+            repetitionAngle,
+            exerciseRepUpdate.smoothedAngle,
+            calculatePushupTechniqueAngles(pose?.keypoints, nextDominantSide),
+          );
+        }
         uploadedPushupTrackerWasCalled = true;
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         if (
@@ -14803,6 +15258,137 @@ function Home() {
         setExerciseGoodRepetitions(resetTracker.goodRepetitions);
         setExerciseRepPhase(resetTracker.phase);
         setExerciseMinimumAngle(resetTracker.endpointAngle);
+      }
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones-declinadas'
+      ) {
+        // TEMP-DIAGNOSTICO: explica por qué el tracker aún no reconoce el punto de inicio.
+        const declinedDiagnostics = uploadedDeclinedPushupDiagnosticsRef.current;
+        const declinedConfig = repetitionConfigs['flexiones-declinadas'];
+        const tracker = exerciseRepTrackerRef.current;
+        const techniqueAngles = calculatePushupTechniqueAngles(
+          pose?.keypoints,
+          nextDominantSide,
+        );
+        if (
+          declinedConfig
+          && tracker.phase === 'esperando inicio'
+          && repetitionAngle !== null
+          && repetitionAngle < declinedConfig.startMinAngle
+          && !declinedDiagnostics.startNotReachedLogged
+        ) {
+          const discardedRepetition = createDeclinedPushupDiagnosticRepetition(
+            declinedDiagnostics.nextRepetition,
+            video.currentTime,
+            repetitionAngle,
+            false,
+          );
+          declinedDiagnostics.nextRepetition += 1;
+          discardedRepetition.verdict = 'descartada';
+          discardedRepetition.reason = (
+            `el tracker sigue en espera: ángulo actual ${repetitionAngle.toFixed(2)}°; `
+            + `no reconoció el inicio ${declinedConfig.startMinAngle}–${declinedConfig.startMaxAngle}°`
+          );
+          observeDeclinedPushupRange(
+            discardedRepetition.elbowTorso,
+            techniqueAngles.elbowTorsoAngle,
+            30,
+            60,
+          );
+          observeDeclinedPushupRange(
+            discardedRepetition.bodyLine,
+            techniqueAngles.bodyLineAngle,
+            PUSHUP_BODY_LINE_MIN_ANGLE,
+            PUSHUP_BODY_LINE_MAX_ANGLE,
+          );
+          declinedDiagnostics.repetitions.push(discardedRepetition);
+          console.log(
+            `[flexiones-declinadas-repeticion] ${JSON.stringify(discardedRepetition)}`,
+          );
+          console.log(
+            `[flexiones-declinadas-descartada] ${JSON.stringify({
+              segundoVideo: Number(video.currentTime.toFixed(3)),
+              faseTracker: tracker.phase,
+              codoBruto: repetitionAngle,
+              medianaActualTracker: median(tracker.samples),
+              inicio: [declinedConfig.startMinAngle, declinedConfig.startMaxAngle],
+              activacion: declinedConfig.activationAngle,
+              motivo: 'el tracker permanece esperando porque no reconoció el rango de inicio',
+              medidasTecnicas: techniqueAngles,
+            })}`,
+          );
+          declinedDiagnostics.startNotReachedLogged = true;
+        } else if (
+          declinedConfig
+          && repetitionAngle !== null
+          && isWithinAngle(
+            repetitionAngle,
+            declinedConfig.startMinAngle,
+            declinedConfig.startMaxAngle,
+          )
+        ) {
+          declinedDiagnostics.startNotReachedLogged = false;
+        }
+
+        const attemptIsActive = Boolean(
+          declinedDiagnostics.current
+          || tracker.phase === 'inicio'
+          || tracker.phase === 'en movimiento'
+          || tracker.phase === 'final',
+        );
+        if (
+          !uploadedPushupTrackerWasCalled
+          && exerciseStartedRef.current
+          && attemptIsActive
+        ) {
+          const blockingReasons = [
+            !hasFreshPose ? 'pose no fresca' : null,
+            !frameCameraReady ? 'cámara o encuadre no listo' : null,
+            !frameDetectionStable
+              ? `detección inestable (${stabilityFramesRef.current}/4 cuadros)`
+              : null,
+            !countFrameReady ? 'frame de conteo no listo' : null,
+            repetitionAngle === null ? 'ángulo del codo no disponible' : null,
+            frameMeasurementBlocked
+              ? `medición bloqueada (puntos retenidos=${frameLowConfidence}; vista=${effectiveViewBlocksFrame}; medición de flexión=${pushupMeasurementBlocked})`
+              : null,
+          ].filter((reason): reason is string => reason !== null);
+          if (declinedDiagnostics.current) {
+            declinedDiagnostics.current.blockingReasons.push(
+              ...blockingReasons.filter((reason) => (
+                !declinedDiagnostics.current?.blockingReasons.includes(reason)
+              )),
+            );
+          }
+          if (blockingReasons.length) {
+            const signature = `${tracker.phase}:${blockingReasons.join('|')}`;
+            const previousBlock = declinedDiagnostics.lastBlockLog;
+            const shouldLogBlock = !previousBlock
+              || previousBlock.signature !== signature
+              || video.currentTime < previousBlock.videoTimeSeconds
+              || video.currentTime - previousBlock.videoTimeSeconds >= 1;
+            if (shouldLogBlock) {
+              console.log(
+                `[flexiones-declinadas-bloqueo] ${JSON.stringify({
+                  segundoVideo: Number(video.currentTime.toFixed(3)),
+                  faseTracker: tracker.phase,
+                  codoBruto: repetitionAngle,
+                  codoTorso: techniqueAngles.elbowTorsoAngle,
+                  líneaCorporal: techniqueAngles.bodyLineAngle,
+                  rangosTécnicos: { codoTorso: [30, 60], líneaCorporal: [162, 180] },
+                  listoParaConteo: countFrameReady,
+                  técnicaVálida: pushupTechniqueReady,
+                  motivos: blockingReasons,
+                })}`,
+              );
+              declinedDiagnostics.lastBlockLog = {
+                signature,
+                videoTimeSeconds: video.currentTime,
+              };
+            }
+          }
+        }
       }
       // TEMP-DIAGNOSTICO: una sola línea por cuadro de fondo candidato en video subido.
       if (
@@ -16590,6 +17176,9 @@ function Home() {
       return;
     }
     const isUploadedPushupVideo = Boolean(videoFile && activeExercise === 'flexiones');
+    const isUploadedDeclinedPushupVideo = Boolean(
+      videoFile && activeExercise === 'flexiones-declinadas',
+    );
     const isUploadedPullupVideo = Boolean(videoFile && activeExercise === 'dominadas');
     const isUploadedDipVideo = Boolean(videoFile && activeExercise === 'fondos');
     const isUploadedSquatVideo = Boolean(videoFile && activeExercise === 'sentadillas');
@@ -16611,6 +17200,39 @@ function Home() {
       uploadedPushupCalibrationRunBaseMsRef.current = 0;
       uploadedPushupCalibrationRunStartVideoTimeRef.current = null;
       uploadedPushupSearchGapRef.current = null;
+    }
+    if (isUploadedDeclinedPushupVideo) {
+      // TEMP-DIAGNOSTICO: publica los umbrales vigentes al comenzar el análisis del video.
+      uploadedDeclinedPushupDiagnosticsRef.current
+        = createDeclinedPushupVideoDiagnosticState();
+      const config = repetitionConfigs['flexiones-declinadas'];
+      if (config) {
+        console.log(
+          `[flexiones-declinadas-video] configuración=${JSON.stringify({
+            ánguloDeRecorrido: 'hombro-codo-muñeca',
+            filtroDeÁngulo: 'mediana',
+            muestrasDeSuavizado: config.smoothingSamples ?? SQUAT_SMOOTHING_SAMPLES,
+            inicio: [config.startMinAngle, config.startMaxAngle],
+            activación: {
+              dirección: config.direction,
+              condición: '<',
+              ángulo: config.activationAngle,
+            },
+            fondoObjetivo: [config.endMinAngle, config.endMaxAngle],
+            regreso: {
+              rango: [config.startMinAngle, config.startMaxAngle],
+              condición: 'volver al rango de inicio',
+              sumaAlRegreso: config.countOnReturn ?? false,
+            },
+            técnica: {
+              codoRespectoAlTorso: [30, 60],
+              líneaDelCuerpo: [PUSHUP_BODY_LINE_MIN_ANGLE, PUSHUP_BODY_LINE_MAX_ANGLE],
+              debeMantenerseDuranteElRecorrido: config.techniqueMustHoldThroughout !== false,
+            },
+            soloCuentaSiLaTécnicaEsCorrecta: config.countOnlyWhenCorrect === true,
+          })}`,
+        );
+      }
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
@@ -17405,6 +18027,10 @@ function Home() {
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
     );
+    const isUploadedDeclinedPushupVideo = (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-declinadas'
+    );
     const isUploadedStandardPullup = (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'dominadas'
@@ -17823,6 +18449,39 @@ function Home() {
           detectorRef.current,
         );
       }
+    }
+    const declinedPushupVideo = videoRef.current;
+    if (isUploadedDeclinedPushupVideo && declinedPushupVideo?.ended) {
+      // TEMP-DIAGNOSTICO: espera el último frame antes de resumir el video declinado.
+      let waitTimedOut = false;
+      if (processingFrameRef.current) {
+        waitTimedOut = await new Promise<boolean>((resolve) => {
+          let pollingTimer: number | null = null;
+          let settled = false;
+          const finish = (timedOut: boolean) => {
+            if (settled) return;
+            settled = true;
+            if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+            window.clearTimeout(deadlineTimer);
+            resolve(timedOut);
+          };
+          const deadlineTimer = window.setTimeout(() => finish(true), 2_000);
+          const checkForFrameCompletion = () => {
+            if (!processingFrameRef.current) {
+              finish(false);
+              return;
+            }
+            pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+          };
+          checkForFrameCompletion();
+        });
+      }
+      finishDeclinedPushupVideoDiagnostics(
+        uploadedDeclinedPushupDiagnosticsRef.current,
+        exerciseRepTrackerRef.current,
+        declinedPushupVideo.currentTime,
+        waitTimedOut,
+      );
     }
     if (isUploadedSquatVideo && uploadedSquatCountingPassRef.current) {
       const video = videoRef.current;
