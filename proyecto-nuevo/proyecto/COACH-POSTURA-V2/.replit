@@ -1,0 +1,5 @@
+modules = ["nodejs-20"]
+
+[[ports]]
+localPort = 24009
+externalPort = 80
