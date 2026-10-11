@@ -10827,6 +10827,304 @@ function logUploadedDipVideoDomEvent(
   );
 }
 
+type PicaDiagBucket = {
+  second: number;
+  presented: number;
+  presentedSource: string;
+  dropped: number;
+  runFrame: number;
+  poseRequested: number;
+  poseReturned: number;
+  evaluated: number;
+  detectorMsTotal: number;
+  detectorMsCount: number;
+  detectorMsMax: number;
+  skipped: Record<string, { count: number; values: string }>;
+  counting: boolean;
+  reported: boolean;
+};
+
+type PicaDiagBucketsRef = { current: Record<string, PicaDiagBucket> };
+
+function getPicaDiagBucket(
+  bucketsRef: PicaDiagBucketsRef,
+  videoTime: number,
+  stage: string,
+) {
+  const second = Math.floor(videoTime);
+  const key = String(second);
+  let bucket = bucketsRef.current[key];
+  if (!bucket) {
+    bucket = {
+      second,
+      presented: 0,
+      presentedSource: 'estimados',
+      dropped: 0,
+      runFrame: 0,
+      poseRequested: 0,
+      poseReturned: 0,
+      evaluated: 0,
+      detectorMsTotal: 0,
+      detectorMsCount: 0,
+      detectorMsMax: 0,
+      skipped: {},
+      counting: false,
+      reported: false,
+    };
+    bucketsRef.current[key] = bucket;
+  }
+  if (stage === 'counting') bucket.counting = true;
+  return bucket;
+}
+
+function recordPicaDiagSkip(
+  bucketsRef: PicaDiagBucketsRef,
+  videoTime: number,
+  stage: string,
+  condition: string,
+  values: unknown,
+  lastReasonRef: { current: string | null },
+) {
+  const bucket = getPicaDiagBucket(bucketsRef, videoTime, stage);
+  const serializedValues = JSON.stringify(values);
+  const grouped = bucket.skipped[condition] ?? { count: 0, values: '' };
+  grouped.count += 1;
+  grouped.values = serializedValues;
+  bucket.skipped[condition] = grouped;
+  if (lastReasonRef.current !== condition) {
+    lastReasonRef.current = condition;
+    console.log(
+      `[pica-embudo] salto ${JSON.stringify({
+        tiempoReal: new Date().toISOString(),
+        tVideo: videoTime,
+        etapa: stage,
+        condicion: condition,
+        valores: values,
+      })}`,
+    );
+  }
+}
+
+function samplePicaDiagVideoQuality(
+  bucketsRef: PicaDiagBucketsRef,
+  qualityRef: { current: { totalVideoFrames: number | null; droppedVideoFrames: number | null } },
+  video: HTMLVideoElement,
+  videoTime: number,
+  stage: string,
+  estimatePresented: boolean,
+) {
+  const quality = video.getVideoPlaybackQuality?.();
+  if (!quality) return;
+  const bucket = getPicaDiagBucket(bucketsRef, videoTime, stage);
+  if (estimatePresented && qualityRef.current.totalVideoFrames !== null) {
+    const presentedDelta = quality.totalVideoFrames - qualityRef.current.totalVideoFrames;
+    if (presentedDelta > 0) bucket.presented += presentedDelta;
+    bucket.presentedSource = 'estimados:getVideoPlaybackQuality';
+  }
+  if (qualityRef.current.droppedVideoFrames !== null) {
+    const droppedDelta = quality.droppedVideoFrames - qualityRef.current.droppedVideoFrames;
+    if (droppedDelta > 0) bucket.dropped += droppedDelta;
+  }
+  qualityRef.current.totalVideoFrames = quality.totalVideoFrames;
+  qualityRef.current.droppedVideoFrames = quality.droppedVideoFrames;
+}
+
+function logPicaDiagBucket(bucket: PicaDiagBucket, final = false) {
+  const skipSummary = Object.fromEntries(
+    Object.entries(bucket.skipped).map(([condition, result]) => [
+      condition,
+      { count: result.count, valoresUltimos: result.values },
+    ]),
+  );
+  const detectorAverageMs = bucket.detectorMsCount
+    ? bucket.detectorMsTotal / bucket.detectorMsCount
+    : 0;
+  const hole = bucket.poseRequested === 0 || bucket.evaluated === 0;
+  const dominantSkip = Object.entries(bucket.skipped)
+    .sort((left, right) => right[1].count - left[1].count)[0];
+  console.log(
+    `${final ? '[pica-embudo] FINAL:' : '[pica-embudo]'} `
+    + `${final ? `segundo=${bucket.second} ` : `segundo=${bucket.second} `}`
+    + `${final && hole ? 'HUECO ' : ''}`
+    + `${JSON.stringify({
+      presentados: bucket.presented,
+      presentadosFuente: bucket.presentedSource,
+      descartadosNavegador: bucket.dropped,
+      runFrame: bucket.runFrame,
+      poseSolicitada: bucket.poseRequested,
+      poseDevuelta: bucket.poseReturned,
+      evaluados: bucket.evaluated,
+      saltados: skipSummary,
+      detectorMediaMs: Number(detectorAverageMs.toFixed(2)),
+      detectorMaxMs: Number(bucket.detectorMsMax.toFixed(2)),
+      motivoDominante: final && hole
+        ? dominantSkip?.[0] ?? 'sin motivo registrado'
+        : undefined,
+    })}`,
+  );
+  bucket.reported = true;
+}
+
+function logPicaDiagFinal(bucketsRef: PicaDiagBucketsRef) {
+  Object.values(bucketsRef.current)
+    .filter((bucket) => bucket.counting)
+    .sort((left, right) => left.second - right.second)
+    .forEach((bucket) => logPicaDiagBucket(bucket, true));
+}
+
+function reportPicaDiagDetectorState(
+  detector: PoseDetector | null,
+  transition: Promise<void> | null,
+  videoTime: number,
+  signatureRef: { current: string | null },
+  transitionRef: { current: boolean | null },
+) {
+  const signature = detector
+    ? `${detector.activeModel ?? 'desconocido'}/${detector.activeDelegate ?? 'desconocido'}`
+    : 'sin-detector';
+  const transitionActive = transition !== null;
+  if (signatureRef.current !== null && signatureRef.current !== signature) {
+    console.log(
+      `[pica-embudo] detector-cambio ${JSON.stringify({
+        tiempoReal: new Date().toISOString(),
+        tVideo: videoTime,
+        anterior: signatureRef.current,
+        actual: signature,
+      })}`,
+    );
+  }
+  if (transitionRef.current === true && !transitionActive) {
+    console.log(
+      `[pica-embudo] detector-transition-terminada ${JSON.stringify({
+        tiempoReal: new Date().toISOString(),
+        tVideo: videoTime,
+        detector: signature,
+      })}`,
+    );
+  }
+  signatureRef.current = signature;
+  transitionRef.current = transitionActive;
+}
+
+type PicaRangosSample = {
+  tVideoS: number;
+  lecturasGrados: Record<string, number | null>;
+  repetitionAngle: number | null;
+  elevacionCadera: number | null;
+  frameMeasurementBlocked: boolean;
+};
+
+function logPicaRangosLine(tipo: string, datos: unknown) {
+  try {
+    console.log(`[pica-rangos] ${tipo} ${JSON.stringify(datos)}`);
+  } catch {}
+}
+
+function getPicaRangosMetricValue(
+  sample: PicaRangosSample,
+  metric: string,
+): number | null {
+  if (metric === 'repetitionAngle') return sample.repetitionAngle;
+  if (metric === 'elevacionCadera') return sample.elevacionCadera;
+  return sample.lecturasGrados[metric] ?? null;
+}
+
+function summarizePicaRangosMetric(
+  samples: PicaRangosSample[],
+  metric: string,
+) {
+  const values = samples
+    .map((sample) => getPicaRangosMetricValue(sample, metric))
+    .filter((value): value is number => (
+      value !== null && Number.isFinite(value)
+    ));
+  const sorted = [...values].sort((left, right) => left - right);
+  const percentile = (percent: 10 | 90) => (
+    sorted
+      .filter((_, index) => index < Math.ceil(sorted.length * percent / (10 * 10)))
+      .pop() ?? null
+  );
+  return {
+    lectura: metric,
+    n: values.length,
+    minimo: values.length
+      ? values.reduce((minimum, value) => Math.min(minimum, value))
+      : null,
+    maximo: values.length
+      ? values.reduce((maximum, value) => Math.max(maximum, value))
+      : null,
+    media: values.length
+      ? values.reduce((sum, value) => sum + value) / values.length
+      : null,
+    p10: percentile(10),
+    p90: percentile(90),
+  };
+}
+
+function logPicaRangosFinal(
+  samples: PicaRangosSample[],
+  videoSeconds: number[],
+) {
+  try {
+    const defaultReadingNames = calculateLiveAngleReadings(
+      'flexiones-pica',
+      undefined,
+      null,
+    ).map(({ label }) => label);
+    const metrics = Array.from(new Set([
+      ...defaultReadingNames,
+      ...samples.flatMap((sample) => Object.keys(sample.lecturasGrados)),
+      'repetitionAngle',
+      'elevacionCadera',
+    ]));
+    logPicaRangosLine('RESUMEN', {
+      subconjunto: 'todos-los-cuadros-con-pose',
+      tabla: metrics.map((metric) => summarizePicaRangosMetric(samples, metric)),
+    });
+    const unblockedSamples = samples.filter(
+      (sample) => !sample.frameMeasurementBlocked,
+    );
+    logPicaRangosLine('RESUMEN', {
+      subconjunto: 'frameMeasurementBlocked=false',
+      tabla: metrics.map(
+        (metric) => summarizePicaRangosMetric(unblockedSamples, metric),
+      ),
+    });
+
+    const samplesBySecond = new Map<number, PicaRangosSample[]>();
+    samples.forEach((sample) => {
+      const second = Math.floor(sample.tVideoS);
+      const secondSamples = samplesBySecond.get(second) ?? [];
+      secondSamples.push(sample);
+      samplesBySecond.set(second, secondSamples);
+    });
+    const seconds = Array.from(new Set([
+      ...videoSeconds,
+      ...samplesBySecond.keys(),
+    ])).sort((left, right) => left - right);
+    seconds.forEach((second) => {
+      const secondSamples = samplesBySecond.get(second) ?? [];
+      const tabla = metrics.map((metric) => {
+        const values = secondSamples
+          .map((sample) => getPicaRangosMetricValue(sample, metric))
+          .filter((value): value is number => (
+            value !== null && Number.isFinite(value)
+          ));
+        return {
+          lectura: metric,
+          minimo: values.length
+            ? values.reduce((minimum, value) => Math.min(minimum, value))
+            : null,
+          maximo: values.length
+            ? values.reduce((maximum, value) => Math.max(maximum, value))
+            : null,
+        };
+      });
+      logPicaRangosLine('SEGUNDO', { segundo: second, tabla });
+    });
+  } catch {}
+}
+
 function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -10870,6 +11168,24 @@ function Home() {
   const uploadedPikePushupPreflightStageRef = useRef<
     'idle' | 'searching' | 'transitioning' | 'ready-to-count' | 'counting'
   >('idle');
+  const [picaDiagEnabled, setPicaDiagEnabled] = useState(false);
+  const [picaDiagGeneration, setPicaDiagGeneration] = useState(0);
+  const picaDiagBucketsRef = useRef<Record<string, PicaDiagBucket>>({});
+  const picaDiagActiveRef = useRef(false);
+  const picaDiagQualityRef = useRef<{
+    totalVideoFrames: number | null;
+    droppedVideoFrames: number | null;
+  }>({ totalVideoFrames: null, droppedVideoFrames: null });
+  const picaDiagLastPoseAtRef = useRef<number | null>(null);
+  const picaDiagLastAnalyzedVideoTimeRef = useRef<number | null>(null);
+  const picaDiagDetectorStartedAtRef = useRef<number | null>(null);
+  const picaDiagLastSkipReasonRef = useRef<string | null>(null);
+  const picaDiagLastDetectorSignatureRef = useRef<string | null>(null);
+  const picaDiagLastTransitionActiveRef = useRef<boolean | null>(null);
+  const picaDiagFinalRequestedRef = useRef(false);
+  const picaDiagFinalLoggedRef = useRef(false);
+  const picaDiagLastReportedVideoSecondRef = useRef<number | null>(null);
+  const picaRangosSamplesRef = useRef<PicaRangosSample[]>([]);
   const [uploadedPikePushupPreflightReady, setUploadedPikePushupPreflightReady] =
     useState(false);
   const uploadedPikePushupTransitionGenerationRef = useRef(0);
@@ -11724,6 +12040,19 @@ function Home() {
     detectorTransitionRef.current = null;
     detectorRef.current?.close();
     detectorRef.current = null;
+    if (
+      picaDiagActiveRef.current
+      && inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+    ) {
+      reportPicaDiagDetectorState(
+        detectorRef.current,
+        detectorTransitionRef.current,
+        videoRef.current?.currentTime ?? 0,
+        picaDiagLastDetectorSignatureRef,
+        picaDiagLastTransitionActiveRef,
+      );
+    }
     if (videoRef.current) {
       if (
         inputModeRef.current === 'video'
@@ -12221,13 +12550,80 @@ function Home() {
   ) => {
     const video = videoRef.current;
     const detector = detectorRef.current;
+    if (
+      picaDiagActiveRef.current
+      && inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+    ) {
+      reportPicaDiagDetectorState(
+        detectorRef.current,
+        detectorTransitionRef.current,
+        video?.currentTime ?? diagnosticVideoTime ?? 0,
+        picaDiagLastDetectorSignatureRef,
+        picaDiagLastTransitionActiveRef,
+      );
+    }
+    if (
+      picaDiagActiveRef.current
+      && inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+      && (!activeRef.current || !video || !detector)
+    ) {
+      recordPicaDiagSkip(
+        picaDiagBucketsRef,
+        diagnosticVideoTime ?? video?.currentTime ?? 0,
+        uploadedPikePushupPreflightStageRef.current,
+        '!activeRef.current || !video || !detector',
+        {
+          active: activeRef.current,
+          videoDisponible: Boolean(video),
+          detectorDisponible: Boolean(detector),
+        },
+        picaDiagLastSkipReasonRef,
+      );
+    }
     if (!activeRef.current || !video || !detector) return;
     const detectorTransition = detectorTransitionRef.current;
     if (detectorTransition) {
       await detectorTransition;
+      if (
+        picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+      ) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          diagnosticVideoTime ?? video.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+          'detectorTransitionRef.current !== null',
+          { detectorTransition: detectorTransitionRef.current !== null },
+          picaDiagLastSkipReasonRef,
+        );
+        reportPicaDiagDetectorState(
+          detectorRef.current,
+          detectorTransitionRef.current,
+          diagnosticVideoTime ?? video.currentTime,
+          picaDiagLastDetectorSignatureRef,
+          picaDiagLastTransitionActiveRef,
+        );
+      }
       return;
     }
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      if (
+        picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+      ) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          diagnosticVideoTime ?? video.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+          'video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA',
+          { readyState: video.readyState },
+          picaDiagLastSkipReasonRef,
+        );
+      }
       return;
     }
     const canInspectPausedPushupVideo = inputModeRef.current === 'video'
@@ -12239,6 +12635,25 @@ function Home() {
       && !video.ended
       && !canInspectPausedPushupVideo
     ) {
+      if (
+        picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+      ) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          diagnosticVideoTime ?? video.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+          'inputModeRef.current === video && video.paused && !video.ended && !canInspectPausedPushupVideo',
+          {
+            inputMode: inputModeRef.current,
+            paused: video.paused,
+            ended: video.ended,
+            canInspectPausedPushupVideo,
+          },
+          picaDiagLastSkipReasonRef,
+        );
+      }
       return;
     }
     syncVideoSize();
@@ -12265,6 +12680,22 @@ function Home() {
       const detectorStartedAt = measureUploadedPushupDetector
         ? performance.now()
         : 0;
+      const picaDiagDetectorStartedAt = picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+        ? performance.now()
+        : null;
+      if (picaDiagDetectorStartedAt !== null) {
+        const picaDiagBucket = getPicaDiagBucket(
+          picaDiagBucketsRef,
+          diagnosticVideoTime ?? video.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+        );
+        picaDiagBucket.poseRequested += 1;
+        picaDiagLastAnalyzedVideoTimeRef.current =
+          diagnosticVideoTime ?? video.currentTime;
+        picaDiagDetectorStartedAtRef.current = picaDiagDetectorStartedAt;
+      }
       const detectedResult = detector.detectForVideoAsync
         ? await detector.detectForVideoAsync(
             detectorSource,
@@ -12276,7 +12707,49 @@ function Home() {
             frameTimestamp,
             outputSize,
           );
+      if (picaDiagDetectorStartedAt !== null) {
+        const picaDiagDetectorMs = performance.now() - picaDiagDetectorStartedAt;
+        const picaDiagBucket = getPicaDiagBucket(
+          picaDiagBucketsRef,
+          diagnosticVideoTime ?? video.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+        );
+        picaDiagBucket.detectorMsTotal += picaDiagDetectorMs;
+        picaDiagBucket.detectorMsCount += 1;
+        picaDiagBucket.detectorMsMax = Math.max(
+          picaDiagBucket.detectorMsMax,
+          picaDiagDetectorMs,
+        );
+        picaDiagDetectorStartedAtRef.current = null;
+        if (detectedResult) {
+          picaDiagBucket.poseReturned += 1;
+          picaDiagLastPoseAtRef.current = performance.now();
+        } else {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            diagnosticVideoTime ?? video.currentTime,
+            uploadedPikePushupPreflightStageRef.current,
+            'detectedResult falsy',
+            { detectedResult: Boolean(detectedResult), detectorMs: picaDiagDetectorMs },
+            picaDiagLastSkipReasonRef,
+          );
+        }
+      }
       if (detectedResult === undefined) {
+        if (
+          picaDiagActiveRef.current
+          && inputModeRef.current === 'video'
+          && selectedExerciseRef.current === 'flexiones-pica'
+        ) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            diagnosticVideoTime ?? video.currentTime,
+            uploadedPikePushupPreflightStageRef.current,
+            'detectedResult === undefined',
+            { detector: detector.activeModel ?? 'desconocido' },
+            picaDiagLastSkipReasonRef,
+          );
+        }
         throw new Error('El detector de pose no tiene un método de análisis disponible.');
       }
       if (
@@ -13420,6 +13893,21 @@ function Home() {
           uploadedPikePushupReason !== null
         )).join('; ');
         const uploadedPikePushupVideoTime = video.currentTime;
+        if (!uploadedPikePushupFrameReady) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            uploadedPikePushupVideoTime,
+            uploadedPikePushupPreflightStageRef.current,
+            'uploadedPikePushupFrameReady === false',
+            {
+              invalidReason: uploadedPikePushupInvalidReason,
+              frameMeasurementBlocked,
+              cameraGuidanceTone: rawCameraGuidance.tone,
+              calibrationPoints: uploadedPikePushupCalibrationPoints.length,
+            },
+            picaDiagLastSkipReasonRef,
+          );
+        }
         const uploadedPikePushupMissingJoints = uploadedPikePushupCalibrationPoints
           .filter(({ point }) => !point)
           .map(({ label }) => label);
@@ -15127,6 +15615,125 @@ function Home() {
       // TEMP-DIAGNOSTICO: permite compensación solo con máximos de esta subida y ruido medido.
       let uploadedDipMaximumFilteredAngleAtFrame: number | null = null;
       let uploadedDipNoiseCompensatedReturnForFrame = false;
+        const picaRangosTrackerGatePassed = Boolean(
+          exerciseStartedRef.current
+          && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
+          && !uploadedPushupAnalysisStartingRef.current
+          && hasFreshPose
+          && (
+            countFrameReady
+            || (
+              inputModeRef.current === 'video'
+              && selectedExerciseForFrame === 'flexiones'
+              && frameCameraReady
+              && hasFreshPushupMeasurement(
+                pose?.keypoints,
+                pushupLockedMeasurementSideRef.current ?? measurementSide,
+              )
+              && repetitionAngle !== null
+              && isWithinAngle(
+                repetitionAngle,
+                PUSHUP_REP_END_MIN_ANGLE,
+                UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+              )
+            )
+            || uploadedPushupWristHeldException
+          )
+          && repetitionConfig
+          && (repetitionAngle !== null || uploadedDipRawPhaseRescue)
+          && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
+          && (
+            !frameMeasurementBlocked
+            || uploadedPushupWristHeldException
+            || uploadedDipRawPhaseRescue
+          ),
+        );
+        if (
+          picaDiagActiveRef.current
+          && inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones-pica'
+          && pose
+        ) {
+          try {
+            const picaRangosDominantSide = nextDominantSide;
+            const picaRangosOppositeSide = picaRangosDominantSide === 'left'
+              ? 'right'
+              : picaRangosDominantSide === 'right'
+                ? 'left'
+                : null;
+            const picaRangosPoint = (point: PosePoint | undefined) => (
+              point
+                ? {
+                    x: point.x,
+                    y: point.y,
+                    visibilidad: point.score ?? null,
+                  }
+                : null
+            );
+            const picaRangosPointsForSide = (side: PoseSide) => {
+              const indexes = sideKeypoints[side];
+              return {
+                hombro: picaRangosPoint(pose.keypoints?.[indexes.shoulder]),
+                codo: picaRangosPoint(pose.keypoints?.[indexes.elbow]),
+                muñeca: picaRangosPoint(pose.keypoints?.[indexes.wrist]),
+                cadera: picaRangosPoint(pose.keypoints?.[indexes.hip]),
+                rodilla: picaRangosPoint(pose.keypoints?.[indexes.knee]),
+                tobillo: picaRangosPoint(pose.keypoints?.[indexes.ankle]),
+              };
+            };
+            const picaRangosIndexes = picaRangosDominantSide
+              ? sideKeypoints[picaRangosDominantSide]
+              : null;
+            const picaRangosShoulder = picaRangosIndexes
+              ? pose.keypoints?.[picaRangosIndexes.shoulder]
+              : undefined;
+            const picaRangosHip = picaRangosIndexes
+              ? pose.keypoints?.[picaRangosIndexes.hip]
+              : undefined;
+            const picaRangosTorsoLength = picaRangosShoulder && picaRangosHip
+              ? distanceBetweenPoints(picaRangosShoulder, picaRangosHip)
+              : null;
+            const picaRangosHipElevation = picaRangosShoulder
+              && picaRangosHip
+              && picaRangosTorsoLength
+              ? (
+                  getMeasurementCoordinates(picaRangosShoulder).y
+                  - getMeasurementCoordinates(picaRangosHip).y
+                ) / picaRangosTorsoLength
+              : null;
+            const picaRangosReadings = Object.fromEntries(
+              calculateLiveAngleReadings(
+                'flexiones-pica',
+                pose.keypoints,
+                picaRangosDominantSide,
+              ).map(({ label, value }) => [label, value]),
+            ) as Record<string, number | null>;
+            const picaRangosSample: PicaRangosSample = {
+              tVideoS: diagnosticVideoTime ?? video.currentTime,
+              lecturasGrados: picaRangosReadings,
+              repetitionAngle,
+              elevacionCadera: picaRangosHipElevation,
+              frameMeasurementBlocked,
+            };
+            picaRangosSamplesRef.current.push(picaRangosSample);
+            logPicaRangosLine('CUADRO', {
+              ...picaRangosSample,
+              etapa: uploadedPikePushupPreflightStageRef.current,
+              faseTracker: exerciseRepTrackerRef.current.phase,
+              repeticionesContadas: exerciseRepTrackerRef.current.repetitions,
+              ladoDominante: picaRangosDominantSide,
+              puntosLadoDominante: picaRangosDominantSide
+                ? picaRangosPointsForSide(picaRangosDominantSide)
+                : null,
+              puntosLadoContrario: picaRangosOppositeSide
+                ? picaRangosPointsForSide(picaRangosOppositeSide)
+                : null,
+              trackerGatePassed: picaRangosTrackerGatePassed,
+              pushupTechniqueReady,
+              frameMeasurementBlocked,
+            });
+          } catch {}
+        }
       if (
         exerciseStartedRef.current
         && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
@@ -15243,6 +15850,17 @@ function Home() {
                 : true,
           uploadedDipRawPhaseRescue,
         );
+        if (
+          picaDiagActiveRef.current
+          && inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones-pica'
+        ) {
+          getPicaDiagBucket(
+            picaDiagBucketsRef,
+            diagnosticVideoTime ?? video.currentTime,
+            uploadedPikePushupPreflightStageRef.current,
+          ).evaluated += 1;
+        }
         if (
           selectedExerciseForFrame === 'flexiones-declinadas'
           && previousExerciseRepTracker.phase === 'final'
@@ -17151,6 +17769,25 @@ function Home() {
         const uploadedPikePushupReasonChanged =
           uploadedPikePushupReasonLogKey
           !== uploadedPikePushupLastLoggedReasonKeyRef.current;
+        if (!uploadedPushupTrackerGatePassed) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            video.currentTime,
+            uploadedPikePushupPreflightStageRef.current,
+            uploadedPikePushupFrameBlockReasons[0]
+              ?? 'uploadedPushupTrackerGatePassed === false',
+            {
+              frameMeasurementBlocked,
+              frameBlockReasons: uploadedPikePushupFrameBlockReasons,
+              trackerGatePassed: uploadedPushupTrackerGatePassed,
+              countFrameReady,
+              techniqueReady: pushupTechniqueReady,
+              techniqueReason: uploadedPikePushupTechniqueFeedbackForLog.message,
+              trackerPhase: uploadedPikePushupPostflightTracker.phase,
+            },
+            picaDiagLastSkipReasonRef,
+          );
+        }
 
         if (
           uploadedPikePushupShouldLogSummary
@@ -17358,6 +17995,19 @@ function Home() {
               }
               currentDetector.close();
               detectorRef.current = nextDetector;
+              if (
+                picaDiagActiveRef.current
+                && inputModeRef.current === 'video'
+                && selectedExerciseRef.current === 'flexiones-pica'
+              ) {
+                reportPicaDiagDetectorState(
+                  detectorRef.current,
+                  detectorTransitionRef.current,
+                  videoRef.current?.currentTime ?? 0,
+                  picaDiagLastDetectorSignatureRef,
+                  picaDiagLastTransitionActiveRef,
+                );
+              }
               modelDegradedRef.current = true;
               detectionFrameTimesRef.current = [];
               lowFpsSinceRef.current = null;
@@ -17645,6 +18295,21 @@ function Home() {
         );
       }
     } catch {
+      if (
+        picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+      ) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          videoRef.current?.currentTime ?? 0,
+          uploadedPikePushupPreflightStageRef.current,
+          'processFrame catch',
+          { active: activeRef.current, detectorCallStarted: picaDiagDetectorStartedAtRef.current !== null },
+          picaDiagLastSkipReasonRef,
+        );
+        picaDiagDetectorStartedAtRef.current = null;
+      }
       if (activeRef.current) {
         if (
           inputModeRef.current === 'video'
@@ -17783,6 +18448,8 @@ function Home() {
     // TEMP-DIAGNOSTICO: conserva el tiempo original del cuadro solo para observar sentadillas subidas.
     const isUploadedSquatPlayback = inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'sentadillas';
+    const isUploadedPikePlayback = inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica';
     const isUploadedSquatCountingPlayback = isUploadedSquatPlayback
       && uploadedSquatCountingPassRef.current;
     const uploadedVideoPlaybackHasEnded = (
@@ -17807,10 +18474,76 @@ function Home() {
       || animationFrameRef.current !== null
       || videoFrameCallbackRef.current !== null
     ) {
+      if (picaDiagActiveRef.current && isUploadedPikePlayback) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          video?.currentTime ?? 0,
+          uploadedPikePushupPreflightStageRef.current,
+          '!activeRef.current || !detectorRef.current || !video || video.paused || video.ended || uploadedVideoPlaybackHasEnded || animationFrameRef.current !== null || videoFrameCallbackRef.current !== null',
+          {
+            active: activeRef.current,
+            detectorDisponible: Boolean(detectorRef.current),
+            videoDisponible: Boolean(video),
+            paused: video?.paused ?? null,
+            ended: video?.ended ?? null,
+            uploadedVideoPlaybackHasEnded,
+            animationFramePending: animationFrameRef.current !== null,
+            videoFrameCallbackPending: videoFrameCallbackRef.current !== null,
+          },
+          picaDiagLastSkipReasonRef,
+        );
+      }
       return;
     }
 
     const runFrame = (timestamp: number, sourceTime: number) => {
+      if (picaDiagActiveRef.current && isUploadedPikePlayback) {
+        const picaDiagBucket = getPicaDiagBucket(
+          picaDiagBucketsRef,
+          sourceTime,
+          uploadedPikePushupPreflightStageRef.current,
+        );
+        picaDiagBucket.runFrame += 1;
+        if (typeof video.requestVideoFrameCallback !== 'function') {
+          samplePicaDiagVideoQuality(
+            picaDiagBucketsRef,
+            picaDiagQualityRef,
+            video,
+            sourceTime,
+            uploadedPikePushupPreflightStageRef.current,
+            true,
+          );
+        }
+      }
+      if (
+        picaDiagActiveRef.current
+        && isUploadedPikePlayback
+        && (
+          !activeRef.current
+          || (
+            isUploadedPushupPlayback && uploadedPushupVideoEndedRef.current
+          )
+          || (
+            isUploadedPullupPlayback && uploadedPullupVideoEndedRef.current
+          )
+          || (
+            isUploadedSquatPlayback && uploadedSquatVideoEndedRef.current
+          )
+        )
+      ) {
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          sourceTime,
+          uploadedPikePushupPreflightStageRef.current,
+          '!activeRef.current || (isUploadedPushupPlayback && uploadedPushupVideoEndedRef.current) || (isUploadedPullupPlayback && uploadedPullupVideoEndedRef.current) || (isUploadedSquatPlayback && uploadedSquatVideoEndedRef.current)',
+          {
+            active: activeRef.current,
+            videoEnded: video.ended,
+            preflightStage: uploadedPikePushupPreflightStageRef.current,
+          },
+          picaDiagLastSkipReasonRef,
+        );
+      }
       if (
         !activeRef.current
         || (
@@ -17835,6 +18568,23 @@ function Home() {
             >= analysisIntervalSeconds
           || lastVideoAnalysisSourceTimeRef.current === Number.NEGATIVE_INFINITY;
       if (!shouldAnalyzeVideoFrame) {
+        if (picaDiagActiveRef.current && isUploadedPikePlayback) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            sourceTime,
+            uploadedPikePushupPreflightStageRef.current,
+            'shouldAnalyzeVideoFrame === false',
+            {
+              timestamp,
+              lastDetectorTimestamp: lastDetectorTimestampRef.current,
+              sourceTime,
+              lastVideoAnalysisSourceTime: lastVideoAnalysisSourceTimeRef.current,
+              analysisIntervalSeconds,
+              canInspectPausedPushupVideo,
+            },
+            picaDiagLastSkipReasonRef,
+          );
+        }
         if (isUploadedDipPlayback) {
           // TEMP-DIAGNOSTICO: identifica descarte por intervalo de muestreo.
           recordUploadedDipFrameCallback(sourceTime, 'sampling');
@@ -17844,6 +18594,16 @@ function Home() {
         return;
       }
       if (processingFrameRef.current) {
+        if (picaDiagActiveRef.current && isUploadedPikePlayback) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            sourceTime,
+            uploadedPikePushupPreflightStageRef.current,
+            'processingFrameRef.current === true',
+            { processingFrame: processingFrameRef.current, sourceTime },
+            picaDiagLastSkipReasonRef,
+          );
+        }
         if (isUploadedDipPlayback) {
           // TEMP-DIAGNOSTICO: identifica descarte porque otra inferencia sigue en curso.
           recordUploadedDipFrameCallback(sourceTime, 'busy');
@@ -17868,6 +18628,25 @@ function Home() {
         isUploadedDipPlayback || isUploadedSquatPlayback ? sourceTime : undefined,
       ).finally(() => {
         processingFrameRef.current = false;
+        if (
+          picaDiagFinalRequestedRef.current
+          && !picaDiagFinalLoggedRef.current
+          && picaDiagActiveRef.current
+        ) {
+          try {
+            logPicaRangosFinal(
+              picaRangosSamplesRef.current,
+              Object.values(picaDiagBucketsRef.current).map(
+                (bucket) => bucket.second,
+              ),
+            );
+          } catch {}
+          logPicaDiagFinal(picaDiagBucketsRef);
+          picaDiagFinalLoggedRef.current = true;
+          picaDiagFinalRequestedRef.current = false;
+          picaDiagActiveRef.current = false;
+          setPicaDiagEnabled(false);
+        }
       });
       logUploadedPushupFpsDiagnostics(sourceTime);
       if (activeRef.current) scheduleNextFrame();
@@ -17877,6 +18656,23 @@ function Home() {
       videoFrameCallbackRef.current = video.requestVideoFrameCallback(
         (timestamp, metadata) => {
           videoFrameCallbackRef.current = null;
+          if (picaDiagActiveRef.current && isUploadedPikePlayback) {
+            const picaDiagBucket = getPicaDiagBucket(
+              picaDiagBucketsRef,
+              metadata.mediaTime,
+              uploadedPikePushupPreflightStageRef.current,
+            );
+            picaDiagBucket.presented += 1;
+            picaDiagBucket.presentedSource = 'requestVideoFrameCallback';
+            samplePicaDiagVideoQuality(
+              picaDiagBucketsRef,
+              picaDiagQualityRef,
+              video,
+              metadata.mediaTime,
+              uploadedPikePushupPreflightStageRef.current,
+              false,
+            );
+          }
           runFrame(timestamp, metadata.mediaTime);
         },
       );
@@ -17889,6 +18685,157 @@ function Home() {
     });
   }, [logUploadedPushupFpsDiagnostics, processFrame]);
   scheduleNextFrameRef.current = scheduleNextFrame;
+
+  useEffect(() => {
+    if (
+      !picaDiagEnabled
+      || inputMode !== 'video'
+      || selectedExercise !== 'flexiones-pica'
+      || !picaDiagActiveRef.current
+    ) {
+      return;
+    }
+    const picaDiagHeartbeat = () => {
+      if (!picaDiagActiveRef.current) return;
+      const video = videoRef.current;
+      const videoTime = video?.currentTime ?? 0;
+      const stage = uploadedPikePushupPreflightStageRef.current;
+      const currentSecond = Math.floor(videoTime);
+      if (video) {
+        samplePicaDiagVideoQuality(
+          picaDiagBucketsRef,
+          picaDiagQualityRef,
+          video,
+          videoTime,
+          stage,
+          typeof video.requestVideoFrameCallback !== 'function',
+        );
+        if (video.paused && !video.ended) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            videoTime,
+            stage,
+            'video.paused === true && video.ended === false',
+            { paused: video.paused, ended: video.ended },
+            picaDiagLastSkipReasonRef,
+          );
+        } else if (video.seeking) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            videoTime,
+            stage,
+            'video.seeking === true',
+            { seeking: video.seeking, currentTime: video.currentTime },
+            picaDiagLastSkipReasonRef,
+          );
+        } else if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          recordPicaDiagSkip(
+            picaDiagBucketsRef,
+            videoTime,
+            stage,
+            'video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA',
+            { readyState: video.readyState },
+            picaDiagLastSkipReasonRef,
+          );
+        }
+      } else {
+        getPicaDiagBucket(picaDiagBucketsRef, videoTime, stage);
+        recordPicaDiagSkip(
+          picaDiagBucketsRef,
+          videoTime,
+          stage,
+          'videoRef.current === null',
+          { videoDisponible: false },
+          picaDiagLastSkipReasonRef,
+        );
+      }
+      if (picaDiagLastReportedVideoSecondRef.current === null) {
+        picaDiagLastReportedVideoSecondRef.current = currentSecond;
+      } else {
+        for (
+          let second = picaDiagLastReportedVideoSecondRef.current;
+          second < currentSecond;
+          second += 1
+        ) {
+          const closedBucket = getPicaDiagBucket(
+            picaDiagBucketsRef,
+            second,
+            stage,
+          );
+          if (!closedBucket.reported) logPicaDiagBucket(closedBucket);
+        }
+        if (currentSecond > picaDiagLastReportedVideoSecondRef.current) {
+          picaDiagLastReportedVideoSecondRef.current = currentSecond;
+        }
+      }
+      reportPicaDiagDetectorState(
+        detectorRef.current,
+        detectorTransitionRef.current,
+        videoTime,
+        picaDiagLastDetectorSignatureRef,
+        picaDiagLastTransitionActiveRef,
+      );
+      const detector = detectorRef.current;
+      const now = performance.now();
+      console.log(
+        `[pica-hb] ${JSON.stringify({
+          tiempoReal: new Date().toISOString(),
+          performanceNowMs: Number(now.toFixed(1)),
+          etapa: stage,
+          documentHidden: document.hidden,
+          videoCurrentTime: video?.currentTime ?? null,
+          paused: video?.paused ?? null,
+          readyState: video?.readyState ?? null,
+          seeking: video?.seeking ?? null,
+          playbackRate: video?.playbackRate ?? null,
+          edadUltimaPoseValidaMs: picaDiagLastPoseAtRef.current === null
+            ? null
+            : Number((now - picaDiagLastPoseAtRef.current).toFixed(1)),
+          retrasoVideoUltimoCuadroAnalizado: picaDiagLastAnalyzedVideoTimeRef.current === null
+            || !video
+            ? null
+            : Number((video.currentTime - picaDiagLastAnalyzedVideoTimeRef.current).toFixed(3)),
+          modelo: detector?.activeModel ?? null,
+          delegate: detector?.activeDelegate ?? null,
+          detectorTransitionActivo: detectorTransitionRef.current !== null,
+        })}`,
+      );
+    };
+    picaDiagHeartbeat();
+    const picaDiagInterval = window.setInterval(picaDiagHeartbeat, 1000);
+    let picaDiagLongTaskObserver: PerformanceObserver | null = null;
+    if (typeof PerformanceObserver !== 'undefined') {
+      try {
+        picaDiagLongTaskObserver = new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => {
+            if (entry.duration > 50 && picaDiagActiveRef.current) {
+              console.log(
+                `[pica-hb] bloqueo-hilo ${JSON.stringify({
+                  tiempoReal: new Date().toISOString(),
+                  tVideo: videoRef.current?.currentTime ?? null,
+                  duracionMs: Number(entry.duration.toFixed(1)),
+                })}`,
+              );
+            }
+          });
+        });
+        picaDiagLongTaskObserver.observe({ entryTypes: ['longtask'] });
+      } catch {
+        picaDiagLongTaskObserver?.disconnect();
+        picaDiagLongTaskObserver = null;
+      }
+    }
+    return () => {
+      window.clearInterval(picaDiagInterval);
+      picaDiagLongTaskObserver?.disconnect();
+      picaDiagActiveRef.current = false;
+    };
+  }, [
+    inputMode,
+    picaDiagEnabled,
+    picaDiagGeneration,
+    selectedExercise,
+  ]);
 
   useEffect(() => {
     const logUploadedPushupRepDiagnostics = () => {
@@ -19043,6 +19990,27 @@ function Home() {
     if (isUploadedPikePushupVideo && activeExercise === 'flexiones-pica') {
       uploadedPikePushupTransitionGenerationRef.current += 1;
       uploadedPikePushupPreflightStageRef.current = 'searching';
+      picaDiagBucketsRef.current = {};
+      picaRangosSamplesRef.current = [];
+      picaDiagActiveRef.current = true;
+      picaDiagQualityRef.current = {
+        totalVideoFrames: null,
+        droppedVideoFrames: null,
+      };
+      picaDiagLastPoseAtRef.current = null;
+      picaDiagLastAnalyzedVideoTimeRef.current = null;
+      picaDiagDetectorStartedAtRef.current = null;
+      picaDiagLastSkipReasonRef.current = null;
+      picaDiagLastDetectorSignatureRef.current = detectorRef.current
+        ? `${detectorRef.current.activeModel ?? 'desconocido'}`
+          + `/${detectorRef.current.activeDelegate ?? 'desconocido'}`
+        : 'sin-detector';
+      picaDiagLastTransitionActiveRef.current = detectorTransitionRef.current !== null;
+      picaDiagFinalRequestedRef.current = false;
+      picaDiagFinalLoggedRef.current = false;
+      picaDiagLastReportedVideoSecondRef.current = null;
+      setPicaDiagEnabled(true);
+      setPicaDiagGeneration((generation) => generation + 1);
       uploadedPikePushupTransitionRunningRef.current = false;
       uploadedPikePushupMeasurementSideRef.current = null;
       uploadedPikePushupLastCalibrationAccumulatedMsRef.current = 0;
@@ -19336,6 +20304,19 @@ function Home() {
       }
       const detector = await loadDetector(Boolean(videoFile));
       detectorRef.current = detector;
+      if (
+        picaDiagActiveRef.current
+        && inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+      ) {
+        reportPicaDiagDetectorState(
+          detectorRef.current,
+          detectorTransitionRef.current,
+          video.currentTime,
+          picaDiagLastDetectorSignatureRef,
+          picaDiagLastTransitionActiveRef,
+        );
+      }
       setModelStatus(`${POSE_MODEL_NAME} cargado ✓`);
       if (isUploadedDipVideo) {
         // TEMP-DIAGNOSTICO: modelo, delegate y si la inferencia usa worker.
@@ -19808,6 +20789,44 @@ function Home() {
         + `cuerpoBueno=${uploadedPikePushupLastCalibrationAccumulatedMsRef.current}/5000ms `
         + `t=${videoRef.current?.currentTime.toFixed(3) ?? '—'}s`,
       );
+    }
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+      && picaDiagActiveRef.current
+    ) {
+      picaDiagFinalRequestedRef.current = true;
+      const picaDiagEndedVideo = videoRef.current;
+      if (picaDiagEndedVideo) {
+        samplePicaDiagVideoQuality(
+          picaDiagBucketsRef,
+          picaDiagQualityRef,
+          picaDiagEndedVideo,
+          picaDiagEndedVideo.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+          typeof picaDiagEndedVideo.requestVideoFrameCallback !== 'function',
+        );
+        getPicaDiagBucket(
+          picaDiagBucketsRef,
+          picaDiagEndedVideo.currentTime,
+          uploadedPikePushupPreflightStageRef.current,
+        );
+      }
+      if (!processingFrameRef.current && !picaDiagFinalLoggedRef.current) {
+        try {
+          logPicaRangosFinal(
+            picaRangosSamplesRef.current,
+            Object.values(picaDiagBucketsRef.current).map(
+              (bucket) => bucket.second,
+            ),
+          );
+        } catch {}
+        logPicaDiagFinal(picaDiagBucketsRef);
+        picaDiagFinalLoggedRef.current = true;
+        picaDiagFinalRequestedRef.current = false;
+        picaDiagActiveRef.current = false;
+        setPicaDiagEnabled(false);
+      }
     }
     const isUploadedDeclinedPushupVideo = (
       inputModeRef.current === 'video'
