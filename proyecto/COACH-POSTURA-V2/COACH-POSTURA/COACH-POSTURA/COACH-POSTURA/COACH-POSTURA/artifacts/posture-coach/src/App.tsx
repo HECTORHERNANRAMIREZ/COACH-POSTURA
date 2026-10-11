@@ -13390,12 +13390,65 @@ function Home() {
           uploadedPikePushupReason !== null
         )).join('; ');
         const uploadedPikePushupVideoTime = video.currentTime;
+        const uploadedPikePushupMissingJoints = uploadedPikePushupCalibrationPoints
+          .filter(({ point }) => !point)
+          .map(({ label }) => label);
+        const uploadedPikePushupViolatingJoints = (
+          rawCameraGuidance.tone !== 'ready'
+          && video.videoWidth > 0
+          && video.videoHeight > 0
+        )
+          ? uploadedPikePushupCalibrationPoints
+            .filter(({ point }) => Boolean(
+              point && (
+                point.x < video.videoWidth * CAMERA_FRAME_MARGIN
+                || point.x > video.videoWidth * (1 - CAMERA_FRAME_MARGIN)
+                || point.y < video.videoHeight * CAMERA_FRAME_MARGIN
+                || point.y > video.videoHeight * (1 - CAMERA_FRAME_MARGIN)
+              ),
+            ))
+            .map(({ label }) => label)
+          : [];
+        const uploadedPikePushupReasonForLog = uploadedPikePushupInvalidReason
+          || (!uploadedPikePushupFrameReady ? 'condición de búsqueda no satisfecha' : '');
+        const uploadedPikePushupReasonLogKey = [
+          uploadedPikePushupReasonForLog,
+          `tono=${rawCameraGuidance.tone}`,
+          `violatingJoints=${JSON.stringify(uploadedPikePushupViolatingJoints)}`,
+        ].join('|');
+        if (
+          !uploadedPikePushupFrameReady
+          && uploadedPikePushupLastLoggedReasonKeyRef.current
+            !== uploadedPikePushupReasonLogKey
+        ) {
+          console.info(
+            `[pica-video] cuadro rechazado motivo=${uploadedPikePushupReasonForLog} `
+            + `tono=${rawCameraGuidance.tone} `
+            + `cuerpoBueno=${uploadedPikePushupLastCalibrationAccumulatedMsRef.current}/5000ms `
+            + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`
+            + `${rawCameraGuidance.tone !== 'ready'
+              ? ` violatingJoints=${JSON.stringify(uploadedPikePushupViolatingJoints)}`
+              : ''}`
+            + `${uploadedPikePushupMissingJoints.length
+              ? ` articulacionesNoDetectadas=${uploadedPikePushupMissingJoints.join(',')}`
+              : ''}`,
+          );
+          uploadedPikePushupLastLoggedReasonKeyRef.current =
+            uploadedPikePushupReasonLogKey;
+        } else if (uploadedPikePushupFrameReady) {
+          uploadedPikePushupLastLoggedReasonKeyRef.current = null;
+        }
         const uploadedPikePushupLastObservedVideoTime =
           uploadedPikePushupLastObservedVideoTimeRef.current;
         if (
           uploadedPikePushupLastObservedVideoTime !== null
           && uploadedPikePushupVideoTime < uploadedPikePushupLastObservedVideoTime
         ) {
+          console.info(
+            `[pica-video] preflight reiniciado motivo=${video.seeking ? 'seek' : 'retroceso'} `
+            + `cuerpoBueno=${uploadedPikePushupLastCalibrationAccumulatedMsRef.current}/5000ms `
+            + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`,
+          );
           uploadedPikePushupLastCalibrationAccumulatedMsRef.current = 0;
           uploadedPikePushupCalibrationRunBaseMsRef.current = 0;
           uploadedPikePushupCalibrationRunStartVideoTimeRef.current = null;
@@ -13413,6 +13466,11 @@ function Home() {
                 > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS
               && !uploadedPikePushupClosedGap.reset
             ) {
+              console.info(
+                `[pica-video] preflight reiniciado motivo=${video.seeking ? 'seek' : 'hueco'} `
+                + `duracionHueco=${uploadedPikePushupGapDurationSeconds.toFixed(3)}s `
+                + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`,
+              );
               uploadedPikePushupLastCalibrationAccumulatedMsRef.current = 0;
               uploadedPikePushupCalibrationRunBaseMsRef.current = 0;
               uploadedPikePushupCalibrationRunStartVideoTimeRef.current = null;
@@ -13444,10 +13502,28 @@ function Home() {
             uploadedPikePushupVideoTime,
             uploadedPikePushupCalibrationElapsed,
           );
+          const uploadedPikePushupProgressSecond = Math.floor(uploadedPikePushupVideoTime);
+          if (
+            uploadedPikePushupCalibrationElapsed > 0
+            && uploadedPikePushupSearchLastLoggedSecondRef.current
+              !== uploadedPikePushupProgressSecond
+          ) {
+            console.info(
+              `[pica-video] progreso cuerpoBueno=${Math.round(uploadedPikePushupCalibrationElapsed)}/5000ms `
+              + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`,
+            );
+            uploadedPikePushupSearchLastLoggedSecondRef.current =
+              uploadedPikePushupProgressSecond;
+          }
           if (
             uploadedPikePushupCalibrationElapsed >= PUSHUP_BODY_DETECTION_HOLD_MS
             && measurementSide
           ) {
+            console.info(
+              `[pica-video] preflight completo lado=${measurementSide} `
+              + `cuerpoBueno=${Math.round(uploadedPikePushupCalibrationElapsed)}/5000ms `
+              + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`,
+            );
             uploadedPikePushupMeasurementSideRef.current = measurementSide;
             uploadedPikePushupPreflightStageRef.current = 'ready-to-count';
             uploadedPikePushupLastCalibrationAccumulatedMsRef.current =
@@ -13485,6 +13561,12 @@ function Home() {
               > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS
             && !uploadedPikePushupActiveGap.reset
           ) {
+            console.info(
+              `[pica-video] preflight reiniciado motivo=${video.seeking ? 'seek' : 'hueco'} `
+              + `duracionHueco=${uploadedPikePushupGapDurationSeconds.toFixed(3)}s `
+              + `cuerpoBueno=${uploadedPikePushupLastCalibrationAccumulatedMsRef.current}/5000ms `
+              + `t=${uploadedPikePushupVideoTime.toFixed(3)}s`,
+            );
             uploadedPikePushupLastCalibrationAccumulatedMsRef.current = 0;
             uploadedPikePushupCalibrationRunBaseMsRef.current = 0;
             uploadedPikePushupCalibrationRunStartVideoTimeRef.current = null;
@@ -19417,6 +19499,17 @@ function Home() {
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
     );
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+      && uploadedPikePushupPreflightStageRef.current === 'searching'
+    ) {
+      console.info(
+        `[pica-video] preflight reiniciado motivo=fin-del-video-sin-completar `
+        + `cuerpoBueno=${uploadedPikePushupLastCalibrationAccumulatedMsRef.current}/5000ms `
+        + `t=${videoRef.current?.currentTime.toFixed(3) ?? '—'}s`,
+      );
+    }
     const isUploadedDeclinedPushupVideo = (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones-declinadas'
