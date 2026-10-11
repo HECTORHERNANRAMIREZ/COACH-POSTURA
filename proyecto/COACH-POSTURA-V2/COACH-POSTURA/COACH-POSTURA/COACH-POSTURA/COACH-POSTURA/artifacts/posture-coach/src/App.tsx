@@ -17082,6 +17082,222 @@ function Home() {
             }
           : null,
       };
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones-pica'
+        && (
+          uploadedPikePushupPreflightStageRef.current === 'ready-to-count'
+          || uploadedPikePushupPreflightStageRef.current === 'counting'
+        )
+      ) {
+        const uploadedPikePushupPostflightTracker = exerciseRepTrackerRef.current;
+        const uploadedPikePushupPostflightVideoSecond = Math.floor(video.currentTime);
+        const uploadedPikePushupShouldLogSummary =
+          uploadedPikePushupSearchLastLoggedSecondRef.current
+          !== uploadedPikePushupPostflightVideoSecond;
+        const uploadedPikePushupRepWasOpen =
+          uploadedPikePushupCurrentRepOpenRef.current;
+        const uploadedPikePushupRepIsOpen =
+          uploadedPikePushupPostflightTracker.phase === 'en movimiento'
+          || uploadedPikePushupPostflightTracker.phase === 'final';
+        const uploadedPikePushupRepOpened =
+          !uploadedPikePushupRepWasOpen && uploadedPikePushupRepIsOpen;
+        const uploadedPikePushupRepClosed =
+          uploadedPikePushupRepWasOpen && !uploadedPikePushupRepIsOpen;
+        const uploadedPikePushupRepCountedInAttempt =
+          uploadedPikePushupPostflightTracker.repetitions
+          > uploadedPikePushupCurrentRepIndexRef.current;
+        const uploadedPikePushupCountedThisFrame =
+          uploadedPikePushupRepCountedInAttempt
+          && uploadedPikePushupPostflightTracker.event === 'valid';
+        const uploadedPikePushupRepDiscarded =
+          uploadedPikePushupRepClosed
+          && !uploadedPikePushupRepCountedInAttempt;
+        const uploadedPikePushupTechniqueFeedbackForLog =
+          getPikePushupTechniqueFeedback(pose?.keypoints, nextDominantSide);
+        const uploadedPikePushupFrameBlockReasons = [
+          frameLowConfidence ? 'frameLowConfidence' : null,
+          effectiveViewBlocksFrame
+            ? `effectiveViewBlocksFrame: ${nextViewAlignment.message}`
+            : null,
+          pullupMeasurementBlocked ? 'pullupMeasurementBlocked' : null,
+          pushupMeasurementBlocked ? 'pushupMeasurementBlocked' : null,
+        ].filter((reason): reason is string => reason !== null);
+        const uploadedPikePushupCounterWaitReason =
+          uploadedPikePushupRepCountedInAttempt
+            ? 'el intento ya incrementó; tracker espera cerrar la repetición'
+            : !uploadedPushupTrackerGatePassed
+              ? 'trackerGatePassed=false'
+              : !countFrameReady
+                ? 'countFrameReady=false'
+                : !pushupTechniqueReady
+                  ? `técnica del tracker inválida: ${uploadedPikePushupTechniqueFeedbackForLog.message}`
+                  : uploadedPikePushupPostflightTracker.phase === 'esperando inicio'
+                    ? 'tracker espera el ángulo inicial'
+                    : uploadedPikePushupPostflightTracker.phase === 'inicio'
+                      ? 'tracker espera activación'
+                      : uploadedPikePushupPostflightTracker.phase === 'en movimiento'
+                        ? 'tracker espera el ángulo final'
+                        : uploadedPikePushupPostflightTracker.phase === 'final'
+                          ? 'tracker espera el retorno al inicio'
+                          : 'tracker espera la siguiente transición';
+        const uploadedPikePushupReasonLogKey = JSON.stringify({
+          frameMeasurementBlocked,
+          frameBlockReasons: uploadedPikePushupFrameBlockReasons,
+          counterWaitReason: uploadedPikePushupCounterWaitReason,
+          trackerPhase: uploadedPikePushupPostflightTracker.phase,
+          trackerTechniqueReason: uploadedPikePushupTechniqueFeedbackForLog.message,
+        });
+        const uploadedPikePushupReasonChanged =
+          uploadedPikePushupReasonLogKey
+          !== uploadedPikePushupLastLoggedReasonKeyRef.current;
+
+        if (
+          uploadedPikePushupShouldLogSummary
+          || uploadedPikePushupReasonChanged
+          || uploadedPikePushupRepOpened
+          || uploadedPikePushupRepClosed
+          || uploadedPikePushupCountedThisFrame
+        ) {
+          const uploadedPikePushupLiveReadingsForLog = calculateLiveAngleReadings(
+            'flexiones-pica',
+            pose?.keypoints,
+            nextDominantSide,
+          );
+          const uploadedPikePushupReadingValue = (label: string) => (
+            uploadedPikePushupLiveReadingsForLog.find((reading) => reading.label === label)?.value
+            ?? null
+          );
+          const uploadedPikePushupMetricIndexes = nextDominantSide
+            ? sideKeypoints[nextDominantSide]
+            : null;
+          const uploadedPikePushupMetricShoulder = uploadedPikePushupMetricIndexes
+            ? pose?.keypoints?.[uploadedPikePushupMetricIndexes.shoulder]
+            : undefined;
+          const uploadedPikePushupMetricHip = uploadedPikePushupMetricIndexes
+            ? pose?.keypoints?.[uploadedPikePushupMetricIndexes.hip]
+            : undefined;
+          const uploadedPikePushupMetricTorsoLength =
+            uploadedPikePushupMetricShoulder && uploadedPikePushupMetricHip
+              ? distanceBetweenPoints(
+                  uploadedPikePushupMetricShoulder,
+                  uploadedPikePushupMetricHip,
+                )
+              : null;
+          const uploadedPikePushupHipElevation =
+            uploadedPikePushupMetricShoulder
+            && uploadedPikePushupMetricHip
+            && uploadedPikePushupMetricTorsoLength
+              ? (
+                  getMeasurementCoordinates(uploadedPikePushupMetricShoulder).y
+                  - getMeasurementCoordinates(uploadedPikePushupMetricHip).y
+                ) / uploadedPikePushupMetricTorsoLength
+              : null;
+          const uploadedPikePushupMetricValues = {
+            anguloCodo: uploadedPikePushupReadingValue('Codo') ?? repetitionAngle,
+            anguloCodoCuerpo: uploadedPikePushupReadingValue('Codo / cuerpo'),
+            anguloMunecaHombro: uploadedPikePushupReadingValue('Muñeca / hombro'),
+            anguloPliegueCadera: uploadedPikePushupReadingValue('Cadera'),
+            elevacionCadera: uploadedPikePushupHipElevation,
+          };
+          const uploadedPikePushupTechniqueReason =
+            `${uploadedPikePushupTechniqueFeedbackForLog.message}: `
+            + uploadedPikePushupTechniqueFeedbackForLog.detail;
+          const uploadedPikePushupPreviousFrameTimestamp =
+            detectionFrameTimesRef.current[
+              detectionFrameTimesRef.current.length - 2
+            ];
+
+          if (uploadedPikePushupShouldLogSummary) {
+            console.log(
+              `[pica-video] resumen ${JSON.stringify({
+                etapa: uploadedPikePushupPreflightStageRef.current,
+                tVideoS: video.currentTime,
+                poseDetectada: hasFreshPose,
+                puntosVisibles: visiblePoints,
+                puntosDetectados: detectedPose?.keypoints?.filter(Boolean).length ?? 0,
+                tonoGuiaCamara: rawCameraGuidance.tone,
+                countFrameReady,
+                trackerGatePassed: uploadedPushupTrackerGatePassed,
+                frameMeasurementBlocked,
+                razonesBloqueoMedicion: uploadedPikePushupFrameBlockReasons,
+                intervaloRealEntreFramesAnalizadosMs:
+                  uploadedPikePushupPreviousFrameTimestamp === undefined
+                    ? null
+                    : now - uploadedPikePushupPreviousFrameTimestamp,
+                tracker: {
+                  fase: uploadedPikePushupPostflightTracker.phase,
+                  repeticiones: uploadedPikePushupPostflightTracker.repetitions,
+                  repeticionesBuenas: uploadedPikePushupPostflightTracker.goodRepetitions,
+                },
+                tecnica: {
+                  validaParaTracker: pushupTechniqueReady,
+                  validaPica: uploadedPikePushupTechniqueFeedbackForLog.tone === 'success',
+                  razon: uploadedPikePushupTechniqueReason,
+                },
+                valores: uploadedPikePushupMetricValues,
+              })}`,
+            );
+            uploadedPikePushupSearchLastLoggedSecondRef.current =
+              uploadedPikePushupPostflightVideoSecond;
+          }
+          if (uploadedPikePushupReasonChanged) {
+            console.log(
+              `[pica-video] cambio-bloqueo/no-avance ${JSON.stringify({
+                tVideoS: video.currentTime,
+                frameMeasurementBlocked,
+                razonesBloqueoMedicion: uploadedPikePushupFrameBlockReasons,
+                countFrameReady,
+                trackerGatePassed: uploadedPushupTrackerGatePassed,
+                razonContador: uploadedPikePushupCounterWaitReason,
+                faseTracker: uploadedPikePushupPostflightTracker.phase,
+                razonTecnica: uploadedPikePushupTechniqueReason,
+              })}`,
+            );
+            uploadedPikePushupLastLoggedReasonKeyRef.current =
+              uploadedPikePushupReasonLogKey;
+          }
+          if (uploadedPikePushupRepOpened) {
+            console.log(
+              `[pica-video] repeticion=abierta t=${video.currentTime}s `
+              + `motivo=tracker activo en fase ${uploadedPikePushupPostflightTracker.phase} `
+              + `valores=${JSON.stringify(uploadedPikePushupMetricValues)}`,
+            );
+          }
+          if (uploadedPikePushupRepClosed) {
+            console.log(
+              `[pica-video] repeticion=cerrada t=${video.currentTime}s `
+              + `motivo=tracker volvió a ${uploadedPikePushupPostflightTracker.phase}; `
+              + `contadaEnIntento=${uploadedPikePushupRepCountedInAttempt} `
+              + `valores=${JSON.stringify(uploadedPikePushupMetricValues)}`,
+            );
+          }
+          if (uploadedPikePushupCountedThisFrame) {
+            console.log(
+              `[pica-video] repeticion=contada t=${video.currentTime}s `
+              + `motivo=tracker event=${uploadedPikePushupPostflightTracker.event}; `
+              + `correcta=${uploadedPikePushupPostflightTracker.currentRepCorrect}; `
+              + `tecnica=${uploadedPikePushupTechniqueReason} `
+              + `valores=${JSON.stringify(uploadedPikePushupMetricValues)}`,
+            );
+          }
+          if (uploadedPikePushupRepDiscarded) {
+            console.log(
+              `[pica-video] repeticion=descartada t=${video.currentTime}s `
+              + `motivo=${!pushupTechniqueReady
+                ? uploadedPikePushupTechniqueReason
+                : 'tracker cerró el intento sin incrementar repeticiones'} `
+              + `valores=${JSON.stringify(uploadedPikePushupMetricValues)}`,
+            );
+          }
+        }
+
+        if (!uploadedPikePushupRepIsOpen || uploadedPikePushupRepOpened) {
+          uploadedPikePushupCurrentRepIndexRef.current =
+            uploadedPikePushupPostflightTracker.repetitions;
+        }
+        uploadedPikePushupCurrentRepOpenRef.current = uploadedPikePushupRepIsOpen;
+      }
       diagnosticBufferRef.current.push(frameDiagnosticSnapshot);
       if (diagnosticBufferRef.current.length > DIAGNOSTIC_BUFFER_LIMIT) {
         diagnosticBufferRef.current.splice(
@@ -18318,6 +18534,17 @@ function Home() {
       setExerciseMinimumAngle(null);
       setTechniqueFeedback(defaultTechniqueFeedback);
       uploadedPikePushupPreflightStageRef.current = 'counting';
+       if (
+         inputModeRef.current === 'video'
+         && selectedExerciseRef.current === 'flexiones-pica'
+         && uploadedPikePushupPreflightStageRef.current === 'counting'
+       ) {
+         console.log(
+           `[pica-video] transición=ready-to-count->counting `
+           + `t=${uploadedPikePushupVideo.currentTime}s `
+           + `playbackRate=${uploadedPikePushupVideo.playbackRate}x`,
+         );
+       }
       uploadedPikePushupTransitionRunningRef.current = false;
       exerciseStartedRef.current = true;
       setExerciseStarted(true);
@@ -18399,6 +18626,20 @@ function Home() {
   }, []);
   const handleUploadedDipPlaybackRateChange = useCallback(
     (event: { currentTarget: HTMLVideoElement }) => {
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseRef.current === 'flexiones-pica'
+        && (
+          uploadedPikePushupPreflightStageRef.current === 'ready-to-count'
+          || uploadedPikePushupPreflightStageRef.current === 'counting'
+        )
+      ) {
+        console.log(
+          `[pica-video] evento=ratechange etapa=${uploadedPikePushupPreflightStageRef.current} `
+          + `t=${event.currentTarget.currentTime}s `
+          + `playbackRate=${event.currentTarget.playbackRate}x`,
+        );
+      }
       if (
         inputModeRef.current !== 'video'
         || selectedExerciseRef.current !== 'fondos'
@@ -18497,6 +18738,20 @@ function Home() {
   }, []);
   const handleVideoPause = useCallback(() => {
     const video = videoRef.current;
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+      && (
+        uploadedPikePushupPreflightStageRef.current === 'ready-to-count'
+        || uploadedPikePushupPreflightStageRef.current === 'counting'
+      )
+      && video
+    ) {
+      console.log(
+        `[pica-video] evento=pause etapa=${uploadedPikePushupPreflightStageRef.current} `
+        + `t=${video.currentTime}s ended=${video.ended} playbackRate=${video.playbackRate}x`,
+      );
+    }
     if (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'fondos'
@@ -19529,6 +19784,20 @@ function Home() {
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
     );
+    if (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'flexiones-pica'
+      && (
+        uploadedPikePushupPreflightStageRef.current === 'ready-to-count'
+        || uploadedPikePushupPreflightStageRef.current === 'counting'
+      )
+    ) {
+      console.log(
+        `[pica-video] evento=ended etapa=${uploadedPikePushupPreflightStageRef.current} `
+        + `t=${videoRef.current?.currentTime ?? '—'}s `
+        + `repeticiones=${exerciseRepTrackerRef.current.repetitions}`,
+      );
+    }
     if (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones-pica'
