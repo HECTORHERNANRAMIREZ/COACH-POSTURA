@@ -12691,6 +12691,29 @@ function Home() {
         video.videoHeight,
         stableLateralSide,
       );
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones-pica'
+        && uploadedPikePushupPreflightStageRef.current !== 'idle'
+      ) {
+        const uploadedPikePushupPicaGuidanceKeypoints = pose?.keypoints?.slice();
+        if (uploadedPikePushupPicaGuidanceKeypoints && measurementSide) {
+          const uploadedPikePushupPicaIndexes = sideKeypoints[measurementSide];
+          uploadedPikePushupPicaGuidanceKeypoints[uploadedPikePushupPicaIndexes.ankle] =
+            uploadedPikePushupPicaGuidanceKeypoints[uploadedPikePushupPicaIndexes.knee];
+        }
+        const uploadedPikePushupPicaCameraGuidance = getCameraGuidance(
+          selectedExerciseForFrame,
+          uploadedPikePushupPicaGuidanceKeypoints,
+          measurementSide,
+          video.videoWidth,
+          video.videoHeight,
+          stableLateralSide,
+        );
+        uploadedPikePushupPicaCameraGuidance.detail =
+          uploadedPikePushupPicaCameraGuidance.detail.replace('tobillo', 'rodilla');
+        Object.assign(rawCameraGuidance, uploadedPikePushupPicaCameraGuidance);
+      }
       const frameCameraReady = rawCameraGuidance.tone === 'ready';
       const pullupMeasurementBlocked = isPullupExercise
         && !pullupTrackingIsAnchored
@@ -13346,6 +13369,13 @@ function Home() {
           pose?.keypoints,
           measurementSide,
         );
+        const uploadedPikePushupCalibrationAnklePoint = uploadedPikePushupCalibrationPoints
+          .find(({ label }) => label === 'tobillo');
+        if (measurementSide && uploadedPikePushupCalibrationAnklePoint) {
+          uploadedPikePushupCalibrationAnklePoint.label = 'rodilla';
+          uploadedPikePushupCalibrationAnklePoint.point =
+            pose?.keypoints?.[sideKeypoints[measurementSide].knee];
+        }
         const uploadedPikePushupCalibrationWrist = uploadedPikePushupCalibrationPoints
           .find(({ label }) => label === 'muñeca')?.point;
         const uploadedPikePushupCalibrationWristHeldAccepted = Boolean(
