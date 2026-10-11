@@ -10867,6 +10867,36 @@ function Home() {
   const [inputMode, setInputMode] = useState<'camera' | 'video'>('camera');
   const inputModeRef = useRef<'camera' | 'video'>('camera');
   const uploadedPushupPreflightRef = useRef(false);
+  const uploadedPikePushupPreflightStageRef = useRef<
+    'idle' | 'searching' | 'transitioning' | 'ready-to-count' | 'counting'
+  >('idle');
+  const [uploadedPikePushupPreflightReady, setUploadedPikePushupPreflightReady] =
+    useState(false);
+  const uploadedPikePushupTransitionGenerationRef = useRef(0);
+  const uploadedPikePushupTransitionRunningRef = useRef(false);
+  const uploadedPikePushupMeasurementSideRef = useRef<PoseSide | null>(null);
+  const uploadedPikePushupSearchLastLoggedSecondRef = useRef<number | null>(null);
+  const uploadedPikePushupLastCalibrationAccumulatedMsRef = useRef(0);
+  const uploadedPikePushupCalibrationRunBaseMsRef = useRef(0);
+  const uploadedPikePushupCalibrationRunStartVideoTimeRef = useRef<number | null>(null);
+  const uploadedPikePushupLastObservedVideoTimeRef = useRef<number | null>(null);
+  const uploadedPikePushupGoodFramesAccumulatedRef = useRef(0);
+  const uploadedPikePushupLastLoggedReasonKeyRef = useRef<string | null>(null);
+  const uploadedPikePushupSearchGapRef = useRef<{
+    startedAtVideoTime: number;
+    invalidReason: string;
+    reset: boolean;
+  } | null>(null);
+  const uploadedPikePushupCurrentRepOpenRef = useRef(false);
+  const uploadedPikePushupCurrentRepIndexRef = useRef(0);
+  const uploadedPikePushupLatestMetricsRef = useRef<Record<string, number | null>>({
+    anguloCodo: null,
+    anguloCodoCuerpo: null,
+    anguloMunecaHombro: null,
+    anguloPliegueCadera: null,
+    elevacionCadera: null,
+  });
+  const uploadedPikePushupLatestTechniqueReasonRef = useRef('sin medición');
   const uploadedPullupPreflightRef = useRef(false);
   const uploadedPullupVideoEndedRef = useRef(false);
   const uploadedDipSearchActiveRef = useRef(false);
@@ -11645,6 +11675,29 @@ function Home() {
     uploadedSquatDetectionStartVideoTimeRef.current = null;
     uploadedSquatMeasurementSideRef.current = null;
     uploadedPushupPreflightRef.current = false;
+    uploadedPikePushupTransitionGenerationRef.current += 1;
+    uploadedPikePushupPreflightStageRef.current = 'idle';
+    uploadedPikePushupTransitionRunningRef.current = false;
+    uploadedPikePushupMeasurementSideRef.current = null;
+    uploadedPikePushupSearchLastLoggedSecondRef.current = null;
+    uploadedPikePushupLastCalibrationAccumulatedMsRef.current = 0;
+    uploadedPikePushupCalibrationRunBaseMsRef.current = 0;
+    uploadedPikePushupCalibrationRunStartVideoTimeRef.current = null;
+    uploadedPikePushupLastObservedVideoTimeRef.current = null;
+    uploadedPikePushupGoodFramesAccumulatedRef.current = 0;
+    uploadedPikePushupLastLoggedReasonKeyRef.current = null;
+    uploadedPikePushupSearchGapRef.current = null;
+    uploadedPikePushupCurrentRepOpenRef.current = false;
+    uploadedPikePushupCurrentRepIndexRef.current = 0;
+    uploadedPikePushupLatestMetricsRef.current = {
+      anguloCodo: null,
+      anguloCodoCuerpo: null,
+      anguloMunecaHombro: null,
+      anguloPliegueCadera: null,
+      elevacionCadera: null,
+    };
+    uploadedPikePushupLatestTechniqueReasonRef.current = 'sin medición';
+    setUploadedPikePushupPreflightReady(false);
     uploadedPullupPreflightRef.current = false;
     uploadedPullupVideoEndedRef.current = false;
     uploadedPullupSearchPausedRef.current = false;
