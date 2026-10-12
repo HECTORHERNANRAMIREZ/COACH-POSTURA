@@ -17709,6 +17709,153 @@ function Home() {
         pose?.keypoints,
         measurementSide,
       );
+      if (selectedExerciseForFrame === 'cruces-polea-baja-alta') {
+        try {
+          const crucesKeypoints = pose?.keypoints;
+          const crucesLeftIndexes = sideKeypoints.left;
+          const crucesRightIndexes = sideKeypoints.right;
+          const crucesLeftPoints = {
+            shoulder: crucesKeypoints?.[crucesLeftIndexes.shoulder],
+            elbow: crucesKeypoints?.[crucesLeftIndexes.elbow],
+            wrist: crucesKeypoints?.[crucesLeftIndexes.wrist],
+            hip: crucesKeypoints?.[crucesLeftIndexes.hip],
+            handTip: crucesKeypoints?.[WRIST_TIP_INDEX.left],
+          };
+          const crucesRightPoints = {
+            shoulder: crucesKeypoints?.[crucesRightIndexes.shoulder],
+            elbow: crucesKeypoints?.[crucesRightIndexes.elbow],
+            wrist: crucesKeypoints?.[crucesRightIndexes.wrist],
+            hip: crucesKeypoints?.[crucesRightIndexes.hip],
+            handTip: crucesKeypoints?.[WRIST_TIP_INDEX.right],
+          };
+          const crucesPointDetails = (point: PosePoint | undefined) => (
+            point
+              ? {
+                  score: point.score ?? null,
+                  visible: Number.isFinite(point.x)
+                    && Number.isFinite(point.y)
+                    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+                }
+              : null
+          );
+          const crucesCoords = (point: PosePoint | undefined) => (
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+              ? { x: point.x, y: point.y }
+              : null
+          );
+          const crucesRound = (value: number | null) => (
+            value === null || !Number.isFinite(value)
+              ? null
+              : Number(value.toFixed(4))
+          );
+          const crucesAngleFor = (label: string) => (
+            nextLiveAngleReadings.find((reading) => reading.label === label)?.value ?? null
+          );
+          const crucesShoulderAngleLeft = crucesAngleFor('hombro izq.');
+          const crucesElbowAngleLeft = crucesAngleFor('codo izq.');
+          const crucesWristAngleLeft = crucesAngleFor('muñeca izq.');
+          const crucesShoulderAngleRight = crucesAngleFor('hombro der.');
+          const crucesElbowAngleRight = crucesAngleFor('codo der.');
+          const crucesWristAngleRight = crucesAngleFor('muñeca der.');
+          const crucesLeftShoulder = crucesCoords(crucesLeftPoints.shoulder);
+          const crucesRightShoulder = crucesCoords(crucesRightPoints.shoulder);
+          const crucesLeftElbow = crucesCoords(crucesLeftPoints.elbow);
+          const crucesRightElbow = crucesCoords(crucesRightPoints.elbow);
+          const crucesLeftWrist = crucesCoords(crucesLeftPoints.wrist);
+          const crucesRightWrist = crucesCoords(crucesRightPoints.wrist);
+          const crucesShoulderWidth = crucesLeftShoulder && crucesRightShoulder
+            ? Math.hypot(
+                crucesLeftShoulder.x - crucesRightShoulder.x,
+                crucesLeftShoulder.y - crucesRightShoulder.y,
+              )
+            : null;
+          const crucesNormalizedHeight = (
+            point: { x: number; y: number } | null,
+            shoulder: { x: number; y: number } | null,
+          ) => (
+            point && shoulder && crucesShoulderWidth !== null && crucesShoulderWidth > 0
+              ? crucesRound((point.y - shoulder.y) / crucesShoulderWidth)
+              : null
+          );
+          const crucesAngleDifference = (left: number | null, right: number | null) => (
+            left === null || right === null ? null : crucesRound(left - right)
+          );
+          const crucesIsVideo = inputModeRef.current === 'video';
+          console.log(`[cruces-medidas] ${JSON.stringify({
+            mode: crucesIsVideo ? 'video' : 'vivo',
+            ...(crucesIsVideo
+              ? { tVideoS: Number.isFinite(video.currentTime) ? video.currentTime : null }
+              : { timestamp: now }),
+            measurementSide,
+            anglesDeg: {
+              left: {
+                shoulder: crucesShoulderAngleLeft,
+                elbow: crucesElbowAngleLeft,
+                wrist: crucesWristAngleLeft,
+              },
+              right: {
+                shoulder: crucesShoulderAngleRight,
+                elbow: crucesElbowAngleRight,
+                wrist: crucesWristAngleRight,
+              },
+            },
+            points: {
+              left: {
+                shoulder: crucesPointDetails(crucesLeftPoints.shoulder),
+                elbow: crucesPointDetails(crucesLeftPoints.elbow),
+                wrist: crucesPointDetails(crucesLeftPoints.wrist),
+                hip: crucesPointDetails(crucesLeftPoints.hip),
+                handTip: crucesPointDetails(crucesLeftPoints.handTip),
+              },
+              right: {
+                shoulder: crucesPointDetails(crucesRightPoints.shoulder),
+                elbow: crucesPointDetails(crucesRightPoints.elbow),
+                wrist: crucesPointDetails(crucesRightPoints.wrist),
+                hip: crucesPointDetails(crucesRightPoints.hip),
+                handTip: crucesPointDetails(crucesRightPoints.handTip),
+              },
+            },
+            measures: {
+              shoulderWidth: crucesRound(crucesShoulderWidth),
+              leftWristHeightOverShoulder: crucesNormalizedHeight(
+                crucesLeftWrist,
+                crucesLeftShoulder,
+              ),
+              rightWristHeightOverShoulder: crucesNormalizedHeight(
+                crucesRightWrist,
+                crucesRightShoulder,
+              ),
+              leftElbowHeightOverShoulder: crucesNormalizedHeight(
+                crucesLeftElbow,
+                crucesLeftShoulder,
+              ),
+              rightElbowHeightOverShoulder: crucesNormalizedHeight(
+                crucesRightElbow,
+                crucesRightShoulder,
+              ),
+              wristHorizontalDistance: crucesLeftWrist && crucesRightWrist
+                ? crucesRound(Math.abs(crucesLeftWrist.x - crucesRightWrist.x))
+                : null,
+              elbowDistance: crucesLeftElbow && crucesRightElbow
+                ? crucesRound(Math.hypot(
+                    crucesLeftElbow.x - crucesRightElbow.x,
+                    crucesLeftElbow.y - crucesRightElbow.y,
+                  ))
+                : null,
+              shoulderAngleLeftMinusRightDeg: crucesAngleDifference(
+                crucesShoulderAngleLeft,
+                crucesShoulderAngleRight,
+              ),
+              elbowAngleLeftMinusRightDeg: crucesAngleDifference(
+                crucesElbowAngleLeft,
+                crucesElbowAngleRight,
+              ),
+            },
+          })}`);
+        } catch {
+          // El registro es opcional: un fallo no debe interrumpir el análisis del cuadro.
+        }
+      }
       setLiveAngleReadings(nextLiveAngleReadings);
       setDipJointReadings(
         selectedExerciseForFrame === 'fondos'
