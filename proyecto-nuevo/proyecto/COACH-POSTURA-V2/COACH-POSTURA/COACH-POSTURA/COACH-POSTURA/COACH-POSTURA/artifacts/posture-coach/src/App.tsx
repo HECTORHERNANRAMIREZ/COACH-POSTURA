@@ -15967,7 +15967,7 @@ function Home() {
         uploadedPushupTrackerGatePassed = true;
         const trackerConfig = isUploadedDipVideo
           ? repetitionConfig
-          : uploadedPikePushupVideoTrackerFrame
+          : selectedExerciseForFrame === 'flexiones-pica'
             ? {
                 ...repetitionConfig,
                 startMinAngle: UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE,
@@ -16072,22 +16072,25 @@ function Home() {
               endpointAngle: exerciseRepUpdate.smoothedAngle,
               currentRepCorrect: picaTechniqueValid,
             };
-          } else if (
-            previousExerciseRepTracker.phase === 'inicio'
-            && exerciseRepUpdate.tracker.phase === 'esperando inicio'
-            && repetitionAngle < UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE
-            && repetitionAngle >= repetitionConfig.activationAngle
-            && pushupTechniqueReady
-          ) {
-            exerciseRepUpdate.tracker = {
-              ...exerciseRepUpdate.tracker,
-              phase: 'inicio',
-              currentRepCorrect: previousExerciseRepTracker.currentRepCorrect,
-            };
           }
         }
         if (
-          uploadedPikePushupVideoTrackerFrame
+          selectedExerciseForFrame === 'flexiones-pica'
+          && repetitionAngle !== null
+          && previousExerciseRepTracker.phase === 'inicio'
+          && exerciseRepUpdate.tracker.phase === 'esperando inicio'
+          && repetitionAngle < UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE
+          && repetitionAngle >= repetitionConfig.activationAngle
+          && pushupTechniqueReady
+        ) {
+          exerciseRepUpdate.tracker = {
+            ...exerciseRepUpdate.tracker,
+            phase: 'inicio',
+            currentRepCorrect: previousExerciseRepTracker.currentRepCorrect,
+          };
+        }
+        if (
+          selectedExerciseForFrame === 'flexiones-pica'
           && previousExerciseRepTracker.phase !== exerciseRepUpdate.tracker.phase
         ) {
           const picaTrackerTransitionCondition =
@@ -16109,7 +16112,9 @@ function Home() {
           console.log(
             `[pica-tracker] CAMBIO ${JSON.stringify({
               ...getPicaRangeLogFields(),
-              tVideoS: Number(video.currentTime.toFixed(3)),
+              ...(inputModeRef.current === 'video'
+                ? { tVideoS: Number(video.currentTime.toFixed(3)) }
+                : { tLiveS: Number((performance.now() / 1000).toFixed(3)) }),
               faseAnterior: previousExerciseRepTracker.phase,
               faseNueva: exerciseRepUpdate.tracker.phase,
               condicion: picaTrackerTransitionCondition,
