@@ -1709,6 +1709,7 @@ type DipJointReading = {
   status?: string;
 };
 const PICA_TOLERANCIA_GRADOS = 5;
+const CRUCES_TOLERANCIA_GRADOS = 5;
 const PICA_TOLERANCIA_ELEVACION_PROPORCION =
   PICA_TOLERANCIA_GRADOS * (0.03 / 5);
 const PIKE_ELBOW_BODY_MIN_ANGLE = 70 - PICA_TOLERANCIA_GRADOS;
@@ -3506,6 +3507,17 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMaxAngle: PIKE_REP_END_MAX_ANGLE,
     endLabel: `codo entre ${PIKE_REP_END_MIN_ANGLE}–${PIKE_REP_END_MAX_ANGLE}°`,
     countOnlyWhenCorrect: true,
+  },
+  'cruces-polea-baja-alta': {
+    direction: 'decrease',
+    startMinAngle: 80 - CRUCES_TOLERANCIA_GRADOS,
+    startMaxAngle: 180,
+    activationAngle: 80 - CRUCES_TOLERANCIA_GRADOS,
+    endMinAngle: 0,
+    endMaxAngle: 30 + CRUCES_TOLERANCIA_GRADOS,
+    endLabel: `cada hombro ≤${30 + CRUCES_TOLERANCIA_GRADOS}°`,
+    countOnReturn: false,
+    countOnlyWhenCorrect: false,
   },
   'press-militar': {
     direction: 'increase',
@@ -8388,6 +8400,24 @@ function calculateRepetitionAngle(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null,
 ) {
+  if (exercise === 'cruces-polea-baja-alta') {
+    if (!keypoints) return null;
+    const leftIndexes = sideKeypoints.left;
+    const rightIndexes = sideKeypoints.right;
+    const leftShoulderAngle = calculateAngle(
+      keypoints[leftIndexes.hip],
+      keypoints[leftIndexes.shoulder],
+      keypoints[leftIndexes.elbow],
+    );
+    const rightShoulderAngle = calculateAngle(
+      keypoints[rightIndexes.hip],
+      keypoints[rightIndexes.shoulder],
+      keypoints[rightIndexes.elbow],
+    );
+    return leftShoulderAngle === null || rightShoulderAngle === null
+      ? null
+      : Math.max(leftShoulderAngle, rightShoulderAngle);
+  }
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
 
@@ -11944,6 +11974,12 @@ function Home() {
   const uploadedCrossoverLastCalibrationAccumulatedMsRef = useRef(0);
   const uploadedCrossoverSearchGapStartedAtRef = useRef<number | null>(null);
   const crossoverLastMissingLogSecondRef = useRef<number | null>(null);
+  const crossoverDetectionLastSearchingLogAtRef = useRef<number | null>(null);
+  const crossoverDetectionCompletedLoggedRef = useRef(false);
+  const crossoverAnalysisStartedLoggedRef = useRef(false);
+  const crossoverAnalysisTransitionPendingRef = useRef(false);
+  const crossoverAnalysisStartingRef = useRef(false);
+  const uploadedCrossoverStartPlaybackRef = useRef<(() => Promise<void>) | null>(null);
   const crossoverDetectionOverlayTimerRef = useRef<number | null>(null);
   const dipCalibrationStatusRef = useRef<PullupCalibrationStatus | null>(null);
   const dipCalibrationReadySinceRef = useRef<number | null>(null);
@@ -12004,17 +12040,65 @@ function Home() {
     setPushupPreparationCountdown(seconds);
   }, []);
 
+  const logCrossoverVideoDetectionEvent = useCallback((
+    event: 'buscando' | 'detectado' | 'activo',
+    selectedExerciseForFrame: ExerciseId | null,
+    validMs: number,
+    tVideoS: number | null,
+  ) => {
+    if (
+      selectedExerciseForFrame === 'cruces-polea-baja-alta'
+      && selectedExerciseRef.current === 'cruces-polea-baja-alta'
+      && inputModeRef.current === 'video'
+    ) {
+      if (event === 'buscando') {
+        const now = performance.now();
+        const previousLogAt = crossoverDetectionLastSearchingLogAtRef.current;
+        if (previousLogAt !== null && now - previousLogAt < 1000) return;
+        crossoverDetectionLastSearchingLogAtRef.current = now;
+      } else if (event === 'detectado') {
+        if (crossoverDetectionCompletedLoggedRef.current) return;
+        crossoverDetectionCompletedLoggedRef.current = true;
+      } else {
+        if (crossoverAnalysisStartedLoggedRef.current) return;
+        crossoverAnalysisStartedLoggedRef.current = true;
+      }
+      try {
+        console.log(`[cruces-deteccion] ${JSON.stringify({
+          evento: event,
+          modo: 'video',
+          segundosValidos: Number((Math.max(0, validMs) / 1000).toFixed(2)),
+          tVideoS: tVideoS !== null && Number.isFinite(tVideoS)
+            ? Number(tVideoS.toFixed(3))
+            : null,
+        })}`);
+      } catch {
+        // El registro diagnóstico no debe interrumpir el análisis del cuadro.
+      }
+    }
+  }, []);
+
   const updateCrossoverPreparationStage = useCallback((
     stage: CrossoverPreparationStage,
     validMs = uploadedCrossoverLastCalibrationAccumulatedMsRef.current,
     mode = inputModeRef.current === 'video' ? 'video' : 'vivo',
   ) => {
     const previousStage = crossoverPreparationStageRef.current;
+    const modo = mode;
     if (previousStage === stage) return;
     crossoverPreparationStageRef.current = stage;
     setCrossoverPreparationStage(stage);
     if (selectedExerciseRef.current === 'cruces-polea-baja-alta') {
       try {
+        if (mode === 'video') {
+          logCrossoverVideoDetectionEvent(
+            stage === 'active' ? 'detectado' : 'buscando',
+            selectedExerciseRef.current,
+            validMs,
+            videoRef.current?.currentTime ?? 0,
+          );
+          return;
+        }
         console.log(`[cruces-deteccion] ${JSON.stringify({
           desde: previousStage,
           hacia: stage,
@@ -14203,6 +14287,15 @@ function Home() {
         const invalidLogSecond = uploadedCrossoverPreflight
           ? Math.floor(crossoverVideoTime)
           : Math.floor(now / 1000);
+        if (uploadedCrossoverPreflight) {
+          logCrossoverVideoDetectionEvent(
+            'buscando',
+            selectedExerciseForFrame,
+            calibrationElapsed,
+            crossoverVideoTime,
+          );
+          crossoverLastMissingLogSecondRef.current = invalidLogSecond;
+        }
         if (
           !calibrationFrameReady
           && crossoverLastMissingLogSecondRef.current !== invalidLogSecond
@@ -14233,6 +14326,22 @@ function Home() {
           crossoverCalibrationReadySinceRef.current = null;
           crossoverDetectionCompletedThisFrame = true;
           if (uploadedCrossoverPreflight) {
+            crossoverAnalysisTransitionPendingRef.current = true;
+            activeRef.current = false;
+            uploadedPushupTransitionPauseRef.current = true;
+            if (animationFrameRef.current !== null) {
+              cancelAnimationFrame(animationFrameRef.current);
+              animationFrameRef.current = null;
+            }
+            const crossoverVideo = videoRef.current;
+            if (
+              videoFrameCallbackRef.current !== null
+              && crossoverVideo?.cancelVideoFrameCallback
+            ) {
+              crossoverVideo.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+              videoFrameCallbackRef.current = null;
+            }
+            crossoverVideo?.pause();
             uploadedCrossoverPreflightRef.current = false;
             exerciseStartedRef.current = true;
             setExerciseStarted(true);
@@ -14248,6 +14357,9 @@ function Home() {
               if (selectedExerciseRef.current === 'cruces-polea-baja-alta') {
                 hideUploadedPushupSearchOverlay(calibrationElapsed);
                 setUploadedPushupTransitionPaused(false);
+                if (exerciseStartedRef.current) {
+                  void uploadedCrossoverStartPlaybackRef.current?.();
+                }
               }
             }, 1200);
           } else {
@@ -17303,6 +17415,96 @@ function Home() {
             ),
           );
         }
+        if (selectedExerciseForFrame === 'cruces-polea-baja-alta') {
+          const crossoverKeypoints = pose?.keypoints;
+          const crossoverLeftIndexes = sideKeypoints.left;
+          const crossoverRightIndexes = sideKeypoints.right;
+          const hombroIzqAngle = crossoverKeypoints
+            ? calculateAngle(
+                crossoverKeypoints[crossoverLeftIndexes.hip],
+                crossoverKeypoints[crossoverLeftIndexes.shoulder],
+                crossoverKeypoints[crossoverLeftIndexes.elbow],
+              )
+            : null;
+          const hombroDerAngle = crossoverKeypoints
+            ? calculateAngle(
+                crossoverKeypoints[crossoverRightIndexes.hip],
+                crossoverKeypoints[crossoverRightIndexes.shoulder],
+                crossoverKeypoints[crossoverRightIndexes.elbow],
+              )
+            : null;
+          const umbralAbierto = 80 - CRUCES_TOLERANCIA_GRADOS;
+          const umbralCerrado = 30 + CRUCES_TOLERANCIA_GRADOS;
+          const ambosAbiertos = hombroIzqAngle !== null
+            && hombroDerAngle !== null
+            && hombroIzqAngle >= umbralAbierto
+            && hombroDerAngle >= umbralAbierto;
+          const ambosCerrados = hombroIzqAngle !== null
+            && hombroDerAngle !== null
+            && hombroIzqAngle <= umbralCerrado
+            && hombroDerAngle <= umbralCerrado;
+
+          if (
+            exerciseRepUpdate.tracker.phase === 'inicio'
+            && !ambosAbiertos
+          ) {
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              phase: previousExerciseRepTracker.phase === 'inicio'
+                ? 'en movimiento'
+                : previousExerciseRepTracker.phase,
+              repetitions: previousExerciseRepTracker.repetitions,
+              goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+              endpointAngle: previousExerciseRepTracker.endpointAngle,
+              currentRepCorrect: previousExerciseRepTracker.currentRepCorrect,
+              event: null,
+            };
+            exerciseRepUpdate.completedEndpointAngle = null;
+          }
+          if (
+            previousExerciseRepTracker.phase !== 'final'
+            && exerciseRepUpdate.tracker.phase === 'final'
+            && !ambosCerrados
+          ) {
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              phase: previousExerciseRepTracker.phase === 'inicio'
+                ? 'en movimiento'
+                : previousExerciseRepTracker.phase,
+              repetitions: previousExerciseRepTracker.repetitions,
+              goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+              event: null,
+            };
+            exerciseRepUpdate.completedEndpointAngle = null;
+          }
+          if (
+            exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
+            || exerciseRepUpdate.tracker.repetitions
+              > previousExerciseRepTracker.repetitions
+          ) {
+            const logCrossoverShoulderAngle = (angle: number | null) => (
+              angle === null || !Number.isFinite(angle)
+                ? null
+                : Number(angle.toFixed(2))
+            );
+            console.log(`[cruces-conteo] ${JSON.stringify({
+              estado: exerciseRepUpdate.tracker.phase,
+              hombroIzqDeg: logCrossoverShoulderAngle(hombroIzqAngle),
+              hombroDerDeg: logCrossoverShoulderAngle(hombroDerAngle),
+              correctas: exerciseRepUpdate.tracker.goodRepetitions,
+              incorrectas: Math.max(
+                0,
+                exerciseRepUpdate.tracker.repetitions
+                  - exerciseRepUpdate.tracker.goodRepetitions,
+              ),
+              tVideoS: inputModeRef.current === 'video'
+                && Number.isFinite(video.currentTime)
+                ? Number(video.currentTime.toFixed(3))
+                : null,
+              modo: inputModeRef.current === 'video' ? 'video' : 'vivo',
+            })}`);
+          }
+        }
         uploadedPushupTrackerWasCalled = true;
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         if (
@@ -19505,6 +19707,148 @@ function Home() {
   }, [logUploadedPushupFpsDiagnostics, processFrame]);
   scheduleNextFrameRef.current = scheduleNextFrame;
 
+  const startUploadedCrossoverPlayback = useCallback(async () => {
+    const video = videoRef.current;
+    if (
+      video
+      && inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'cruces-polea-baja-alta'
+      && crossoverAnalysisTransitionPendingRef.current
+      && !crossoverAnalysisStartingRef.current
+      && !crossoverAnalysisStartedLoggedRef.current
+    ) {
+      crossoverAnalysisStartingRef.current = true;
+      try {
+        video.pause();
+        video.controls = true;
+        activeRef.current = false;
+        uploadedPushupTransitionPauseRef.current = true;
+        setUploadedPushupTransitionPaused(true);
+        if (animationFrameRef.current !== null) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        if (
+          videoFrameCallbackRef.current !== null
+          && video.cancelVideoFrameCallback
+        ) {
+          video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+          videoFrameCallbackRef.current = null;
+        }
+        while (processingFrameRef.current) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          });
+          if (
+            selectedExerciseRef.current === 'cruces-polea-baja-alta'
+            && inputModeRef.current === 'video'
+            && crossoverAnalysisTransitionPendingRef.current
+          ) {
+            continue;
+          }
+          return;
+        }
+
+        if (video.seeking || video.currentTime !== 0) {
+          await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            let timeoutId = 0;
+            const finishSeeking = () => {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finishSeeking);
+              if (Math.abs(video.currentTime) > 0.01) {
+                reject(new Error('El video no llegó al inicio.'));
+                return;
+              }
+              resolve();
+            };
+            video.addEventListener('seeked', finishSeeking, { once: true });
+            timeoutId = window.setTimeout(finishSeeking, 1500);
+            try {
+              video.currentTime = 0;
+            } catch (error) {
+              settled = true;
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finishSeeking);
+              reject(error);
+            }
+          });
+        }
+        if (
+          selectedExerciseRef.current === 'cruces-polea-baja-alta'
+          && inputModeRef.current === 'video'
+          && crossoverAnalysisTransitionPendingRef.current
+          && Math.abs(video.currentTime) <= 0.01
+        ) {
+          poseFilterRef.current.reset();
+          poseFilterRef.current.setPersistentHold(false);
+          poseFilterRef.current.setTemporalJumpGuard(false);
+          sideConsistencyRef.current.reset();
+          boneConstraintRef.current.reset();
+          stabilityFramesRef.current = 0;
+          diagnosticBufferRef.current = [];
+          lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+          setVideoTimeSeconds(video.currentTime);
+          setVideoExportStatus('Análisis en curso desde el inicio del video.');
+          hideUploadedPushupSearchOverlay(
+            uploadedCrossoverLastCalibrationAccumulatedMsRef.current,
+          );
+          uploadedPushupTransitionPauseRef.current = false;
+          setUploadedPushupTransitionPaused(false);
+          await video.play();
+          if (
+            selectedExerciseRef.current === 'cruces-polea-baja-alta'
+            && inputModeRef.current === 'video'
+            && crossoverAnalysisTransitionPendingRef.current
+          ) {
+            crossoverAnalysisTransitionPendingRef.current = false;
+            exerciseStartedRef.current = true;
+            setExerciseStarted(true);
+            logCrossoverVideoDetectionEvent(
+              'activo',
+              selectedExerciseRef.current,
+              uploadedCrossoverLastCalibrationAccumulatedMsRef.current,
+              video.currentTime,
+            );
+            activeRef.current = true;
+            scheduleNextFrame();
+          }
+        } else if (
+          selectedExerciseRef.current === 'cruces-polea-baja-alta'
+          && inputModeRef.current === 'video'
+          && crossoverAnalysisTransitionPendingRef.current
+        ) {
+          throw new Error('No se pudo confirmar el salto al inicio del video.');
+        }
+      } catch {
+        if (
+          selectedExerciseRef.current === 'cruces-polea-baja-alta'
+          && inputModeRef.current === 'video'
+        ) {
+          activeRef.current = false;
+          video.pause();
+          exerciseStartedRef.current = false;
+          setExerciseStarted(false);
+          uploadedPushupTransitionPauseRef.current = false;
+          setUploadedPushupTransitionPaused(false);
+          hideUploadedPushupSearchOverlay();
+          setVideoExportStatus(
+            'No se pudo iniciar el análisis desde t=0. Pulsa Reproducir para reintentar.',
+          );
+        }
+      } finally {
+        crossoverAnalysisStartingRef.current = false;
+      }
+    }
+  }, [
+    hideUploadedPushupSearchOverlay,
+    logCrossoverVideoDetectionEvent,
+    scheduleNextFrame,
+  ]);
+  uploadedCrossoverStartPlaybackRef.current = startUploadedCrossoverPlayback;
+
   useEffect(() => {
     if (
       !picaDiagEnabled
@@ -20752,6 +21096,11 @@ function Home() {
       crossoverCalibrationSuccessfulRef.current = false;
       crossoverCalibrationReadySinceRef.current = null;
       crossoverPreparationStartedAtRef.current = null;
+      crossoverDetectionLastSearchingLogAtRef.current = null;
+      crossoverDetectionCompletedLoggedRef.current = false;
+      crossoverAnalysisStartedLoggedRef.current = false;
+      crossoverAnalysisTransitionPendingRef.current = false;
+      crossoverAnalysisStartingRef.current = false;
       uploadedCrossoverLastObservedVideoTimeRef.current = null;
       uploadedCrossoverRunStartVideoTimeRef.current = null;
       uploadedCrossoverRunBaseMsRef.current = 0;
@@ -21507,6 +21856,15 @@ function Home() {
     if (inputModeRef.current === 'video') {
       const video = videoRef.current;
       if (!video) return;
+
+      if (
+        selectedExerciseRef.current === 'cruces-polea-baja-alta'
+        && crossoverAnalysisTransitionPendingRef.current
+      ) {
+        void uploadedCrossoverStartPlaybackRef.current?.();
+        logUploadedPushupButtonState('después');
+        return;
+      }
 
       if (
         selectedExerciseRef.current === 'dominadas'
