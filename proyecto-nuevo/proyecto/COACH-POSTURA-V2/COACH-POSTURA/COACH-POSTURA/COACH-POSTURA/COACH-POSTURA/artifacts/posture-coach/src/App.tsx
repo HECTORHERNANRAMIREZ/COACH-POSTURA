@@ -1709,7 +1709,7 @@ type DipJointReading = {
   status?: string;
 };
 const PICA_TOLERANCIA_GRADOS = 5;
-const CRUCES_TOLERANCIA_GRADOS = 5;
+const CRUCES_TOLERANCIA_GRADOS = 15;
 const PICA_TOLERANCIA_ELEVACION_PROPORCION =
   PICA_TOLERANCIA_GRADOS * (0.03 / 5);
 const PIKE_ELBOW_BODY_MIN_ANGLE = 70 - PICA_TOLERANCIA_GRADOS;
@@ -11963,7 +11963,9 @@ function Home() {
   const pushupPreparationStartedAtRef = useRef<number | null>(null);
   const pushupPreparationCountdownRef = useRef<number | null>(null);
   const crossoverCalibrationSuccessfulRef = useRef(false);
-  const crossoverCalibrationReadySinceRef = useRef<number | null>(null);
+  const crossoverLiveCalibrationAccumulatedMsRef = useRef(0);
+  const crossoverLiveLastValidAtRef = useRef<number | null>(null);
+  const crossoverLiveSearchGapStartedAtRef = useRef<number | null>(null);
   const crossoverPreparationStageRef = useRef<CrossoverPreparationStage>('idle');
   const crossoverPreparationStartedAtRef = useRef<number | null>(null);
   const crossoverPreparationCountdownRef = useRef<number | null>(null);
@@ -11973,7 +11975,6 @@ function Home() {
   const uploadedCrossoverRunBaseMsRef = useRef(0);
   const uploadedCrossoverLastCalibrationAccumulatedMsRef = useRef(0);
   const uploadedCrossoverSearchGapStartedAtRef = useRef<number | null>(null);
-  const crossoverLastMissingLogSecondRef = useRef<number | null>(null);
   const crossoverDetectionLastSearchingLogAtRef = useRef<number | null>(null);
   const crossoverDetectionCompletedLoggedRef = useRef(false);
   const crossoverAnalysisStartedLoggedRef = useRef(false);
@@ -12040,16 +12041,19 @@ function Home() {
     setPushupPreparationCountdown(seconds);
   }, []);
 
-  const logCrossoverVideoDetectionEvent = useCallback((
+  const logCrossoverDetectionEvent = useCallback((
     event: 'buscando' | 'detectado' | 'activo',
     selectedExerciseForFrame: ExerciseId | null,
     validMs: number,
-    tVideoS: number | null,
+    mode: 'video' | 'vivo',
+    invalidReasons?: string[],
   ) => {
     if (
       selectedExerciseForFrame === 'cruces-polea-baja-alta'
       && selectedExerciseRef.current === 'cruces-polea-baja-alta'
-      && inputModeRef.current === 'video'
+      && (mode === 'video'
+        ? inputModeRef.current === 'video'
+        : inputModeRef.current === 'camera')
     ) {
       if (event === 'buscando') {
         const now = performance.now();
@@ -12066,11 +12070,15 @@ function Home() {
       try {
         console.log(`[cruces-deteccion] ${JSON.stringify({
           evento: event,
-          modo: 'video',
+          modo: mode,
           segundosValidos: Number((Math.max(0, validMs) / 1000).toFixed(2)),
-          tVideoS: tVideoS !== null && Number.isFinite(tVideoS)
-            ? Number(tVideoS.toFixed(3))
+          tVideoS: mode === 'video'
+            && Number.isFinite(videoRef.current?.currentTime)
+            ? Number(videoRef.current!.currentTime.toFixed(3))
             : null,
+          ...(invalidReasons?.length
+            ? { puntosFaltantesOBajaConfianza: invalidReasons }
+            : {}),
         })}`);
       } catch {
         // El registro diagnóstico no debe interrumpir el análisis del cuadro.
@@ -12084,32 +12092,28 @@ function Home() {
     mode = inputModeRef.current === 'video' ? 'video' : 'vivo',
   ) => {
     const previousStage = crossoverPreparationStageRef.current;
-    const modo = mode;
     if (previousStage === stage) return;
     crossoverPreparationStageRef.current = stage;
     setCrossoverPreparationStage(stage);
     if (selectedExerciseRef.current === 'cruces-polea-baja-alta') {
       try {
-        if (mode === 'video') {
-          logCrossoverVideoDetectionEvent(
-            stage === 'active' ? 'detectado' : 'buscando',
-            selectedExerciseRef.current,
-            validMs,
-            videoRef.current?.currentTime ?? 0,
-          );
-          return;
-        }
-        console.log(`[cruces-deteccion] ${JSON.stringify({
-          desde: previousStage,
-          hacia: stage,
-          segundosValidos: Number((Math.max(0, validMs) / 1000).toFixed(2)),
-          modo,
-        })}`);
+        const event = stage === 'pushup-preparation'
+          || (stage === 'active' && previousStage === 'body-detection')
+          ? 'detectado'
+          : stage === 'active'
+            ? 'activo'
+            : 'buscando';
+        logCrossoverDetectionEvent(
+          event,
+          selectedExerciseRef.current,
+          validMs,
+          mode,
+        );
       } catch {
         // El registro diagnóstico no debe interrumpir el cambio de etapa.
       }
     }
-  }, []);
+  }, [logCrossoverDetectionEvent]);
 
   const updateCrossoverPreparationCountdown = useCallback((seconds: number | null) => {
     if (crossoverPreparationCountdownRef.current === seconds) return;
@@ -14278,40 +14282,62 @@ function Home() {
             CRUCES_BODY_DETECTION_HOLD_MS,
           );
         } else if (calibrationFrameReady) {
-          crossoverCalibrationReadySinceRef.current ??= now;
-          calibrationElapsed = now - crossoverCalibrationReadySinceRef.current;
+          const previousValidAt = crossoverLiveLastValidAtRef.current;
+          const gapStartedAt = crossoverLiveSearchGapStartedAtRef.current;
+          if (gapStartedAt !== null) {
+            if (
+              now - gapStartedAt
+              > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+            ) {
+              crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+            }
+            crossoverLiveSearchGapStartedAtRef.current = null;
+          } else if (previousValidAt !== null) {
+            const validInterval = now - previousValidAt;
+            if (
+              validInterval
+              > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+            ) {
+              crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+            } else {
+              crossoverLiveCalibrationAccumulatedMsRef.current += Math.max(
+                0,
+                validInterval,
+              );
+            }
+          }
+          crossoverLiveLastValidAtRef.current = now;
+          calibrationElapsed = crossoverLiveCalibrationAccumulatedMsRef.current;
         } else {
-          crossoverCalibrationReadySinceRef.current = null;
+          const previousValidAt = crossoverLiveLastValidAtRef.current;
+          if (
+            previousValidAt !== null
+            && now - previousValidAt
+              > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+          ) {
+            crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+            crossoverLiveLastValidAtRef.current = null;
+          }
+          if (crossoverLiveSearchGapStartedAtRef.current === null) {
+            crossoverLiveSearchGapStartedAtRef.current = now;
+          }
+          if (
+            now - crossoverLiveSearchGapStartedAtRef.current
+            > UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+          ) {
+            crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+            crossoverLiveLastValidAtRef.current = null;
+          }
+          calibrationElapsed = crossoverLiveCalibrationAccumulatedMsRef.current;
         }
 
-        const invalidLogSecond = uploadedCrossoverPreflight
-          ? Math.floor(crossoverVideoTime)
-          : Math.floor(now / 1000);
-        if (uploadedCrossoverPreflight) {
-          logCrossoverVideoDetectionEvent(
-            'buscando',
-            selectedExerciseForFrame,
-            calibrationElapsed,
-            crossoverVideoTime,
-          );
-          crossoverLastMissingLogSecondRef.current = invalidLogSecond;
-        }
-        if (
-          !calibrationFrameReady
-          && crossoverLastMissingLogSecondRef.current !== invalidLogSecond
-        ) {
-          crossoverLastMissingLogSecondRef.current = invalidLogSecond;
-          try {
-            console.log(`[cruces-deteccion] ${JSON.stringify({
-              evento: 'buscando',
-              segundosValidos: Number((Math.max(0, calibrationElapsed) / 1000).toFixed(2)),
-              modo: uploadedCrossoverPreflight ? 'video' : 'vivo',
-              puntosFaltantesOBajaConfianza: calibrationInvalidReasons,
-            })}`);
-          } catch {
-            // El registro diagnóstico no debe interrumpir el análisis del cuadro.
-          }
-        }
+        logCrossoverDetectionEvent(
+          'buscando',
+          selectedExerciseForFrame,
+          calibrationElapsed,
+          uploadedCrossoverPreflight ? 'video' : 'vivo',
+          calibrationFrameReady ? undefined : calibrationInvalidReasons,
+        );
         updateCrossoverPreparationCountdown(
           calibrationFrameReady
             ? Math.max(
@@ -14323,7 +14349,9 @@ function Home() {
 
         if (calibrationElapsed >= CRUCES_BODY_DETECTION_HOLD_MS) {
           crossoverCalibrationSuccessfulRef.current = true;
-          crossoverCalibrationReadySinceRef.current = null;
+          crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+          crossoverLiveLastValidAtRef.current = null;
+          crossoverLiveSearchGapStartedAtRef.current = null;
           crossoverDetectionCompletedThisFrame = true;
           if (uploadedCrossoverPreflight) {
             crossoverAnalysisTransitionPendingRef.current = true;
@@ -19806,11 +19834,11 @@ function Home() {
             crossoverAnalysisTransitionPendingRef.current = false;
             exerciseStartedRef.current = true;
             setExerciseStarted(true);
-            logCrossoverVideoDetectionEvent(
+            logCrossoverDetectionEvent(
               'activo',
               selectedExerciseRef.current,
               uploadedCrossoverLastCalibrationAccumulatedMsRef.current,
-              video.currentTime,
+              'video',
             );
             activeRef.current = true;
             scheduleNextFrame();
@@ -19844,7 +19872,7 @@ function Home() {
     }
   }, [
     hideUploadedPushupSearchOverlay,
-    logCrossoverVideoDetectionEvent,
+    logCrossoverDetectionEvent,
     scheduleNextFrame,
   ]);
   uploadedCrossoverStartPlaybackRef.current = startUploadedCrossoverPlayback;
@@ -21094,7 +21122,9 @@ function Home() {
         crossoverDetectionOverlayTimerRef.current = null;
       }
       crossoverCalibrationSuccessfulRef.current = false;
-      crossoverCalibrationReadySinceRef.current = null;
+      crossoverLiveCalibrationAccumulatedMsRef.current = 0;
+      crossoverLiveLastValidAtRef.current = null;
+      crossoverLiveSearchGapStartedAtRef.current = null;
       crossoverPreparationStartedAtRef.current = null;
       crossoverDetectionLastSearchingLogAtRef.current = null;
       crossoverDetectionCompletedLoggedRef.current = false;
@@ -21106,7 +21136,6 @@ function Home() {
       uploadedCrossoverRunBaseMsRef.current = 0;
       uploadedCrossoverLastCalibrationAccumulatedMsRef.current = 0;
       uploadedCrossoverSearchGapStartedAtRef.current = null;
-      crossoverLastMissingLogSecondRef.current = null;
       updateCrossoverPreparationCountdown(null);
       hideUploadedPushupSearchOverlay();
       setUploadedPushupTransitionPaused(false);
