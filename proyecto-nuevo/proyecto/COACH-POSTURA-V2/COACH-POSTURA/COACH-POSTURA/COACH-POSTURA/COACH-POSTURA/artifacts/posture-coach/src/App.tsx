@@ -6148,6 +6148,90 @@ function getPressBenchReadySides(
   });
 }
 
+function getPressBenchPointVisibility(
+  point: PosePoint | undefined,
+  videoWidth: number,
+  videoHeight: number,
+) {
+  const marginX = videoWidth * CAMERA_FRAME_MARGIN;
+  const marginY = videoHeight * CAMERA_FRAME_MARGIN;
+  const score = typeof point?.score === 'number' ? point.score : null;
+  return {
+    score,
+    visible: Boolean(
+      point
+      && videoWidth > 0
+      && videoHeight > 0
+      && !isHeldPoint(point)
+      && (point.score ?? 0) >= PRESS_BANCA_MIN_POINT_SCORE
+      && Number.isFinite(point.x)
+      && Number.isFinite(point.y)
+      && point.x >= marginX
+      && point.x <= videoWidth - marginX
+      && point.y >= marginY
+      && point.y <= videoHeight - marginY
+      && hasWorldCoordinates(point),
+    ),
+  };
+}
+
+function createPressBenchDetectionDecision(
+  keypoints: PosePoint[] | undefined,
+  videoWidth: number,
+  videoHeight: number,
+  completeSides: PoseSide[],
+) {
+  const sideVisibility = (side: PoseSide) => {
+    const indexes = sideKeypoints[side];
+    return {
+      hombro: getPressBenchPointVisibility(
+        keypoints?.[indexes.shoulder],
+        videoWidth,
+        videoHeight,
+      ),
+      codo: getPressBenchPointVisibility(
+        keypoints?.[indexes.elbow],
+        videoWidth,
+        videoHeight,
+      ),
+      muñeca: getPressBenchPointVisibility(
+        keypoints?.[indexes.wrist],
+        videoWidth,
+        videoHeight,
+      ),
+      cadera: getPressBenchPointVisibility(
+        keypoints?.[indexes.hip],
+        videoWidth,
+        videoHeight,
+      ),
+    };
+  };
+  const ladosEvaluados = completeSides.length === 2
+    ? ['left', 'right'] as PoseSide[]
+    : completeSides.length === 1
+      ? [completeSides[0]]
+      : [];
+  const ladoEnEspanol = (side: PoseSide) => (
+    side === 'left' ? 'izquierdo' : 'derecho'
+  );
+  const motivoDecision = completeSides.length === 2
+    ? 'Dos lados completos; se evalúa cada lado por separado.'
+    : completeSides.length === 1
+      ? `Solo el lado ${ladoEnEspanol(completeSides[0])} está completo; se evalúa ese lado.`
+      : 'No hay lados completos para evaluar.';
+
+  return {
+    extremidadesVistas: {
+      izquierdo: sideVisibility('left'),
+      derecho: sideVisibility('right'),
+    },
+    ladosCompletos: completeSides.map(ladoEnEspanol),
+    ladosEvaluados: ladosEvaluados.map(ladoEnEspanol),
+    motivoDecision,
+    evaluatedSides: ladosEvaluados,
+  };
+}
+
 function isVisibleCameraPoint(point: PosePoint | undefined, minimumScore: number) {
   if (!point) return false;
   if (isHeldPoint(point)) return true;
@@ -12025,6 +12109,11 @@ function Home() {
   const pressBenchPreparationStartedAtRef = useRef<number | null>(null);
   const pressBenchPreparationCountdownRef = useRef<number | null>(null);
   const pressBenchValidSecondsRef = useRef(0);
+  const pressBenchDetectionDecisionRef = useRef<
+    ReturnType<typeof createPressBenchDetectionDecision> | null
+  >(null);
+  const pressBenchExecutionLastLogAtRef = useRef<number | null>(null);
+  const pressBenchExecutionLostPointsRef = useRef<Set<string>>(new Set());
   const uploadedPressBenchPreflightRef = useRef(false);
   const uploadedPressBenchLastObservedVideoTimeRef = useRef<number | null>(null);
   const uploadedPressBenchRunStartVideoTimeRef = useRef<number | null>(null);
@@ -12211,6 +12300,9 @@ function Home() {
       pressBenchAnalysisStartedLoggedRef.current = true;
     }
     try {
+      const pressBenchDetectionDetails = event === 'detectado'
+        ? pressBenchDetectionDecisionRef.current
+        : null;
       console.log(`[press-banca-deteccion] ${JSON.stringify({
         evento: event,
         modo: mode,
@@ -12219,6 +12311,14 @@ function Home() {
           && Number.isFinite(videoRef.current?.currentTime)
           ? Number(videoRef.current!.currentTime.toFixed(3))
           : null,
+        ...(pressBenchDetectionDetails
+          ? {
+            extremidadesVistas: pressBenchDetectionDetails.extremidadesVistas,
+            ladosCompletos: pressBenchDetectionDetails.ladosCompletos,
+            ladosEvaluados: pressBenchDetectionDetails.ladosEvaluados,
+            motivoDecision: pressBenchDetectionDetails.motivoDecision,
+          }
+          : {}),
         ...(invalidReasons?.length
           ? { puntosFaltantesOBajaConfianza: invalidReasons }
           : {}),
@@ -14714,6 +14814,12 @@ function Home() {
           pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
           pressBenchLiveLastValidAtRef.current = null;
           pressBenchLiveSearchGapStartedAtRef.current = null;
+          pressBenchDetectionDecisionRef.current = createPressBenchDetectionDecision(
+            pose?.keypoints,
+            video.videoWidth,
+            video.videoHeight,
+            pressBenchReadySides,
+          );
           logPressBenchDetectionEvent(
             'detectado',
             selectedExerciseForFrame,
@@ -18716,6 +18822,78 @@ function Home() {
         selectedExerciseForFrame === 'press-banca'
         && pressBenchCalibrationSuccessfulRef.current
         && pressBenchPreparationStageRef.current === 'active'
+      ) {
+        const detectionDecision = pressBenchDetectionDecisionRef.current;
+        const evaluatedSides = detectionDecision?.evaluatedSides ?? [];
+        const lostPoints = pressBenchExecutionLostPointsRef.current;
+        const currentSideReadings = evaluatedSides.map((side) => {
+          const indexes = sideKeypoints[side];
+          const shoulder = pose?.keypoints?.[indexes.shoulder];
+          const elbow = pose?.keypoints?.[indexes.elbow];
+          const wrist = pose?.keypoints?.[indexes.wrist];
+          const hip = pose?.keypoints?.[indexes.hip];
+          const extremidades = {
+            hombro: getPressBenchPointVisibility(
+              shoulder,
+              video.videoWidth,
+              video.videoHeight,
+            ),
+            codo: getPressBenchPointVisibility(
+              elbow,
+              video.videoWidth,
+              video.videoHeight,
+            ),
+            muñeca: getPressBenchPointVisibility(
+              wrist,
+              video.videoWidth,
+              video.videoHeight,
+            ),
+            cadera: getPressBenchPointVisibility(
+              hip,
+              video.videoWidth,
+              video.videoHeight,
+            ),
+          };
+          Object.entries(extremidades).forEach(([joint, detail]) => {
+            if (!detail.visible) {
+              lostPoints.add(`${side === 'left' ? 'izquierdo' : 'derecho'}.${joint}`);
+            }
+          });
+          const angleHombro = calculateAngle(hip, shoulder, elbow);
+          const angleCodo = calculateAngle(shoulder, elbow, wrist);
+          return {
+            lado: side === 'left' ? 'izquierdo' : 'derecho',
+            anguloHombroDeg: angleHombro === null
+              ? null
+              : Number(angleHombro.toFixed(2)),
+            anguloCodoDeg: angleCodo === null
+              ? null
+              : Number(angleCodo.toFixed(2)),
+            extremidades,
+          };
+        });
+        const lastExecutionLogAt = pressBenchExecutionLastLogAtRef.current;
+        if (lastExecutionLogAt === null) {
+          pressBenchExecutionLastLogAtRef.current = now;
+        } else if (now - lastExecutionLogAt >= 1000) {
+          console.log(`[press-banca-ejecucion] ${JSON.stringify({
+            tVideoS: inputModeRef.current === 'video'
+              && Number.isFinite(video.currentTime)
+              ? Number(video.currentTime.toFixed(3))
+              : null,
+            ladosEvaluados: detectionDecision?.ladosEvaluados ?? [],
+            porLado: currentSideReadings,
+            algunPuntoPerdido: lostPoints.size > 0,
+            puntosPerdidosEnSegundo: [...lostPoints].sort(),
+          })}`);
+          pressBenchExecutionLastLogAtRef.current = now;
+          lostPoints.clear();
+        }
+      }
+      if (
+        selectedExerciseForFrame === 'press-banca'
+        && pressBenchCalibrationSuccessfulRef.current
+        && pressBenchPreparationStageRef.current === 'active'
         && pose?.keypoints
       ) {
         try {
@@ -21783,6 +21961,9 @@ function Home() {
         pressBenchDetectionTransitionTimerRef.current = null;
       }
       pressBenchCalibrationSuccessfulRef.current = false;
+      pressBenchDetectionDecisionRef.current = null;
+      pressBenchExecutionLastLogAtRef.current = null;
+      pressBenchExecutionLostPointsRef.current.clear();
       pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
       pressBenchLiveLastValidAtRef.current = null;
       pressBenchLiveSearchGapStartedAtRef.current = null;
@@ -22099,7 +22280,7 @@ function Home() {
         setUploadedVideoName(videoFile.name);
         setVideoExportStatus('Cargando el video en este dispositivo…');
         if (activeExercise === 'press-banca') {
-          setVideoExportStatus('Detectando el cuerpo en el video...');
+          setVideoExportStatus('Detectando el cuerpo en el video…');
         }
         const sourceUrl = URL.createObjectURL(videoFile);
         uploadedVideoUrlRef.current = sourceUrl;
@@ -22587,7 +22768,7 @@ function Home() {
             );
           });
         } else {
-          setVideoExportStatus('Detectando el cuerpo en el video...');
+          setVideoExportStatus('Detectando el cuerpo en el video…');
         }
         logUploadedPushupButtonState('después');
         return;
@@ -24088,6 +24269,15 @@ function Home() {
                           )
                         : videoExportStatus || 'El análisis se procesa en este dispositivo.'}
                     </span>
+                    {selectedExercise === 'press-banca'
+                      && phase === 'tracking'
+                      && !exerciseStarted
+                      && pressBenchPreparationStage === 'body-detection'
+                      && (
+                        <span>
+                          Buscando cuerpo… {pressBenchValidSeconds.toFixed(1)} / 5 s
+                        </span>
+                      )}
                   </div>
                 </div>
               )}
@@ -24240,6 +24430,15 @@ function Home() {
                           : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
                         : 'Aléjate lo suficiente para que se vea tu cuerpo completo y mantén las articulaciones visibles.'}
                   </span>
+                  {selectedExercise === 'press-banca'
+                    && !exerciseStarted
+                    && pressBenchPreparationStage !== 'idle'
+                    && pressBenchPreparationStage !== 'active'
+                    && (
+                      <span>
+                        Graba de frente o de lado: cuerpo completo, con brazos, muñecas y caderas visibles.
+                      </span>
+                    )}
                 </div>
               </div>
               {angleIsGood && angle !== null && (
@@ -24979,6 +25178,8 @@ function Home() {
                   && !exerciseStarted
                   && pressBenchPreparationStage !== 'idle'
                   && pressBenchPreparationStage !== 'active'
+                  && inputMode === 'camera'
+                  && (inputMode !== 'camera' || pressBenchValidSeconds > 0)
                   && (
                     <div
                       className="pullup-preparation-overlay"
@@ -25001,9 +25202,6 @@ function Home() {
                             ? `Acomódate para empezar · ${pressBenchPreparationCountdown}`
                             : 'Preparando el inicio del análisis'}
                       </strong>
-                      <small>
-                        Graba de frente o de lado: cuerpo completo, con brazos, muñecas y caderas visibles.
-                      </small>
                     </div>
                   )}
                 {isCableCrossoverSelected
