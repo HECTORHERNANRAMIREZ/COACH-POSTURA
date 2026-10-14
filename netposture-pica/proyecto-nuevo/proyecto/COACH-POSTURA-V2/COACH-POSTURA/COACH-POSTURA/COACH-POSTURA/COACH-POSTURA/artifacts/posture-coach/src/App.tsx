@@ -14842,6 +14842,13 @@ function Home() {
         }
 
         uploadedPressBenchLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
+        if (uploadedPressBenchPreflight) {
+          updateUploadedPushupSearchOverlayProgress(
+            pressBenchVideoTime,
+            calibrationElapsed,
+            PRESS_BANCA_BODY_DETECTION_HOLD_MS,
+          );
+        }
         const validSeconds = Math.min(
           PRESS_BANCA_BODY_DETECTION_HOLD_MS,
           Math.max(0, calibrationElapsed),
@@ -22212,6 +22219,9 @@ function Home() {
       uploadedPressBenchSearchGapStartedAtRef.current = null;
       pressBenchValidSecondsRef.current = 0;
       setPressBenchValidSeconds(0);
+      uploadedPushupTransitionPauseRef.current = false;
+      setUploadedPushupTransitionPaused(false);
+      if (!isUploadedPressBenchVideo) hideUploadedPushupSearchOverlay();
       const pressBenchStageChanged =
         pressBenchPreparationStageRef.current !== 'body-detection';
       pressBenchPreparationStageRef.current = 'body-detection';
@@ -22386,6 +22396,9 @@ function Home() {
     }
     if (isUploadedPushupVideo || isUploadedPullupVideo) {
       showUploadedPushupSearchOverlay();
+    }
+    if (isUploadedPressBenchVideo && activeExercise === 'press-banca') {
+      showUploadedPushupSearchOverlay(PRESS_BANCA_BODY_DETECTION_HOLD_MS);
     }
     if (isUploadedCrossoverVideo) {
       showUploadedPushupSearchOverlay(CRUCES_BODY_DETECTION_HOLD_MS);
