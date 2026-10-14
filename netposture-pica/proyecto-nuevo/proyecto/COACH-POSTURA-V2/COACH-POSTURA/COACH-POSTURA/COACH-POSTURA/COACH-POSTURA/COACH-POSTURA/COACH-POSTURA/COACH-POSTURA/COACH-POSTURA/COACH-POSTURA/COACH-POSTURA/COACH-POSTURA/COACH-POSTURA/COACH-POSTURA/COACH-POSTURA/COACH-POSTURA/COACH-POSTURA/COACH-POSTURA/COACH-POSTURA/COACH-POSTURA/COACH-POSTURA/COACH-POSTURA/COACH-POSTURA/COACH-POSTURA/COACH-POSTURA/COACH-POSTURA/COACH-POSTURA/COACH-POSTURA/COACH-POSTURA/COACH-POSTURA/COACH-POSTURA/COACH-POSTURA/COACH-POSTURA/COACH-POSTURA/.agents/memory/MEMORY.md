@@ -1,0 +1,1 @@
+- [Pull-up anchoring](pullup-anchoring.md) — preserve confidence through brief losses while keeping angle inputs live when pose data returns.
