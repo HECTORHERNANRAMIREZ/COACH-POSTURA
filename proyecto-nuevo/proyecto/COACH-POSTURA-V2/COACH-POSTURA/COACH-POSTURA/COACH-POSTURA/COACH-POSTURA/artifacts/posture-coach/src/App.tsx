@@ -585,6 +585,7 @@ type PullupPreparationStage = 'body-detection' | 'bar-preparation' | 'active';
 type SquatLivePreparationStage = 'idle' | 'body-detection' | 'accommodate' | 'active';
 type PushupPreparationStage = 'body-detection' | 'pushup-preparation' | 'active';
 type CrossoverPreparationStage = 'idle' | 'body-detection' | 'pushup-preparation' | 'active';
+type PressBenchPreparationStage = 'idle' | 'body-detection' | 'press-banca-preparation' | 'active';
 type DipPreparationStage = 'body-detection' | 'accommodate' | 'active';
 type PullupTracker = {
   phase: PullupPhase;
@@ -3046,6 +3047,11 @@ const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
 const CRUCES_PREPARATION_COUNTDOWN_MS = 5000;
+const PRESS_BANCA_BODY_DETECTION_HOLD_MS = 5000;
+const PRESS_BANCA_PREPARATION_COUNTDOWN_MS = 5000;
+const PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS = 0.6;
+const PRESS_BANCA_MIN_POINT_SCORE = 0.38;
+const PRESS_BANCA_VIDEO_TRANSITION_DELAY_MS = 1200;
 const DIP_VALID_MIN_ANGLE = 85;
 const DIP_VALID_MAX_ANGLE = 95;
 // Calibración derivada del video de referencia del usuario:
@@ -6109,6 +6115,37 @@ function isFreshCrossoverCalibrationPoint(point: PosePoint | undefined) {
     && !isHeldPoint(point)
     && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
   );
+}
+
+function getPressBenchReadySides(
+  keypoints: PosePoint[] | undefined,
+  videoWidth: number,
+  videoHeight: number,
+): PoseSide[] {
+  if (!keypoints || videoWidth <= 0 || videoHeight <= 0) return [];
+  const marginX = videoWidth * CAMERA_FRAME_MARGIN;
+  const marginY = videoHeight * CAMERA_FRAME_MARGIN;
+  return (['left', 'right'] as const).filter((side) => {
+    const indexes = sideKeypoints[side];
+    const points = [
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+      keypoints[indexes.wrist],
+      keypoints[indexes.hip],
+    ];
+    return points.every((point) => Boolean(
+      point
+      && !isHeldPoint(point)
+      && (point.score ?? 0) >= PRESS_BANCA_MIN_POINT_SCORE
+      && Number.isFinite(point.x)
+      && Number.isFinite(point.y)
+      && point.x >= marginX
+      && point.x <= videoWidth - marginX
+      && point.y >= marginY
+      && point.y <= videoHeight - marginY
+      && hasWorldCoordinates(point),
+    ));
+  });
 }
 
 function isVisibleCameraPoint(point: PosePoint | undefined, minimumScore: number) {
@@ -11793,6 +11830,11 @@ function Home() {
     useState<CrossoverPreparationStage>('idle');
   const [crossoverPreparationCountdown, setCrossoverPreparationCountdown] =
     useState<number | null>(null);
+  const [pressBenchPreparationStage, setPressBenchPreparationStage] =
+    useState<PressBenchPreparationStage>('idle');
+  const [pressBenchPreparationCountdown, setPressBenchPreparationCountdown] =
+    useState<number | null>(null);
+  const [pressBenchValidSeconds, setPressBenchValidSeconds] = useState(0);
   const [dipCalibrationStatus, setDipCalibrationStatus] = useState<PullupCalibrationStatus | null>(null);
   const [dipPreparationStage, setDipPreparationStage] = useState<DipPreparationStage | null>(null);
   const [dipPreparationCountdown, setDipPreparationCountdown] = useState<number | null>(null);
@@ -11975,6 +12017,27 @@ function Home() {
   const uploadedCrossoverRunBaseMsRef = useRef(0);
   const uploadedCrossoverLastCalibrationAccumulatedMsRef = useRef(0);
   const uploadedCrossoverSearchGapStartedAtRef = useRef<number | null>(null);
+  const pressBenchCalibrationSuccessfulRef = useRef(false);
+  const pressBenchLiveCalibrationAccumulatedMsRef = useRef(0);
+  const pressBenchLiveLastValidAtRef = useRef<number | null>(null);
+  const pressBenchLiveSearchGapStartedAtRef = useRef<number | null>(null);
+  const pressBenchPreparationStageRef = useRef<PressBenchPreparationStage>('idle');
+  const pressBenchPreparationStartedAtRef = useRef<number | null>(null);
+  const pressBenchPreparationCountdownRef = useRef<number | null>(null);
+  const pressBenchValidSecondsRef = useRef(0);
+  const uploadedPressBenchPreflightRef = useRef(false);
+  const uploadedPressBenchLastObservedVideoTimeRef = useRef<number | null>(null);
+  const uploadedPressBenchRunStartVideoTimeRef = useRef<number | null>(null);
+  const uploadedPressBenchRunBaseMsRef = useRef(0);
+  const uploadedPressBenchLastCalibrationAccumulatedMsRef = useRef(0);
+  const uploadedPressBenchSearchGapStartedAtRef = useRef<number | null>(null);
+  const pressBenchDetectionLastSearchingLogAtRef = useRef<number | null>(null);
+  const pressBenchDetectionCompletedLoggedRef = useRef(false);
+  const pressBenchAnalysisStartedLoggedRef = useRef(false);
+  const pressBenchAnalysisTransitionPendingRef = useRef(false);
+  const pressBenchAnalysisStartingRef = useRef(false);
+  const uploadedPressBenchStartPlaybackRef = useRef<(() => Promise<void>) | null>(null);
+  const pressBenchDetectionTransitionTimerRef = useRef<number | null>(null);
   const crossoverDetectionLastSearchingLogAtRef = useRef<number | null>(null);
   const crossoverDetectionCompletedLoggedRef = useRef(false);
   const crossoverAnalysisStartedLoggedRef = useRef(false);
@@ -12119,6 +12182,66 @@ function Home() {
     if (crossoverPreparationCountdownRef.current === seconds) return;
     crossoverPreparationCountdownRef.current = seconds;
     setCrossoverPreparationCountdown(seconds);
+  }, []);
+
+  const logPressBenchDetectionEvent = useCallback((
+    event: 'buscando' | 'detectado' | 'activo',
+    selectedExerciseForFrame: ExerciseId | null,
+    validMs: number,
+    mode: 'video' | 'vivo',
+    invalidReasons?: string[],
+  ) => {
+    if (
+      selectedExerciseForFrame !== 'press-banca'
+      || selectedExerciseRef.current !== 'press-banca'
+      || (mode === 'video'
+        ? inputModeRef.current !== 'video'
+        : inputModeRef.current !== 'camera')
+    ) return;
+    if (event === 'buscando') {
+      const now = performance.now();
+      const previousLogAt = pressBenchDetectionLastSearchingLogAtRef.current;
+      if (previousLogAt !== null && now - previousLogAt < 1000) return;
+      pressBenchDetectionLastSearchingLogAtRef.current = now;
+    } else if (event === 'detectado') {
+      if (pressBenchDetectionCompletedLoggedRef.current) return;
+      pressBenchDetectionCompletedLoggedRef.current = true;
+    } else {
+      if (pressBenchAnalysisStartedLoggedRef.current) return;
+      pressBenchAnalysisStartedLoggedRef.current = true;
+    }
+    try {
+      console.log(`[press-banca-deteccion] ${JSON.stringify({
+        evento: event,
+        modo: mode,
+        segundosValidos: Number((Math.max(0, validMs) / 1000).toFixed(2)),
+        tVideoS: mode === 'video'
+          && Number.isFinite(videoRef.current?.currentTime)
+          ? Number(videoRef.current!.currentTime.toFixed(3))
+          : null,
+        ...(invalidReasons?.length
+          ? { puntosFaltantesOBajaConfianza: invalidReasons }
+          : {}),
+      })}`);
+    } catch {
+      // El registro diagnóstico no debe interrumpir el análisis del cuadro.
+    }
+  }, []);
+
+  const updatePressBenchPreparationStage = useCallback((
+    stage: PressBenchPreparationStage,
+  ) => {
+    if (selectedExerciseRef.current !== 'press-banca') return;
+    if (pressBenchPreparationStageRef.current === stage) return;
+    pressBenchPreparationStageRef.current = stage;
+    setPressBenchPreparationStage(stage);
+  }, []);
+
+  const updatePressBenchPreparationCountdown = useCallback((seconds: number | null) => {
+    if (selectedExerciseRef.current !== 'press-banca') return;
+    if (pressBenchPreparationCountdownRef.current === seconds) return;
+    pressBenchPreparationCountdownRef.current = seconds;
+    setPressBenchPreparationCountdown(seconds);
   }, []);
 
   const updateDipCalibrationStatus = useCallback((status: PullupCalibrationStatus) => {
@@ -14422,6 +14545,241 @@ function Home() {
             Math.max(
               1,
               Math.ceil((CRUCES_PREPARATION_COUNTDOWN_MS - preparationElapsed) / 1000),
+            ),
+          );
+        }
+      }
+      if (
+        selectedExerciseForFrame === 'press-banca'
+        && !pressBenchCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+        && pressBenchPreparationStageRef.current === 'body-detection'
+        && (
+          inputModeRef.current === 'camera'
+          || uploadedPressBenchPreflightRef.current
+        )
+      ) {
+        const uploadedPressBenchPreflight = inputModeRef.current === 'video'
+          && uploadedPressBenchPreflightRef.current;
+        const pressBenchReadySides = getPressBenchReadySides(
+          pose?.keypoints,
+          video.videoWidth,
+          video.videoHeight,
+        );
+        const pressBenchCameraGuideReady = pressBenchReadySides.length > 0;
+        const calibrationFrameReady = hasFreshPose && pressBenchCameraGuideReady;
+        const calibrationInvalidReasons = [
+          !hasFreshPose ? 'pose no fresca' : null,
+          video.videoWidth <= 0 || video.videoHeight <= 0
+            ? 'guía de cámara no lista (sin dimensiones de cuadro)'
+            : null,
+          !pressBenchCameraGuideReady
+            ? 'sin un lado completo fresco y visible: hombro, codo, muñeca y cadera'
+            : null,
+        ].filter((reason): reason is string => reason !== null);
+        let calibrationElapsed = 0;
+        const pressBenchVideoTime = Number.isFinite(video.currentTime)
+          ? video.currentTime
+          : 0;
+
+        if (uploadedPressBenchPreflight) {
+          const previousVideoTime = uploadedPressBenchLastObservedVideoTimeRef.current;
+          const videoTimeDiscontinuity = previousVideoTime !== null && (
+            pressBenchVideoTime < previousVideoTime
+            || pressBenchVideoTime - previousVideoTime
+              > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS
+          );
+          if (videoTimeDiscontinuity) {
+            uploadedPressBenchLastCalibrationAccumulatedMsRef.current = 0;
+            uploadedPressBenchRunBaseMsRef.current = 0;
+            uploadedPressBenchRunStartVideoTimeRef.current = null;
+            uploadedPressBenchSearchGapStartedAtRef.current = null;
+          }
+          if (calibrationFrameReady) {
+            const gapStartedAt = uploadedPressBenchSearchGapStartedAtRef.current;
+            if (gapStartedAt !== null) {
+              if (
+                pressBenchVideoTime - gapStartedAt
+                > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS
+              ) {
+                uploadedPressBenchLastCalibrationAccumulatedMsRef.current = 0;
+                uploadedPressBenchRunBaseMsRef.current = 0;
+              } else {
+                uploadedPressBenchRunBaseMsRef.current =
+                  uploadedPressBenchLastCalibrationAccumulatedMsRef.current;
+              }
+              uploadedPressBenchRunStartVideoTimeRef.current = pressBenchVideoTime;
+              uploadedPressBenchSearchGapStartedAtRef.current = null;
+            }
+            if (uploadedPressBenchRunStartVideoTimeRef.current === null) {
+              uploadedPressBenchRunStartVideoTimeRef.current = pressBenchVideoTime;
+              uploadedPressBenchRunBaseMsRef.current =
+                uploadedPressBenchLastCalibrationAccumulatedMsRef.current;
+            }
+            calibrationElapsed = uploadedPressBenchRunBaseMsRef.current + Math.max(
+              0,
+              (pressBenchVideoTime - uploadedPressBenchRunStartVideoTimeRef.current) * 1000,
+            );
+            uploadedPressBenchLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
+          } else {
+            if (uploadedPressBenchSearchGapStartedAtRef.current === null) {
+              uploadedPressBenchSearchGapStartedAtRef.current = pressBenchVideoTime;
+            }
+            if (
+              pressBenchVideoTime - uploadedPressBenchSearchGapStartedAtRef.current
+              > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS
+            ) {
+              uploadedPressBenchLastCalibrationAccumulatedMsRef.current = 0;
+              uploadedPressBenchRunBaseMsRef.current = 0;
+              uploadedPressBenchRunStartVideoTimeRef.current = null;
+            }
+            calibrationElapsed = uploadedPressBenchLastCalibrationAccumulatedMsRef.current;
+          }
+          uploadedPressBenchLastObservedVideoTimeRef.current = pressBenchVideoTime;
+        } else if (calibrationFrameReady) {
+          const previousValidAt = pressBenchLiveLastValidAtRef.current;
+          const gapStartedAt = pressBenchLiveSearchGapStartedAtRef.current;
+          if (gapStartedAt !== null) {
+            if (
+              now - gapStartedAt
+              > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+            ) {
+              pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+            }
+            pressBenchLiveSearchGapStartedAtRef.current = null;
+          } else if (previousValidAt !== null) {
+            const validInterval = now - previousValidAt;
+            if (
+              validInterval
+              > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+            ) {
+              pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+            } else {
+              pressBenchLiveCalibrationAccumulatedMsRef.current += Math.max(0, validInterval);
+            }
+          }
+          pressBenchLiveLastValidAtRef.current = now;
+          calibrationElapsed = pressBenchLiveCalibrationAccumulatedMsRef.current;
+        } else {
+          const previousValidAt = pressBenchLiveLastValidAtRef.current;
+          if (
+            previousValidAt !== null
+            && now - previousValidAt
+              > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+          ) {
+            pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+            pressBenchLiveLastValidAtRef.current = null;
+          }
+          if (pressBenchLiveSearchGapStartedAtRef.current === null) {
+            pressBenchLiveSearchGapStartedAtRef.current = now;
+          }
+          if (
+            now - pressBenchLiveSearchGapStartedAtRef.current
+            > PRESS_BANCA_SEARCH_GAP_TOLERANCE_SECONDS * 1000
+          ) {
+            pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+            pressBenchLiveLastValidAtRef.current = null;
+          }
+          calibrationElapsed = pressBenchLiveCalibrationAccumulatedMsRef.current;
+        }
+
+        uploadedPressBenchLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
+        const validSeconds = Math.min(
+          PRESS_BANCA_BODY_DETECTION_HOLD_MS,
+          Math.max(0, calibrationElapsed),
+        ) / 1000;
+        const roundedValidSeconds = Math.floor(validSeconds * 10) / 10;
+        if (pressBenchValidSecondsRef.current !== roundedValidSeconds) {
+          pressBenchValidSecondsRef.current = roundedValidSeconds;
+          setPressBenchValidSeconds(roundedValidSeconds);
+        }
+        logPressBenchDetectionEvent(
+          'buscando',
+          selectedExerciseForFrame,
+          calibrationElapsed,
+          uploadedPressBenchPreflight ? 'video' : 'vivo',
+          calibrationFrameReady ? undefined : calibrationInvalidReasons,
+        );
+        updatePressBenchPreparationCountdown(
+          calibrationFrameReady
+            ? Math.max(
+                1,
+                Math.ceil((PRESS_BANCA_BODY_DETECTION_HOLD_MS - calibrationElapsed) / 1000),
+              )
+            : null,
+        );
+
+        if (calibrationElapsed >= PRESS_BANCA_BODY_DETECTION_HOLD_MS) {
+          pressBenchCalibrationSuccessfulRef.current = true;
+          pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+          pressBenchLiveLastValidAtRef.current = null;
+          pressBenchLiveSearchGapStartedAtRef.current = null;
+          logPressBenchDetectionEvent(
+            'detectado',
+            selectedExerciseForFrame,
+            calibrationElapsed,
+            uploadedPressBenchPreflight ? 'video' : 'vivo',
+          );
+          updatePressBenchPreparationStage('press-banca-preparation');
+          updatePressBenchPreparationCountdown(
+            Math.ceil(PRESS_BANCA_PREPARATION_COUNTDOWN_MS / 1000),
+          );
+          if (uploadedPressBenchPreflight) {
+            pressBenchAnalysisTransitionPendingRef.current = true;
+            uploadedPressBenchPreflightRef.current = false;
+            activeRef.current = false;
+            video.pause();
+            if (animationFrameRef.current !== null) {
+              cancelAnimationFrame(animationFrameRef.current);
+              animationFrameRef.current = null;
+            }
+            if (videoFrameCallbackRef.current !== null && video.cancelVideoFrameCallback) {
+              video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+              videoFrameCallbackRef.current = null;
+            }
+            setVideoExportStatus('Cuerpo detectado. Preparando conteo…');
+            if (pressBenchDetectionTransitionTimerRef.current !== null) {
+              window.clearTimeout(pressBenchDetectionTransitionTimerRef.current);
+            }
+            pressBenchDetectionTransitionTimerRef.current = window.setTimeout(() => {
+              pressBenchDetectionTransitionTimerRef.current = null;
+              if (selectedExerciseRef.current === 'press-banca') {
+                void uploadedPressBenchStartPlaybackRef.current?.();
+              }
+            }, PRESS_BANCA_VIDEO_TRANSITION_DELAY_MS);
+          } else {
+            pressBenchPreparationStartedAtRef.current = now;
+            updatePressBenchPreparationCountdown(
+              Math.ceil(PRESS_BANCA_PREPARATION_COUNTDOWN_MS / 1000),
+            );
+          }
+        }
+      } else if (
+        selectedExerciseForFrame === 'press-banca'
+        && pressBenchCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+        && pressBenchPreparationStageRef.current === 'press-banca-preparation'
+        && inputModeRef.current === 'camera'
+      ) {
+        const preparationStartedAt = pressBenchPreparationStartedAtRef.current ?? now;
+        pressBenchPreparationStartedAtRef.current = preparationStartedAt;
+        const preparationElapsed = now - preparationStartedAt;
+        if (preparationElapsed >= PRESS_BANCA_PREPARATION_COUNTDOWN_MS) {
+          exerciseStartedRef.current = true;
+          setExerciseStarted(true);
+          updatePressBenchPreparationStage('active');
+          updatePressBenchPreparationCountdown(null);
+          logPressBenchDetectionEvent(
+            'activo',
+            selectedExerciseForFrame,
+            PRESS_BANCA_BODY_DETECTION_HOLD_MS,
+            'vivo',
+          );
+        } else {
+          updatePressBenchPreparationCountdown(
+            Math.max(
+              1,
+              Math.ceil((PRESS_BANCA_PREPARATION_COUNTDOWN_MS - preparationElapsed) / 1000),
             ),
           );
         }
@@ -18354,6 +18712,161 @@ function Home() {
         }
         }
       }
+      if (
+        selectedExerciseForFrame === 'press-banca'
+        && pressBenchCalibrationSuccessfulRef.current
+        && pressBenchPreparationStageRef.current === 'active'
+        && pose?.keypoints
+      ) {
+        try {
+          const keypoints = pose.keypoints;
+          const pointAt = (side: PoseSide, joint: keyof typeof sideKeypoints.left) =>
+            keypoints[sideKeypoints[side][joint]];
+          const roundPressBench = (value: number | null) => (
+            value === null || !Number.isFinite(value) ? null : Number(value.toFixed(2))
+          );
+          const distance2d = (
+            first: PosePoint | undefined,
+            second: PosePoint | undefined,
+          ) => first && second
+            ? Math.hypot(first.x - second.x, first.y - second.y)
+            : null;
+          const left = {
+            shoulder: pointAt('left', 'shoulder'),
+            elbow: pointAt('left', 'elbow'),
+            wrist: pointAt('left', 'wrist'),
+            hip: pointAt('left', 'hip'),
+          };
+          const right = {
+            shoulder: pointAt('right', 'shoulder'),
+            elbow: pointAt('right', 'elbow'),
+            wrist: pointAt('right', 'wrist'),
+            hip: pointAt('right', 'hip'),
+          };
+          const angleSet = (side: PoseSide) => {
+            const points = side === 'left' ? left : right;
+            return {
+              shoulder: calculateAngle(points.hip, points.shoulder, points.elbow),
+              elbow: calculateAngle(points.shoulder, points.elbow, points.wrist),
+              wrist: calculateAngle(
+                points.elbow,
+                points.wrist,
+                keypoints[WRIST_TIP_INDEX[side]],
+              ),
+            };
+          };
+          const leftAngles = angleSet('left');
+          const rightAngles = angleSet('right');
+          const shoulderWidth = distance2d(left.shoulder, right.shoulder);
+          const shoulderMidpoint = left.shoulder && right.shoulder
+            ? {
+                x: (left.shoulder.x + right.shoulder.x) / 2,
+                y: (left.shoulder.y + right.shoulder.y) / 2,
+              }
+            : null;
+          const hipMidpoint = left.hip && right.hip
+            ? {
+                x: (left.hip.x + right.hip.x) / 2,
+                y: (left.hip.y + right.hip.y) / 2,
+              }
+            : null;
+          const torsoHeight = shoulderMidpoint && hipMidpoint
+            ? Math.hypot(
+                shoulderMidpoint.x - hipMidpoint.x,
+                shoulderMidpoint.y - hipMidpoint.y,
+              )
+            : null;
+          const relativeHeight = (
+            point: PosePoint | undefined,
+            shoulder: PosePoint | undefined,
+          ) => (
+            point && shoulder && torsoHeight && torsoHeight > 0
+              ? (shoulder.y - point.y) / torsoHeight
+              : null
+          );
+          const pointDetail = (point: PosePoint | undefined) => ({
+            score: point?.score ?? null,
+            visible: Boolean(
+              point
+              && !isHeldPoint(point)
+              && (point.score ?? 0) >= PRESS_BANCA_MIN_POINT_SCORE,
+            ),
+          });
+          const pressBenchVideo = inputModeRef.current === 'video';
+          const orientationRatio = shoulderWidth !== null
+            && torsoHeight !== null
+            && torsoHeight > 0
+            ? shoulderWidth / torsoHeight
+            : null;
+          console.log(`[press-banca-medidas] ${JSON.stringify({
+            mode: pressBenchVideo ? 'video' : 'vivo',
+            ...(pressBenchVideo
+              ? { tVideoS: Number.isFinite(video.currentTime) ? video.currentTime : null }
+              : { timestamp: now }),
+            measurementSide,
+            anglesDeg: {
+              left: {
+                shoulder: roundPressBench(leftAngles.shoulder),
+                elbow: roundPressBench(leftAngles.elbow),
+                wrist: roundPressBench(leftAngles.wrist),
+              },
+              right: {
+                shoulder: roundPressBench(rightAngles.shoulder),
+                elbow: roundPressBench(rightAngles.elbow),
+                wrist: roundPressBench(rightAngles.wrist),
+              },
+            },
+            points: {
+              left: {
+                shoulder: pointDetail(left.shoulder),
+                elbow: pointDetail(left.elbow),
+                wrist: pointDetail(left.wrist),
+                hip: pointDetail(left.hip),
+              },
+              right: {
+                shoulder: pointDetail(right.shoulder),
+                elbow: pointDetail(right.elbow),
+                wrist: pointDetail(right.wrist),
+                hip: pointDetail(right.hip),
+              },
+            },
+            measures: {
+              shoulderWidth: roundPressBench(shoulderWidth),
+              torsoHeight: roundPressBench(torsoHeight),
+              wristHorizontalDistance: roundPressBench(
+                left.wrist && right.wrist
+                  ? Math.abs(left.wrist.x - right.wrist.x)
+                  : null,
+              ),
+              leftWristHeightOverShoulder: roundPressBench(
+                relativeHeight(left.wrist, left.shoulder),
+              ),
+              rightWristHeightOverShoulder: roundPressBench(
+                relativeHeight(right.wrist, right.shoulder),
+              ),
+              leftElbowHeightOverShoulder: roundPressBench(
+                relativeHeight(left.elbow, left.shoulder),
+              ),
+              rightElbowHeightOverShoulder: roundPressBench(
+                relativeHeight(right.elbow, right.shoulder),
+              ),
+              shoulderAngleLeftMinusRightDeg: roundPressBench(
+                leftAngles.shoulder !== null && rightAngles.shoulder !== null
+                  ? leftAngles.shoulder - rightAngles.shoulder
+                  : null,
+              ),
+              elbowAngleLeftMinusRightDeg: roundPressBench(
+                leftAngles.elbow !== null && rightAngles.elbow !== null
+                  ? leftAngles.elbow - rightAngles.elbow
+                  : null,
+              ),
+              orientacionFrontal: roundPressBench(orientationRatio),
+            },
+          })}`);
+        } catch {
+          // El registro informativo no debe interrumpir el análisis de press-banca.
+        }
+      }
       setLiveAngleReadings(nextLiveAngleReadings);
       setDipJointReadings(
         selectedExerciseForFrame === 'fondos'
@@ -19877,6 +20390,129 @@ function Home() {
   ]);
   uploadedCrossoverStartPlaybackRef.current = startUploadedCrossoverPlayback;
 
+  const startUploadedPressBenchPlayback = useCallback(async () => {
+    const video = videoRef.current;
+    if (
+      !video
+      || inputModeRef.current !== 'video'
+      || selectedExerciseRef.current !== 'press-banca'
+      || !pressBenchAnalysisTransitionPendingRef.current
+      || pressBenchAnalysisStartingRef.current
+    ) return;
+    pressBenchAnalysisStartingRef.current = true;
+    try {
+      video.pause();
+      video.controls = true;
+      activeRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+      while (processingFrameRef.current) {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      }
+      if (
+        selectedExerciseRef.current !== 'press-banca'
+        || inputModeRef.current !== 'video'
+        || !pressBenchAnalysisTransitionPendingRef.current
+      ) return;
+      if (Math.abs(video.currentTime) > 0.01) {
+        await new Promise<void>((resolve, reject) => {
+          let timeoutId = 0;
+          let settled = false;
+          const finishSeeking = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finishSeeking);
+            if (Math.abs(video.currentTime) > 0.01) {
+              reject(new Error('El video no llegó al inicio.'));
+              return;
+            }
+            resolve();
+          };
+          video.addEventListener('seeked', finishSeeking, { once: true });
+          timeoutId = window.setTimeout(finishSeeking, 1500);
+          try {
+            video.currentTime = 0;
+          } catch (error) {
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finishSeeking);
+            reject(error);
+          }
+        });
+      }
+      if (
+        selectedExerciseRef.current !== 'press-banca'
+        || inputModeRef.current !== 'video'
+        || !pressBenchAnalysisTransitionPendingRef.current
+        || Math.abs(video.currentTime) > 0.01
+      ) throw new Error('No se pudo confirmar el salto al inicio del video.');
+      poseFilterRef.current.reset();
+      poseFilterRef.current.setPersistentHold(false);
+      poseFilterRef.current.setTemporalJumpGuard(false);
+      sideConsistencyRef.current.reset();
+      boneConstraintRef.current.reset();
+      stabilityFramesRef.current = 0;
+      diagnosticBufferRef.current = [];
+      lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+      setVideoTimeSeconds(video.currentTime);
+      updatePressBenchPreparationStage('active');
+      updatePressBenchPreparationCountdown(null);
+      setVideoExportStatus('Análisis en curso desde el inicio del video.');
+      hideUploadedPushupSearchOverlay(
+        uploadedPressBenchLastCalibrationAccumulatedMsRef.current,
+      );
+      await video.play();
+      if (
+        selectedExerciseRef.current === 'press-banca'
+        && inputModeRef.current === 'video'
+        && pressBenchAnalysisTransitionPendingRef.current
+      ) {
+        pressBenchAnalysisTransitionPendingRef.current = false;
+        uploadedPressBenchPreflightRef.current = false;
+        exerciseStartedRef.current = true;
+        setExerciseStarted(true);
+        logPressBenchDetectionEvent(
+          'activo',
+          selectedExerciseRef.current,
+          uploadedPressBenchLastCalibrationAccumulatedMsRef.current,
+          'video',
+        );
+        activeRef.current = true;
+        scheduleNextFrame();
+      }
+    } catch {
+      if (
+        selectedExerciseRef.current === 'press-banca'
+        && inputModeRef.current === 'video'
+      ) {
+        activeRef.current = false;
+        video.pause();
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        updatePressBenchPreparationStage('press-banca-preparation');
+        setVideoExportStatus(
+          'No se pudo iniciar el análisis desde t=0. Pulsa Reproducir para reintentar.',
+        );
+      }
+    } finally {
+      pressBenchAnalysisStartingRef.current = false;
+    }
+  }, [
+    hideUploadedPushupSearchOverlay,
+    logPressBenchDetectionEvent,
+    scheduleNextFrame,
+    updatePressBenchPreparationCountdown,
+    updatePressBenchPreparationStage,
+  ]);
+  uploadedPressBenchStartPlaybackRef.current = startUploadedPressBenchPlayback;
+
   useEffect(() => {
     if (
       !picaDiagEnabled
@@ -21057,6 +21693,7 @@ function Home() {
     const isUploadedCrossoverVideo = Boolean(
       videoFile && activeExercise === 'cruces-polea-baja-alta',
     );
+    const isUploadedPressBenchVideo = Boolean(videoFile && activeExercise === 'press-banca');
     const uploadedPullupValidMsBeforeReset = isUploadedPullupVideo
       ? uploadedPullupLastCalibrationAccumulatedMsRef.current
       : 0;
@@ -21140,6 +21777,33 @@ function Home() {
       hideUploadedPushupSearchOverlay();
       setUploadedPushupTransitionPaused(false);
     }
+    if (activeExercise === 'press-banca') {
+      if (pressBenchDetectionTransitionTimerRef.current !== null) {
+        window.clearTimeout(pressBenchDetectionTransitionTimerRef.current);
+        pressBenchDetectionTransitionTimerRef.current = null;
+      }
+      pressBenchCalibrationSuccessfulRef.current = false;
+      pressBenchLiveCalibrationAccumulatedMsRef.current = 0;
+      pressBenchLiveLastValidAtRef.current = null;
+      pressBenchLiveSearchGapStartedAtRef.current = null;
+      pressBenchPreparationStartedAtRef.current = null;
+      pressBenchDetectionLastSearchingLogAtRef.current = null;
+      pressBenchDetectionCompletedLoggedRef.current = false;
+      pressBenchAnalysisStartedLoggedRef.current = false;
+      pressBenchAnalysisTransitionPendingRef.current = false;
+      pressBenchAnalysisStartingRef.current = false;
+      uploadedPressBenchLastObservedVideoTimeRef.current = null;
+      uploadedPressBenchRunStartVideoTimeRef.current = null;
+      uploadedPressBenchRunBaseMsRef.current = 0;
+      uploadedPressBenchLastCalibrationAccumulatedMsRef.current = 0;
+      uploadedPressBenchSearchGapStartedAtRef.current = null;
+      pressBenchValidSecondsRef.current = 0;
+      setPressBenchValidSeconds(0);
+      pressBenchPreparationStageRef.current = 'body-detection';
+      setPressBenchPreparationStage('body-detection');
+      pressBenchPreparationCountdownRef.current = null;
+      setPressBenchPreparationCountdown(null);
+    }
     // Los videos subidos ya contienen la ejecución; no deben esperar la
     // preparación de cámara en vivo. Las flexiones conservan su calibración.
     const shouldStartUploadedExercise = Boolean(videoFile)
@@ -21151,6 +21815,10 @@ function Home() {
       : preserveExerciseStarted;
     exerciseStartedRef.current = shouldStartExercise;
     setExerciseStarted(shouldStartExercise);
+    if (activeExercise === 'press-banca') {
+      exerciseStartedRef.current = false;
+      setExerciseStarted(false);
+    }
     if (isUploadedPikePushupVideo && activeExercise === 'flexiones-pica') {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
@@ -21230,6 +21898,7 @@ function Home() {
     }
     uploadedPushupPreflightRef.current = isUploadedPushupVideo;
     uploadedCrossoverPreflightRef.current = isUploadedCrossoverVideo;
+    uploadedPressBenchPreflightRef.current = isUploadedPressBenchVideo;
     if (isUploadedPikePushupVideo && activeExercise === 'flexiones-pica') {
       uploadedPikePushupTransitionGenerationRef.current += 1;
       uploadedPikePushupPreflightStageRef.current = 'searching';
@@ -21421,10 +22090,17 @@ function Home() {
           videoFile ? 'video' : 'vivo',
         );
       }
+      if (activeExercise === 'press-banca') {
+        updatePressBenchPreparationStage('body-detection');
+        updatePressBenchPreparationCountdown(null);
+      }
       if (!preserveExerciseStarted) resetDipPreparation();
       if (videoFile) {
         setUploadedVideoName(videoFile.name);
         setVideoExportStatus('Cargando el video en este dispositivo…');
+        if (activeExercise === 'press-banca') {
+          setVideoExportStatus('Detectando el cuerpo en el video...');
+        }
         const sourceUrl = URL.createObjectURL(videoFile);
         uploadedVideoUrlRef.current = sourceUrl;
         if (isUploadedDipVideo && !video.paused) {
@@ -21887,6 +22563,37 @@ function Home() {
       if (!video) return;
 
       if (
+        selectedExerciseRef.current === 'press-banca'
+        && pressBenchAnalysisTransitionPendingRef.current
+      ) {
+        void uploadedPressBenchStartPlaybackRef.current?.();
+        logUploadedPushupButtonState('después');
+        return;
+      }
+
+      if (
+        selectedExerciseRef.current === 'press-banca'
+        && uploadedPressBenchPreflightRef.current
+        && !pressBenchCalibrationSuccessfulRef.current
+      ) {
+        if (video.paused) {
+          activeRef.current = true;
+          void video.play().then(() => {
+            if (activeRef.current) scheduleNextFrame();
+          }).catch(() => {
+            activeRef.current = false;
+            setVideoExportStatus(
+              'No se pudo reanudar. Pulsa reproducir en el video para continuar la detección.',
+            );
+          });
+        } else {
+          setVideoExportStatus('Detectando el cuerpo en el video...');
+        }
+        logUploadedPushupButtonState('después');
+        return;
+      }
+
+      if (
         selectedExerciseRef.current === 'cruces-polea-baja-alta'
         && crossoverAnalysisTransitionPendingRef.current
       ) {
@@ -21999,6 +22706,12 @@ function Home() {
       inputModeRef.current === 'camera'
       && selectedExerciseRef.current === 'cruces-polea-baja-alta'
       && crossoverPreparationStageRef.current !== 'active'
+    ) return;
+
+    if (
+      inputModeRef.current === 'camera'
+      && selectedExerciseRef.current === 'press-banca'
+      && pressBenchPreparationStageRef.current !== 'active'
     ) return;
 
     if (
@@ -24259,6 +24972,37 @@ function Home() {
                               : dipPreparationStage === 'body-detection'
                                 ? 'Mantén hombro, codo, muñeca y cadera visibles'
                                 : 'El análisis y el conteo comenzarán automáticamente'}
+                      </small>
+                    </div>
+                  )}
+                {selectedExercise === 'press-banca'
+                  && !exerciseStarted
+                  && pressBenchPreparationStage !== 'idle'
+                  && pressBenchPreparationStage !== 'active'
+                  && (
+                    <div
+                      className="pullup-preparation-overlay"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <span>
+                        {pressBenchPreparationStage === 'body-detection'
+                          ? inputMode === 'video'
+                            ? 'Detectando el cuerpo en el video...'
+                            : 'Buscando cuerpo…'
+                          : 'Cuerpo detectado. Preparando conteo…'}
+                      </span>
+                      <strong>
+                        {pressBenchPreparationStage === 'body-detection'
+                          ? `Buscando cuerpo… ${pressBenchValidSeconds.toFixed(1)} / 5 s`
+                          : pressBenchPreparationCountdown !== null
+                            ? `Acomódate para empezar · ${pressBenchPreparationCountdown}`
+                            : 'Preparando el inicio del análisis'}
+                      </strong>
+                      <small>
+                        Graba de frente o de lado: cuerpo completo, con brazos, muñecas y caderas visibles.
                       </small>
                     </div>
                   )}
