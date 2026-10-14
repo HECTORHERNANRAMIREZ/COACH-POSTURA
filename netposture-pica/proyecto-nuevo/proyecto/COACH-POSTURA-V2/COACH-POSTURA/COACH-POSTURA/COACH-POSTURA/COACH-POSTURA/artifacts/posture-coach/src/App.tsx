@@ -12366,6 +12366,22 @@ function Home() {
     if (pressBenchPreparationStageRef.current === stage) return;
     pressBenchPreparationStageRef.current = stage;
     setPressBenchPreparationStage(stage);
+    const mode = inputModeRef.current === 'video' ? 'video' : 'vivo';
+    const videoTime = videoRef.current?.currentTime;
+    console.log(`[press-banca-deteccion] ${JSON.stringify({
+      etapa: stage,
+      ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
+      segundosEstables: Number(
+        (Math.max(0, uploadedPressBenchLastCalibrationAccumulatedMsRef.current) / 1000)
+          .toFixed(2),
+      ),
+      tVideoS: mode === 'video'
+        && videoTime !== undefined
+        && Number.isFinite(videoTime)
+        ? Number(videoTime.toFixed(3))
+        : null,
+      modo: mode,
+    })}`);
   }, []);
 
   const updatePressBenchPreparationCountdown = useCallback((seconds: number | null) => {
@@ -14014,11 +14030,19 @@ function Home() {
         || pullupTrackingIsAnchored;
       const effectiveFrameCameraReady = frameCameraReady
         || pullupTrackingIsAnchored;
+      const pressBenchCountFrameReady = selectedExerciseForFrame === 'press-banca'
+        && hasFreshPose
+        && frameCameraReady
+        && stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES
+        && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0
+        && !frameMeasurementBlocked;
       const countFrameReady = selectedExerciseForFrame === 'flexiones'
         ? standardPushupCountFrameReady
-        : isPushupExercise
-          ? effectiveFrameCameraReady && effectiveFrameDetectionStable
-          : frameCameraReady;
+        : selectedExerciseForFrame === 'press-banca'
+          ? pressBenchCountFrameReady
+          : isPushupExercise
+            ? effectiveFrameCameraReady && effectiveFrameDetectionStable
+            : frameCameraReady;
       if (
         selectedExerciseForFrame === 'dominadas'
         && !pullupCalibrationSuccessfulRef.current
@@ -22182,8 +22206,28 @@ function Home() {
       uploadedPressBenchSearchGapStartedAtRef.current = null;
       pressBenchValidSecondsRef.current = 0;
       setPressBenchValidSeconds(0);
+      const pressBenchStageChanged =
+        pressBenchPreparationStageRef.current !== 'body-detection';
       pressBenchPreparationStageRef.current = 'body-detection';
       setPressBenchPreparationStage('body-detection');
+      if (pressBenchStageChanged) {
+        const mode = inputModeRef.current === 'video' ? 'video' : 'vivo';
+        const videoTime = videoRef.current?.currentTime;
+        console.log(`[press-banca-deteccion] ${JSON.stringify({
+          etapa: 'body-detection',
+          ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
+          segundosEstables: Number(
+            (Math.max(0, uploadedPressBenchLastCalibrationAccumulatedMsRef.current) / 1000)
+              .toFixed(2),
+          ),
+          tVideoS: mode === 'video'
+            && videoTime !== undefined
+            && Number.isFinite(videoTime)
+            ? Number(videoTime.toFixed(3))
+            : null,
+          modo: mode,
+        })}`);
+      }
       pressBenchPreparationCountdownRef.current = null;
       setPressBenchPreparationCountdown(null);
     }
