@@ -14033,7 +14033,10 @@ function Home() {
       const pressBenchCountFrameReady = selectedExerciseForFrame === 'press-banca'
         && hasFreshPose
         && frameCameraReady
-        && stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES
+        && (
+          exerciseStartedRef.current === true
+          || stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES
+        )
         && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0
         && !frameMeasurementBlocked;
       const countFrameReady = selectedExerciseForFrame === 'flexiones'
@@ -16923,6 +16926,9 @@ function Home() {
           console.log(`[press-banca-puerta] ${JSON.stringify({
             ...pressBenchGateConditions,
             measurementSide,
+            frameCameraReady,
+            stabilityFrames: stabilityFramesRef.current,
+            umbralEstabilidad: PUSHUP_COUNT_STABLE_FRAMES,
             ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
             puertaAbierta: pressBenchDoorOpen,
             tVideoS: inputModeRef.current === 'video'
