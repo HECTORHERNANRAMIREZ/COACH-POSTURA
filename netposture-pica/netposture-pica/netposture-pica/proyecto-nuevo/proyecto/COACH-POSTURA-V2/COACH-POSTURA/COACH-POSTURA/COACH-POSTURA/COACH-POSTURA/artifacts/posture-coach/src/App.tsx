@@ -412,6 +412,11 @@ const clerkAppearance = {
 const GREEN = '#39ff6a';
 
 type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'peso-muerto-piernas-rigidas' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'barra-reloj' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
+function isPressBenchExercise(
+  exercise: ExerciseId | null,
+): exercise is 'press-banca' | 'press-banca-inclinado' {
+  return exercise === 'press-banca' || exercise === 'press-banca-inclinado';
+}
 type TrackedJoint = 'head' | 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle' | 'foot';
 type TrackedJointDefinition = {
   joint: TrackedJoint;
@@ -1713,6 +1718,8 @@ const PICA_TOLERANCIA_GRADOS = 5;
 const CRUCES_TOLERANCIA_GRADOS = 15;
 const PRESS_BANCA_TOLERANCIA_GRADOS = 15;
 const PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS = 30;
+const PRESS_BANCA_INCLINADO_TOLERANCIA_GRADOS = 15;
+const PRESS_BANCA_INCLINADO_TOLERANCIA_ABAJO_GRADOS = 30;
 const PICA_TOLERANCIA_ELEVACION_PROPORCION =
   PICA_TOLERANCIA_GRADOS * (0.03 / 5);
 const PIKE_ELBOW_BODY_MIN_ANGLE = 70 - PICA_TOLERANCIA_GRADOS;
@@ -2268,19 +2275,21 @@ const exercises: ExerciseDefinition[] = [
     id: 'press-banca-inclinado',
     name: 'Press de banca inclinado',
     muscleGroup: 'pecho',
-    description: 'Empuja la barra desde la parte alta del pecho manteniendo hombros, codos y muñecas alineados.',
-    angleLabel: 'Hombros · codos · muñecas',
-    cameraNote: 'Nota: vista lateral o en 3/4; deja visibles ambos hombros, codos y muñecas durante todo el recorrido.',
+    description: 'Empuja la barra desde la parte alta del pecho manteniendo hombros, codos y muñecas alineados y las caderas visibles.',
+    angleLabel: 'Hombros · codos · muñecas · cadera',
+    cameraNote: 'Nota: vista lateral; deja visibles ambos hombros, codos, muñecas y caderas durante todo el recorrido.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
       { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
     ],
     trackBothSides: true,
     trackedAngleLabels: [
       'Hombros: lectura izquierda y derecha',
       'Codos: lectura izquierda y derecha',
       'Muñecas: lectura izquierda y derecha',
+      'Cadera: lectura izquierda y derecha',
       'Recorrido: empuje desde la parte alta del pecho',
       'Calibración del recorrido: pendiente',
     ],
@@ -3535,6 +3544,18 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     endMinAngle: 0,
     endMaxAngle: 20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS,
     endLabel: `cada hombro ≤${20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS}°`,
+    countOnReturn: true,
+    countOnlyWhenCorrect: false,
+    smoothingSamples: 1,
+  },
+  'press-banca-inclinado': {
+    direction: 'decrease',
+    startMinAngle: 85 - PRESS_BANCA_INCLINADO_TOLERANCIA_GRADOS,
+    startMaxAngle: 180,
+    activationAngle: 85 - PRESS_BANCA_INCLINADO_TOLERANCIA_GRADOS,
+    endMinAngle: 0,
+    endMaxAngle: 20 + PRESS_BANCA_INCLINADO_TOLERANCIA_ABAJO_GRADOS,
+    endLabel: `cada hombro ≤${20 + PRESS_BANCA_INCLINADO_TOLERANCIA_ABAJO_GRADOS}°`,
     countOnReturn: true,
     countOnlyWhenCorrect: false,
     smoothingSamples: 1,
@@ -4928,6 +4949,7 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Calibración del recorrido: pendiente',
       ];
     case 'press-banca':
+    case 'press-banca-inclinado':
       return [
         'Lecturas en vivo: hombros, codos, muñecas y caderas',
         'Se muestran ambos lados para comparar el movimiento',
@@ -4947,12 +4969,6 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
         'Inicio: hombro 130–180° con brazos elevados',
         'Final: hombro 20–80° llevando la barra hacia la cadera',
         'Codos extendidos y muñecas alineadas',
-      ];
-    case 'press-banca-inclinado':
-      return [
-        'Lecturas en vivo: hombros, codos y muñecas',
-        'Se muestran ambos lados para comparar el movimiento',
-        'Calibración del recorrido: pendiente',
       ];
     case 'press-plano-inclinado':
       return [
@@ -6321,8 +6337,8 @@ function getCameraGuidance(
           ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'press-banca-agarre-cerrado'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas junto al banco.'
-          : exercise === 'press-banca-inclinado'
-            ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
+        : exercise === 'press-banca-inclinado'
+            ? 'Ponte de lado y deja visibles ambos hombros, codos, muñecas y caderas.'
           : exercise === 'press-plano-mancuernas'
             ? 'Ponte de lado o en 3/4 y deja visibles ambos hombros, codos y muñecas.'
           : exercise === 'press-plano-inclinado'
@@ -6536,7 +6552,7 @@ function getCameraGuidance(
       : exercise === 'remo-mancuerna-una-mano'
         ? 'Usa una vista lateral, con el banco y el brazo que trabaja completos dentro del encuadre.'
       : exercise === 'press-banca-inclinado'
-        ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
+        ? 'Usa una vista lateral, con ambos brazos completos, las caderas visibles y el banco dentro del encuadre.'
       : exercise === 'press-banca-agarre-cerrado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y el banco dentro del encuadre.'
       : exercise === 'press-plano-mancuernas'
@@ -8536,7 +8552,7 @@ function calculateRepetitionAngle(
   side: PoseSide | null,
   evaluatedSides: PoseSide[] = [],
 ) {
-  if (exercise === 'press-banca') {
+  if (isPressBenchExercise(exercise)) {
     if (!keypoints || evaluatedSides.length === 0) return null;
     const shoulderAngles: number[] = [];
     for (const evaluatedSide of evaluatedSides) {
@@ -8869,6 +8885,7 @@ function getAngleDiagnosticPoints(
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
+      { label: 'Cadera', joint: 'hip' },
     ],
     'press-plano-mancuernas': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -12329,8 +12346,8 @@ function Home() {
     invalidReasons?: string[],
   ) => {
     if (
-      selectedExerciseForFrame !== 'press-banca'
-      || selectedExerciseRef.current !== 'press-banca'
+      !isPressBenchExercise(selectedExerciseForFrame)
+      || !isPressBenchExercise(selectedExerciseRef.current)
       || (mode === 'video'
         ? inputModeRef.current !== 'video'
         : inputModeRef.current !== 'camera')
@@ -12352,6 +12369,7 @@ function Home() {
         ? pressBenchDetectionDecisionRef.current
         : null;
       console.log(`[press-banca-deteccion] ${JSON.stringify({
+        ejercicio: selectedExerciseForFrame,
         evento: event,
         modo: mode,
         segundosValidos: Number((Math.max(0, validMs) / 1000).toFixed(2)),
@@ -12379,13 +12397,14 @@ function Home() {
   const updatePressBenchPreparationStage = useCallback((
     stage: PressBenchPreparationStage,
   ) => {
-    if (selectedExerciseRef.current !== 'press-banca') return;
+    if (!isPressBenchExercise(selectedExerciseRef.current)) return;
     if (pressBenchPreparationStageRef.current === stage) return;
     pressBenchPreparationStageRef.current = stage;
     setPressBenchPreparationStage(stage);
     const mode = inputModeRef.current === 'video' ? 'video' : 'vivo';
     const videoTime = videoRef.current?.currentTime;
     console.log(`[press-banca-deteccion] ${JSON.stringify({
+      ejercicio: selectedExerciseRef.current,
       etapa: stage,
       ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
       segundosEstables: Number(
@@ -12402,7 +12421,7 @@ function Home() {
   }, []);
 
   const updatePressBenchPreparationCountdown = useCallback((seconds: number | null) => {
-    if (selectedExerciseRef.current !== 'press-banca') return;
+    if (!isPressBenchExercise(selectedExerciseRef.current)) return;
     if (pressBenchPreparationCountdownRef.current === seconds) return;
     pressBenchPreparationCountdownRef.current = seconds;
     setPressBenchPreparationCountdown(seconds);
@@ -14047,12 +14066,12 @@ function Home() {
         || pullupTrackingIsAnchored;
       const effectiveFrameCameraReady = frameCameraReady
         || pullupTrackingIsAnchored;
-      const pressBenchCountFrameReady = selectedExerciseForFrame === 'press-banca'
+      const pressBenchCountFrameReady = isPressBenchExercise(selectedExerciseForFrame)
         && hasFreshPose
         && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0;
       const countFrameReady = selectedExerciseForFrame === 'flexiones'
         ? standardPushupCountFrameReady
-        : selectedExerciseForFrame === 'press-banca'
+        : isPressBenchExercise(selectedExerciseForFrame)
           ? pressBenchCountFrameReady
           : isPushupExercise
             ? effectiveFrameCameraReady && effectiveFrameDetectionStable
@@ -14719,7 +14738,7 @@ function Home() {
         }
       }
       if (
-        selectedExerciseForFrame === 'press-banca'
+        isPressBenchExercise(selectedExerciseForFrame)
         && !pressBenchCalibrationSuccessfulRef.current
         && !exerciseStartedRef.current
         && pressBenchPreparationStageRef.current === 'body-detection'
@@ -14925,7 +14944,7 @@ function Home() {
             }
             pressBenchDetectionTransitionTimerRef.current = window.setTimeout(() => {
               pressBenchDetectionTransitionTimerRef.current = null;
-              if (selectedExerciseRef.current === 'press-banca') {
+              if (isPressBenchExercise(selectedExerciseRef.current)) {
                 void uploadedPressBenchStartPlaybackRef.current?.();
               }
             }, PRESS_BANCA_VIDEO_TRANSITION_DELAY_MS);
@@ -14937,7 +14956,7 @@ function Home() {
           }
         }
       } else if (
-        selectedExerciseForFrame === 'press-banca'
+        isPressBenchExercise(selectedExerciseForFrame)
         && pressBenchCalibrationSuccessfulRef.current
         && !exerciseStartedRef.current
         && pressBenchPreparationStageRef.current === 'press-banca-preparation'
@@ -15424,7 +15443,7 @@ function Home() {
           selectedExerciseForFrame,
           pose?.keypoints,
           measurementSide,
-          selectedExerciseForFrame === 'press-banca'
+          isPressBenchExercise(selectedExerciseForFrame)
             ? pressBenchDetectionDecisionRef.current?.evaluatedSides
             : undefined,
         )
@@ -16876,7 +16895,7 @@ function Home() {
             });
           } catch {}
         }
-      if (selectedExerciseForFrame === 'press-banca') {
+      if (isPressBenchExercise(selectedExerciseForFrame)) {
         const pressBenchEvaluatedSides
           = pressBenchDetectionDecisionRef.current?.evaluatedSides ?? [];
         const pressBenchGateConditions = {
@@ -16926,6 +16945,7 @@ function Home() {
           || now - lastPressBenchGateLogAt >= 1000
         ) {
           console.log(`[press-banca-puerta] ${JSON.stringify({
+            ejercicio: selectedExerciseForFrame,
             ...pressBenchGateConditions,
             measurementSide,
             frameCameraReady,
@@ -16947,7 +16967,7 @@ function Home() {
       if (
         exerciseStartedRef.current
         && (
-          selectedExerciseForFrame === 'press-banca'
+          isPressBenchExercise(selectedExerciseForFrame)
             ? countFrameReady
               && repetitionAngle !== null
               && repetitionConfig
@@ -18062,7 +18082,7 @@ function Home() {
             ),
           );
         }
-        if (selectedExerciseForFrame === 'press-banca') {
+        if (isPressBenchExercise(selectedExerciseForFrame)) {
           const pressBenchEvaluatedSides
             = pressBenchDetectionDecisionRef.current?.evaluatedSides ?? [];
           const pressBenchSideShoulderAngles = pressBenchEvaluatedSides.map((side) => {
@@ -18077,8 +18097,14 @@ function Home() {
               ),
             };
           });
-          const pressBenchUpperThreshold = 85 - PRESS_BANCA_TOLERANCIA_GRADOS;
-          const pressBenchLowerThreshold = 20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS;
+          const pressBenchUpperTolerance = selectedExerciseForFrame === 'press-banca-inclinado'
+            ? PRESS_BANCA_INCLINADO_TOLERANCIA_GRADOS
+            : PRESS_BANCA_TOLERANCIA_GRADOS;
+          const pressBenchLowerTolerance = selectedExerciseForFrame === 'press-banca-inclinado'
+            ? PRESS_BANCA_INCLINADO_TOLERANCIA_ABAJO_GRADOS
+            : PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS;
+          const pressBenchUpperThreshold = 85 - pressBenchUpperTolerance;
+          const pressBenchLowerThreshold = 20 + pressBenchLowerTolerance;
           const pressBenchBothShouldersAtTop = pressBenchSideShoulderAngles.length > 0
             && pressBenchSideShoulderAngles.every(({ angle }) => (
               angle !== null && angle >= pressBenchUpperThreshold
@@ -18258,6 +18284,7 @@ function Home() {
               > previousExerciseRepTracker.repetitions
           ) {
             console.log(`[press-banca-conteo] ${JSON.stringify({
+              ejercicio: selectedExerciseForFrame,
               estado: exerciseRepUpdate.tracker.phase,
               ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
               hombroPorLadoDeg: pressBenchSideShoulderAngles.map(({ lado, angle }) => ({
@@ -18286,6 +18313,7 @@ function Home() {
           }
           if (pressBenchCycleClosed) {
             console.log(`[press-banca-intento] ${JSON.stringify({
+              ejercicio: selectedExerciseForFrame,
               resultado: pressBenchAttemptResult,
               motivo: pressBenchAttemptReason,
               ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
@@ -19223,7 +19251,7 @@ function Home() {
         }
       }
       if (
-        selectedExerciseForFrame === 'press-banca'
+        isPressBenchExercise(selectedExerciseForFrame)
         && pressBenchCalibrationSuccessfulRef.current
         && pressBenchPreparationStageRef.current === 'active'
       ) {
@@ -19281,6 +19309,7 @@ function Home() {
           pressBenchExecutionLastLogAtRef.current = now;
         } else if (now - lastExecutionLogAt >= 1000) {
           console.log(`[press-banca-ejecucion] ${JSON.stringify({
+            ejercicio: selectedExerciseForFrame,
             tVideoS: inputModeRef.current === 'video'
               && Number.isFinite(video.currentTime)
               ? Number(video.currentTime.toFixed(3))
@@ -19295,7 +19324,7 @@ function Home() {
         }
       }
       if (
-        selectedExerciseForFrame === 'press-banca'
+        isPressBenchExercise(selectedExerciseForFrame)
         && pressBenchCalibrationSuccessfulRef.current
         && pressBenchPreparationStageRef.current === 'active'
         && pose?.keypoints
@@ -19381,6 +19410,7 @@ function Home() {
             ? shoulderWidth / torsoHeight
             : null;
           console.log(`[press-banca-medidas] ${JSON.stringify({
+            ejercicio: selectedExerciseForFrame,
             mode: pressBenchVideo ? 'video' : 'vivo',
             ...(pressBenchVideo
               ? { tVideoS: Number.isFinite(video.currentTime) ? video.currentTime : null }
@@ -20977,7 +21007,7 @@ function Home() {
     if (
       !video
       || inputModeRef.current !== 'video'
-      || selectedExerciseRef.current !== 'press-banca'
+      || !isPressBenchExercise(selectedExerciseRef.current)
       || !pressBenchAnalysisTransitionPendingRef.current
       || pressBenchAnalysisStartingRef.current
     ) return;
@@ -20998,7 +21028,7 @@ function Home() {
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       }
       if (
-        selectedExerciseRef.current !== 'press-banca'
+        !isPressBenchExercise(selectedExerciseRef.current)
         || inputModeRef.current !== 'video'
         || !pressBenchAnalysisTransitionPendingRef.current
       ) return;
@@ -21030,7 +21060,7 @@ function Home() {
         });
       }
       if (
-        selectedExerciseRef.current !== 'press-banca'
+        !isPressBenchExercise(selectedExerciseRef.current)
         || inputModeRef.current !== 'video'
         || !pressBenchAnalysisTransitionPendingRef.current
         || Math.abs(video.currentTime) > 0.01
@@ -21052,7 +21082,7 @@ function Home() {
       );
       await video.play();
       if (
-        selectedExerciseRef.current === 'press-banca'
+        isPressBenchExercise(selectedExerciseRef.current)
         && inputModeRef.current === 'video'
         && pressBenchAnalysisTransitionPendingRef.current
       ) {
@@ -21071,7 +21101,7 @@ function Home() {
       }
     } catch {
       if (
-        selectedExerciseRef.current === 'press-banca'
+        isPressBenchExercise(selectedExerciseRef.current)
         && inputModeRef.current === 'video'
       ) {
         activeRef.current = false;
@@ -22275,7 +22305,9 @@ function Home() {
     const isUploadedCrossoverVideo = Boolean(
       videoFile && activeExercise === 'cruces-polea-baja-alta',
     );
-    const isUploadedPressBenchVideo = Boolean(videoFile && activeExercise === 'press-banca');
+    const isUploadedPressBenchVideo = Boolean(
+      videoFile && isPressBenchExercise(activeExercise),
+    );
     const uploadedPullupValidMsBeforeReset = isUploadedPullupVideo
       ? uploadedPullupLastCalibrationAccumulatedMsRef.current
       : 0;
@@ -22359,7 +22391,7 @@ function Home() {
       hideUploadedPushupSearchOverlay();
       setUploadedPushupTransitionPaused(false);
     }
-    if (activeExercise === 'press-banca') {
+    if (isPressBenchExercise(activeExercise)) {
       if (pressBenchDetectionTransitionTimerRef.current !== null) {
         window.clearTimeout(pressBenchDetectionTransitionTimerRef.current);
         pressBenchDetectionTransitionTimerRef.current = null;
@@ -22395,6 +22427,7 @@ function Home() {
         const mode = inputModeRef.current === 'video' ? 'video' : 'vivo';
         const videoTime = videoRef.current?.currentTime;
         console.log(`[press-banca-deteccion] ${JSON.stringify({
+          ejercicio: activeExercise,
           etapa: 'body-detection',
           ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
           segundosEstables: Number(
@@ -22423,7 +22456,7 @@ function Home() {
       : preserveExerciseStarted;
     exerciseStartedRef.current = shouldStartExercise;
     setExerciseStarted(shouldStartExercise);
-    if (activeExercise === 'press-banca') {
+    if (isPressBenchExercise(activeExercise)) {
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
     }
@@ -22562,7 +22595,7 @@ function Home() {
     if (isUploadedPushupVideo || isUploadedPullupVideo) {
       showUploadedPushupSearchOverlay();
     }
-    if (isUploadedPressBenchVideo && activeExercise === 'press-banca') {
+    if (isUploadedPressBenchVideo && isPressBenchExercise(activeExercise)) {
       showUploadedPushupSearchOverlay(PRESS_BANCA_BODY_DETECTION_HOLD_MS);
     }
     if (isUploadedCrossoverVideo) {
@@ -22701,7 +22734,7 @@ function Home() {
           videoFile ? 'video' : 'vivo',
         );
       }
-      if (activeExercise === 'press-banca') {
+      if (isPressBenchExercise(activeExercise)) {
         updatePressBenchPreparationStage('body-detection');
         updatePressBenchPreparationCountdown(null);
       }
@@ -22709,7 +22742,7 @@ function Home() {
       if (videoFile) {
         setUploadedVideoName(videoFile.name);
         setVideoExportStatus('Cargando el video en este dispositivo…');
-        if (activeExercise === 'press-banca') {
+        if (isPressBenchExercise(activeExercise)) {
           setVideoExportStatus('Detectando el cuerpo en el video…');
         }
         const sourceUrl = URL.createObjectURL(videoFile);
@@ -23174,7 +23207,7 @@ function Home() {
       if (!video) return;
 
       if (
-        selectedExerciseRef.current === 'press-banca'
+        isPressBenchExercise(selectedExerciseRef.current)
         && pressBenchAnalysisTransitionPendingRef.current
       ) {
         void uploadedPressBenchStartPlaybackRef.current?.();
@@ -23183,7 +23216,7 @@ function Home() {
       }
 
       if (
-        selectedExerciseRef.current === 'press-banca'
+        isPressBenchExercise(selectedExerciseRef.current)
         && uploadedPressBenchPreflightRef.current
         && !pressBenchCalibrationSuccessfulRef.current
       ) {
@@ -23321,7 +23354,7 @@ function Home() {
 
     if (
       inputModeRef.current === 'camera'
-      && selectedExerciseRef.current === 'press-banca'
+      && isPressBenchExercise(selectedExerciseRef.current)
       && pressBenchPreparationStageRef.current !== 'active'
     ) return;
 
@@ -24699,7 +24732,7 @@ function Home() {
                           )
                         : videoExportStatus || 'El análisis se procesa en este dispositivo.'}
                     </span>
-                    {selectedExercise === 'press-banca'
+                    {isPressBenchExercise(selectedExercise)
                       && phase === 'tracking'
                       && !exerciseStarted
                       && pressBenchPreparationStage === 'body-detection'
@@ -24860,7 +24893,7 @@ function Home() {
                           : 'Puedes iniciar; ajusta la cámara para que el contador reconozca el ejercicio.'
                         : 'Aléjate lo suficiente para que se vea tu cuerpo completo y mantén las articulaciones visibles.'}
                   </span>
-                  {selectedExercise === 'press-banca'
+                  {isPressBenchExercise(selectedExercise)
                     && !exerciseStarted
                     && pressBenchPreparationStage !== 'idle'
                     && pressBenchPreparationStage !== 'active'
@@ -25511,7 +25544,7 @@ function Home() {
                       transition: 'opacity 200ms ease',
                     }}
                   >
-                    {selectedExercise === 'press-banca' ? (
+                    {isPressBenchExercise(selectedExercise) ? (
                       <>
                         <span>
                           {pressBenchPreparationStage === 'body-detection'
@@ -25628,7 +25661,7 @@ function Home() {
                       </small>
                     </div>
                   )}
-                {selectedExercise === 'press-banca'
+                {isPressBenchExercise(selectedExercise)
                   && !exerciseStarted
                   && pressBenchPreparationStage !== 'idle'
                   && pressBenchPreparationStage !== 'active'
