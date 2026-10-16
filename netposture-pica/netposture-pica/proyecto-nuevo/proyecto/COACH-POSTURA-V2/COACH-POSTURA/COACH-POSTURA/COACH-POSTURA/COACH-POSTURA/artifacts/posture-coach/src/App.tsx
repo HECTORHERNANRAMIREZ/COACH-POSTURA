@@ -25511,18 +25511,42 @@ function Home() {
                       transition: 'opacity 200ms ease',
                     }}
                   >
-                      <strong>
-                        {uploadedPushupTransitionPaused
-                          ? 'Cuerpo detectado. Preparando conteo…'
-                          : 'Buscando cuerpo…'}
-                      </strong>
-                      {!uploadedPushupTransitionPaused && (
+                    {selectedExercise === 'press-banca' ? (
+                      <>
+                        <span>
+                          {pressBenchPreparationStage === 'body-detection'
+                            ? 'Buscando cuerpo… / 5 s'
+                            : 'Cuerpo detectado. Preparando conteo…'}
+                        </span>
+                        <strong>
+                          {pressBenchPreparationStage === 'body-detection'
+                            ? Math.floor(pressBenchValidSeconds)
+                            : pressBenchPreparationCountdown ?? ''}
+                        </strong>
                         <small>
-                          {uploadedPushupSearchOverlay.progressSeconds.toFixed(1)}
-                          {' / '}
-                          {uploadedPushupSearchOverlay.targetSeconds.toFixed(0)} s
+                          {pressBenchPreparationStage === 'body-detection'
+                            ? 'Graba de frente o de lado: cuerpo completo, con brazos, muñecas y caderas visibles.'
+                            : pressBenchPreparationCountdown !== null
+                              ? 'Acomódate para empezar'
+                              : 'Preparando el inicio del análisis'}
                         </small>
-                      )}
+                      </>
+                    ) : (
+                      <>
+                        <strong>
+                          {uploadedPushupTransitionPaused
+                            ? 'Cuerpo detectado. Preparando conteo…'
+                            : 'Buscando cuerpo…'}
+                        </strong>
+                        {!uploadedPushupTransitionPaused && (
+                          <small>
+                            {uploadedPushupSearchOverlay.progressSeconds.toFixed(1)}
+                            {' / '}
+                            {uploadedPushupSearchOverlay.targetSeconds.toFixed(0)} s
+                          </small>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
                 {inputMode === 'video'
@@ -25619,12 +25643,12 @@ function Home() {
                     >
                       <span>
                         {pressBenchPreparationStage === 'body-detection'
-                          ? 'Buscando cuerpo…'
+                          ? 'Buscando cuerpo… / 5 s'
                           : 'Cuerpo detectado. Preparando conteo…'}
                       </span>
                       <strong>
                         {pressBenchPreparationStage === 'body-detection'
-                          ? `${pressBenchValidSeconds.toFixed(1)} / 5 s`
+                          ? Math.floor(pressBenchValidSeconds)
                           : pressBenchPreparationCountdown ?? ''}
                       </strong>
                       <small>
