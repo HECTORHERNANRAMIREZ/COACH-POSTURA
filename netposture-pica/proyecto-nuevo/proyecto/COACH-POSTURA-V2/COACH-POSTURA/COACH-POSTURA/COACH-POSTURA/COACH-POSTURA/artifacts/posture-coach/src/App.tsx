@@ -14032,13 +14032,7 @@ function Home() {
         || pullupTrackingIsAnchored;
       const pressBenchCountFrameReady = selectedExerciseForFrame === 'press-banca'
         && hasFreshPose
-        && frameCameraReady
-        && (
-          exerciseStartedRef.current === true
-          || stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES
-        )
-        && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0
-        && !frameMeasurementBlocked;
+        && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0;
       const countFrameReady = selectedExerciseForFrame === 'flexiones'
         ? standardPushupCountFrameReady
         : selectedExerciseForFrame === 'press-banca'
@@ -16866,6 +16860,8 @@ function Home() {
           } catch {}
         }
       if (selectedExerciseForFrame === 'press-banca') {
+        const pressBenchEvaluatedSides
+          = pressBenchDetectionDecisionRef.current?.evaluatedSides ?? [];
         const pressBenchGateConditions = {
           exerciseStarted: exerciseStartedRef.current,
           hasFreshPose,
@@ -16876,41 +16872,22 @@ function Home() {
           repetitionTechniqueReady,
           frameMeasurementBlocked,
         };
+        const pressBenchGateChecks = [
+          { nombre: 'exerciseStarted', cumple: exerciseStartedRef.current === true },
+          { nombre: 'hasFreshPose', cumple: hasFreshPose },
+          { nombre: 'countFrameReady', cumple: countFrameReady },
+          { nombre: 'repetitionAngle !== null', cumple: repetitionAngle !== null },
+          { nombre: 'repetitionConfig', cumple: Boolean(repetitionConfig) },
+        ];
+        const primeraCondicionFalsa
+          = pressBenchGateChecks.find(({ cumple }) => !cumple)?.nombre ?? null;
         const pressBenchDoorOpen = Boolean(
           exerciseStartedRef.current
-          && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
-          && !uploadedPushupAnalysisStartingRef.current
           && hasFreshPose
-          && (
-            countFrameReady
-            || (
-              inputModeRef.current === 'video'
-              && selectedExerciseForFrame === 'flexiones'
-              && frameCameraReady
-              && hasFreshPushupMeasurement(
-                pose?.keypoints,
-                pushupLockedMeasurementSideRef.current ?? measurementSide,
-              )
-              && repetitionAngle !== null
-              && isWithinAngle(
-                repetitionAngle,
-                PUSHUP_REP_END_MIN_ANGLE,
-                UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
-              )
-            )
-            || uploadedPushupWristHeldException
-          )
+          && pressBenchEvaluatedSides.length > 0
+          && repetitionAngle !== null
           && repetitionConfig
-          && (repetitionAngle !== null || uploadedDipRawPhaseRescue)
-          && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
-          && (
-            !frameMeasurementBlocked
-            || uploadedPushupWristHeldException
-            || uploadedDipRawPhaseRescue
-          )
         );
-        const pressBenchEvaluatedSides
-          = pressBenchDetectionDecisionRef.current?.evaluatedSides ?? [];
         const pressBenchGateState = JSON.stringify({
           exerciseStarted: pressBenchGateConditions.exerciseStarted,
           hasFreshPose: pressBenchGateConditions.hasFreshPose,
@@ -16921,6 +16898,7 @@ function Home() {
           repetitionAngleDisponible: repetitionAngle !== null,
           repetitionTechniqueReady: pressBenchGateConditions.repetitionTechniqueReady,
           frameMeasurementBlocked: pressBenchGateConditions.frameMeasurementBlocked,
+          primeraCondicionFalsa,
           puertaAbierta: pressBenchDoorOpen,
           ladosEvaluados: pressBenchEvaluatedSides,
         });
@@ -16937,6 +16915,7 @@ function Home() {
             stabilityFrames: stabilityFramesRef.current,
             umbralEstabilidad: PUSHUP_COUNT_STABLE_FRAMES,
             ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
+            primeraCondicionFalsa,
             puertaAbierta: pressBenchDoorOpen,
             tVideoS: inputModeRef.current === 'video'
               && Number.isFinite(video.currentTime)
@@ -16950,35 +16929,43 @@ function Home() {
       }
       if (
         exerciseStartedRef.current
-        && (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
-        && !uploadedPushupAnalysisStartingRef.current
-        && hasFreshPose
         && (
-          countFrameReady
-          || (
-            inputModeRef.current === 'video'
-            && selectedExerciseForFrame === 'flexiones'
-            && frameCameraReady
-            && hasFreshPushupMeasurement(
-              pose?.keypoints,
-              pushupLockedMeasurementSideRef.current ?? measurementSide,
+          selectedExerciseForFrame === 'press-banca'
+            ? countFrameReady
+              && repetitionAngle !== null
+              && repetitionConfig
+            : (
+              (!isUploadedDipVideo || uploadedDipCountingPassStartedRef.current)
+              && !uploadedPushupAnalysisStartingRef.current
+              && hasFreshPose
+              && (
+                countFrameReady
+                || (
+                  inputModeRef.current === 'video'
+                  && selectedExerciseForFrame === 'flexiones'
+                  && frameCameraReady
+                  && hasFreshPushupMeasurement(
+                    pose?.keypoints,
+                    pushupLockedMeasurementSideRef.current ?? measurementSide,
+                  )
+                  && repetitionAngle !== null
+                  && isWithinAngle(
+                    repetitionAngle,
+                    PUSHUP_REP_END_MIN_ANGLE,
+                    UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+                  )
+                )
+                || uploadedPushupWristHeldException
+              )
+              && repetitionConfig
+              && (repetitionAngle !== null || uploadedDipRawPhaseRescue)
+              && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
+              && (
+                !frameMeasurementBlocked
+                || uploadedPushupWristHeldException
+                || uploadedDipRawPhaseRescue
+              )
             )
-            && repetitionAngle !== null
-            && isWithinAngle(
-              repetitionAngle,
-              PUSHUP_REP_END_MIN_ANGLE,
-              UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
-            )
-          )
-          || uploadedPushupWristHeldException
-        )
-        && repetitionConfig
-        && (repetitionAngle !== null || uploadedDipRawPhaseRescue)
-        && (isPushupExercise || isUploadedDipVideo || repetitionTechniqueReady)
-        && (
-          !frameMeasurementBlocked
-          || uploadedPushupWristHeldException
-          || uploadedDipRawPhaseRescue
         )
       ) {
         uploadedPushupTrackerGatePassed = true;
@@ -18117,6 +18104,15 @@ function Home() {
               event: null,
             };
             exerciseRepUpdate.completedEndpointAngle = null;
+          }
+          if (
+            exerciseRepUpdate.tracker.repetitions
+              > previousExerciseRepTracker.repetitions
+          ) {
+            exerciseRepUpdate.tracker = {
+              ...exerciseRepUpdate.tracker,
+              goodRepetitions: exerciseRepUpdate.tracker.repetitions,
+            };
           }
           if (
             exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
