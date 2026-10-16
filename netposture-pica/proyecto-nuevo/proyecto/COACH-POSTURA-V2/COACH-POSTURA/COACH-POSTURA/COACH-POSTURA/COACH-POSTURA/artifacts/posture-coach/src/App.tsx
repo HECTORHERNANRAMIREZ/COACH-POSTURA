@@ -1712,6 +1712,7 @@ type DipJointReading = {
 const PICA_TOLERANCIA_GRADOS = 5;
 const CRUCES_TOLERANCIA_GRADOS = 15;
 const PRESS_BANCA_TOLERANCIA_GRADOS = 15;
+const PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS = 30;
 const PICA_TOLERANCIA_ELEVACION_PROPORCION =
   PICA_TOLERANCIA_GRADOS * (0.03 / 5);
 const PIKE_ELBOW_BODY_MIN_ANGLE = 70 - PICA_TOLERANCIA_GRADOS;
@@ -3532,8 +3533,8 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     startMaxAngle: 180,
     activationAngle: 85 - PRESS_BANCA_TOLERANCIA_GRADOS,
     endMinAngle: 0,
-    endMaxAngle: 20 + PRESS_BANCA_TOLERANCIA_GRADOS,
-    endLabel: `cada hombro ≤${20 + PRESS_BANCA_TOLERANCIA_GRADOS}°`,
+    endMaxAngle: 20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS,
+    endLabel: `cada hombro ≤${20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS}°`,
     countOnReturn: true,
     countOnlyWhenCorrect: false,
     smoothingSamples: 1,
@@ -12141,6 +12142,9 @@ function Home() {
   const pressBenchDetectionDecisionRef = useRef<
     ReturnType<typeof createPressBenchDetectionDecision> | null
   >(null);
+  const pressBenchRepShoulderExtremesRef = useRef<
+    Partial<Record<PoseSide, { minimum: number; maximum: number }>>
+  >({});
   const pressBenchExecutionLastLogAtRef = useRef<number | null>(null);
   const pressBenchExecutionLostPointsRef = useRef<Set<string>>(new Set());
   const pressBenchGateLastLogAtRef = useRef<number | null>(null);
@@ -18051,6 +18055,7 @@ function Home() {
           const pressBenchSideShoulderAngles = pressBenchEvaluatedSides.map((side) => {
             const indexes = sideKeypoints[side];
             return {
+              side,
               lado: side === 'left' ? 'izquierdo' : 'derecho',
               angle: calculateAngle(
                 pose?.keypoints?.[indexes.hip],
@@ -18060,7 +18065,7 @@ function Home() {
             };
           });
           const pressBenchUpperThreshold = 85 - PRESS_BANCA_TOLERANCIA_GRADOS;
-          const pressBenchLowerThreshold = 20 + PRESS_BANCA_TOLERANCIA_GRADOS;
+          const pressBenchLowerThreshold = 20 + PRESS_BANCA_TOLERANCIA_ABAJO_GRADOS;
           const pressBenchBothShouldersAtTop = pressBenchSideShoulderAngles.length > 0
             && pressBenchSideShoulderAngles.every(({ angle }) => (
               angle !== null && angle >= pressBenchUpperThreshold
@@ -18105,10 +18110,39 @@ function Home() {
             };
             exerciseRepUpdate.completedEndpointAngle = null;
           }
+          const includePressBenchShoulderAngle = (side: PoseSide, angle: number | null) => {
+            if (angle === null || !Number.isFinite(angle)) return;
+            const previous = pressBenchRepShoulderExtremesRef.current[side];
+            pressBenchRepShoulderExtremesRef.current[side] = {
+              minimum: previous ? Math.min(previous.minimum, angle) : angle,
+              maximum: previous ? Math.max(previous.maximum, angle) : angle,
+            };
+          };
           if (
-            exerciseRepUpdate.tracker.repetitions
-              > previousExerciseRepTracker.repetitions
+            previousExerciseRepTracker.phase === 'esperando inicio'
+            && exerciseRepUpdate.tracker.phase === 'inicio'
           ) {
+            pressBenchRepShoulderExtremesRef.current = {};
+          }
+          if (exerciseRepUpdate.tracker.phase !== 'esperando inicio') {
+            pressBenchSideShoulderAngles.forEach(({ side, angle }) => {
+              includePressBenchShoulderAngle(side, angle);
+            });
+          }
+          const pressBenchRepetitionCounted
+            = exerciseRepUpdate.tracker.repetitions
+              > previousExerciseRepTracker.repetitions;
+          const pressBenchShoulderExtremesBySide = pressBenchSideShoulderAngles.map(
+            ({ side, lado }) => {
+              const extremes = pressBenchRepShoulderExtremesRef.current[side];
+              return {
+                lado,
+                minimo: extremes ? Number(extremes.minimum.toFixed(2)) : null,
+                maximo: extremes ? Number(extremes.maximum.toFixed(2)) : null,
+              };
+            },
+          );
+          if (pressBenchRepetitionCounted) {
             exerciseRepUpdate.tracker = {
               ...exerciseRepUpdate.tracker,
               goodRepetitions: exerciseRepUpdate.tracker.repetitions,
@@ -18128,6 +18162,11 @@ function Home() {
                   ? null
                   : Number(angle.toFixed(2)),
               })),
+              umbralesHombroDeg: {
+                arriba: pressBenchUpperThreshold,
+                abajo: pressBenchLowerThreshold,
+              },
+              hombroMinMaxPorLadoDeg: pressBenchShoulderExtremesBySide,
               correctas: exerciseRepUpdate.tracker.goodRepetitions,
               incorrectas: Math.max(
                 0,
@@ -18140,6 +18179,12 @@ function Home() {
                 : null,
               modo: inputModeRef.current === 'video' ? 'video' : 'vivo',
             })}`);
+            if (pressBenchRepetitionCounted) {
+              pressBenchRepShoulderExtremesRef.current = {};
+              pressBenchSideShoulderAngles.forEach(({ side, angle }) => {
+                includePressBenchShoulderAngle(side, angle);
+              });
+            }
           }
         }
         if (selectedExerciseForFrame === 'cruces-polea-baja-alta') {
