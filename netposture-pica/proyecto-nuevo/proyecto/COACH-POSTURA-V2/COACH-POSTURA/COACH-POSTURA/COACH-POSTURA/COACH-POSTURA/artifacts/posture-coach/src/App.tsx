@@ -12145,6 +12145,19 @@ function Home() {
   const pressBenchRepShoulderExtremesRef = useRef<
     Partial<Record<PoseSide, { minimum: number; maximum: number }>>
   >({});
+  const pressBenchRepAverageExtremesRef = useRef<{
+    minimum: number | null;
+    maximum: number | null;
+    previousAverage: number | null;
+    sawDescent: boolean;
+    sawAscentAfterDescent: boolean;
+  }>({
+    minimum: null,
+    maximum: null,
+    previousAverage: null,
+    sawDescent: false,
+    sawAscentAfterDescent: false,
+  });
   const pressBenchExecutionLastLogAtRef = useRef<number | null>(null);
   const pressBenchExecutionLostPointsRef = useRef<Set<string>>(new Set());
   const pressBenchGateLastLogAtRef = useRef<number | null>(null);
@@ -18118,13 +18131,59 @@ function Home() {
               maximum: previous ? Math.max(previous.maximum, angle) : angle,
             };
           };
-          if (
-            previousExerciseRepTracker.phase === 'esperando inicio'
-            && exerciseRepUpdate.tracker.phase === 'inicio'
-          ) {
+          const resetPressBenchRepTrackingAtTop = () => {
+            if (repetitionAngle === null) return;
+            pressBenchRepAverageExtremesRef.current = {
+              minimum: repetitionAngle,
+              maximum: repetitionAngle,
+              previousAverage: repetitionAngle,
+              sawDescent: false,
+              sawAscentAfterDescent: false,
+            };
             pressBenchRepShoulderExtremesRef.current = {};
+            pressBenchSideShoulderAngles.forEach(({ side, angle }) => {
+              includePressBenchShoulderAngle(side, angle);
+            });
+          };
+          if (
+            pressBenchBothShouldersAtTop
+            && repetitionAngle !== null
+            && (
+              (
+                previousExerciseRepTracker.phase === 'esperando inicio'
+                && exerciseRepUpdate.tracker.phase === 'inicio'
+              )
+              || pressBenchRepAverageExtremesRef.current.maximum === null
+            )
+          ) {
+            resetPressBenchRepTrackingAtTop();
           }
-          if (exerciseRepUpdate.tracker.phase !== 'esperando inicio') {
+          const pressBenchRepAverageExtremes = pressBenchRepAverageExtremesRef.current;
+          if (
+            pressBenchRepAverageExtremes.maximum !== null
+            && pressBenchRepAverageExtremes.minimum !== null
+            && repetitionAngle !== null
+          ) {
+            const previousAverage = pressBenchRepAverageExtremes.previousAverage;
+            if (previousAverage !== null && repetitionAngle < previousAverage) {
+              pressBenchRepAverageExtremes.sawDescent = true;
+            }
+            if (
+              pressBenchRepAverageExtremes.sawDescent
+              && previousAverage !== null
+              && repetitionAngle > previousAverage
+            ) {
+              pressBenchRepAverageExtremes.sawAscentAfterDescent = true;
+            }
+            pressBenchRepAverageExtremes.minimum = Math.min(
+              pressBenchRepAverageExtremes.minimum,
+              repetitionAngle,
+            );
+            pressBenchRepAverageExtremes.maximum = Math.max(
+              pressBenchRepAverageExtremes.maximum,
+              repetitionAngle,
+            );
+            pressBenchRepAverageExtremes.previousAverage = repetitionAngle;
             pressBenchSideShoulderAngles.forEach(({ side, angle }) => {
               includePressBenchShoulderAngle(side, angle);
             });
@@ -18132,6 +18191,21 @@ function Home() {
           const pressBenchRepetitionCounted
             = exerciseRepUpdate.tracker.repetitions
               > previousExerciseRepTracker.repetitions;
+          const pressBenchCycleAmplitudeDeg
+            = pressBenchRepAverageExtremes.minimum !== null
+              && pressBenchRepAverageExtremes.maximum !== null
+              ? pressBenchRepAverageExtremes.maximum
+                - pressBenchRepAverageExtremes.minimum
+              : null;
+          const pressBenchCycleClosed = pressBenchBothShouldersAtTop
+            && pressBenchCycleAmplitudeDeg !== null
+            && (
+              (
+                pressBenchRepAverageExtremes.sawDescent
+                && pressBenchRepAverageExtremes.sawAscentAfterDescent
+              )
+              || pressBenchRepetitionCounted
+            );
           const pressBenchShoulderExtremesBySide = pressBenchSideShoulderAngles.map(
             ({ side, lado }) => {
               const extremes = pressBenchRepShoulderExtremesRef.current[side];
@@ -18142,11 +18216,41 @@ function Home() {
               };
             },
           );
+          const pressBenchSidesThatReachedBottom = pressBenchEvaluatedSides.filter((side) => {
+            const extremes = pressBenchRepShoulderExtremesRef.current[side];
+            return extremes !== undefined
+              && extremes.minimum <= pressBenchLowerThreshold;
+          });
           if (pressBenchRepetitionCounted) {
             exerciseRepUpdate.tracker = {
               ...exerciseRepUpdate.tracker,
               goodRepetitions: exerciseRepUpdate.tracker.repetitions,
             };
+          }
+          let pressBenchAttemptResult: 'correcta' | 'incorrecta' | 'ignorada' | null = null;
+          let pressBenchAttemptReason: string | null = null;
+          if (pressBenchCycleClosed) {
+            if (pressBenchRepetitionCounted) {
+              pressBenchAttemptResult = 'correcta';
+              pressBenchAttemptReason = 'cumplió umbrales';
+            } else if (
+              pressBenchCycleAmplitudeDeg !== null
+              && pressBenchCycleAmplitudeDeg < 25
+            ) {
+              pressBenchAttemptResult = 'ignorada';
+              pressBenchAttemptReason = 'amplitud insuficiente ignorada';
+            } else {
+              pressBenchAttemptResult = 'incorrecta';
+              pressBenchAttemptReason = pressBenchSidesThatReachedBottom.length === 0
+                ? 'no llegó abajo'
+                : 'un lado no cumple';
+              exerciseRepUpdate.tracker = {
+                ...exerciseRepUpdate.tracker,
+                repetitions: previousExerciseRepTracker.repetitions + 1,
+                goodRepetitions: previousExerciseRepTracker.goodRepetitions,
+                event: 'valid',
+              };
+            }
           }
           if (
             exerciseRepUpdate.tracker.phase !== previousExerciseRepTracker.phase
@@ -18179,12 +18283,32 @@ function Home() {
                 : null,
               modo: inputModeRef.current === 'video' ? 'video' : 'vivo',
             })}`);
-            if (pressBenchRepetitionCounted) {
-              pressBenchRepShoulderExtremesRef.current = {};
-              pressBenchSideShoulderAngles.forEach(({ side, angle }) => {
-                includePressBenchShoulderAngle(side, angle);
-              });
-            }
+          }
+          if (pressBenchCycleClosed) {
+            console.log(`[press-banca-intento] ${JSON.stringify({
+              resultado: pressBenchAttemptResult,
+              motivo: pressBenchAttemptReason,
+              ladosEvaluados: pressBenchDetectionDecisionRef.current?.ladosEvaluados ?? [],
+              hombroMinMaxPorLadoDeg: pressBenchShoulderExtremesBySide,
+              amplitudDeg: pressBenchCycleAmplitudeDeg === null
+                ? null
+                : Number(pressBenchCycleAmplitudeDeg.toFixed(2)),
+              umbralesHombroDeg: {
+                arriba: pressBenchUpperThreshold,
+                abajo: pressBenchLowerThreshold,
+              },
+              tVideoS: inputModeRef.current === 'video'
+                && Number.isFinite(video.currentTime)
+                ? Number(video.currentTime.toFixed(3))
+                : null,
+              correctas: exerciseRepUpdate.tracker.goodRepetitions,
+              incorrectas: Math.max(
+                0,
+                exerciseRepUpdate.tracker.repetitions
+                  - exerciseRepUpdate.tracker.goodRepetitions,
+              ),
+            })}`);
+            resetPressBenchRepTrackingAtTop();
           }
         }
         if (selectedExerciseForFrame === 'cruces-polea-baja-alta') {
