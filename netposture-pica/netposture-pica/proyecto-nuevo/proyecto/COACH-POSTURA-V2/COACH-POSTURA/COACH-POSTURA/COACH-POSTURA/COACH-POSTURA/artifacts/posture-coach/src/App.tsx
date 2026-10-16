@@ -25483,11 +25483,6 @@ function Home() {
                 <canvas ref={canvasRef} aria-hidden="true" />
                 {uploadedPushupSearchOverlay !== null && (
                   <div
-                    className={
-                      selectedExercise === 'press-banca'
-                        ? 'press-bench-preparation-overlay'
-                        : undefined
-                    }
                     role="status"
                     aria-live="polite"
                     aria-atomic="true"
@@ -25501,22 +25496,15 @@ function Home() {
                     }}
                     style={{
                       position: 'absolute',
-                      inset: selectedExercise === 'press-banca' ? 'auto' : 0,
-                      top: selectedExercise === 'press-banca' ? '50%' : undefined,
-                      left: selectedExercise === 'press-banca' ? '50%' : undefined,
+                      inset: 0,
                       zIndex: 5,
                       display: 'grid',
                       placeContent: 'center',
-                      justifyItems: selectedExercise === 'press-banca' ? 'center' : undefined,
-                      gap: selectedExercise === 'press-banca' ? undefined : '0.5rem',
-                      padding: selectedExercise === 'press-banca' ? undefined : '1rem',
-                      background: selectedExercise === 'press-banca'
-                        ? undefined
-                        : 'rgba(7, 13, 23, 0.58)',
-                      backdropFilter: selectedExercise === 'press-banca'
-                        ? undefined
-                        : 'blur(16px)',
-                      color: selectedExercise === 'press-banca' ? undefined : '#fff',
+                      gap: '0.5rem',
+                      padding: '1rem',
+                      background: 'rgba(7, 13, 23, 0.58)',
+                      backdropFilter: 'blur(16px)',
+                      color: '#fff',
                       textAlign: 'center',
                       pointerEvents: 'none',
                       opacity: uploadedPushupSearchOverlay.visible ? 1 : 0,
@@ -25624,26 +25612,28 @@ function Home() {
                   && (inputMode !== 'camera' || pressBenchValidSeconds > 0)
                   && (
                     <div
-                      className="pullup-preparation-overlay press-bench-preparation-overlay"
+                      className="pullup-preparation-overlay"
                       role="status"
                       aria-live="polite"
                       aria-atomic="true"
-                      style={{ pointerEvents: 'none' }}
                     >
                       <span>
                         {pressBenchPreparationStage === 'body-detection'
-                          ? inputMode === 'video'
-                            ? 'Detectando el cuerpo en el video...'
-                            : 'Buscando cuerpo…'
+                          ? 'Buscando cuerpo…'
                           : 'Cuerpo detectado. Preparando conteo…'}
                       </span>
                       <strong>
                         {pressBenchPreparationStage === 'body-detection'
-                          ? `Buscando cuerpo… ${pressBenchValidSeconds.toFixed(1)} / 5 s`
-                          : pressBenchPreparationCountdown !== null
-                            ? `Acomódate para empezar · ${pressBenchPreparationCountdown}`
-                            : 'Preparando el inicio del análisis'}
+                          ? `${pressBenchValidSeconds.toFixed(1)} / 5 s`
+                          : pressBenchPreparationCountdown ?? ''}
                       </strong>
+                      <small>
+                        {pressBenchPreparationStage === 'body-detection'
+                          ? 'Graba de frente o de lado: cuerpo completo, con brazos, muñecas y caderas visibles.'
+                          : pressBenchPreparationCountdown !== null
+                            ? 'Acomódate para empezar'
+                            : 'Preparando el inicio del análisis'}
+                      </small>
                     </div>
                   )}
                 {isCableCrossoverSelected
