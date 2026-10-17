@@ -1,0 +1,30 @@
+⚠️ REGLA PRINCIPAL, MÁS IMPORTANTE QUE EL CAMBIO MISMO ⚠️
+NO ALTERES NADA DE LO QUE YA FUNCIONA.
+
+Estos ejercicios ya están validados y deben quedar EXACTAMENTE IGUAL, sin una sola línea modificada en su comportamiento:
+- `dominadas` (Dominadas en barra)
+- `dominadas-comando`
+- Press de banca plano e inclinado, flexiones, sentadillas, fondos y TODOS los demás ejercicios.
+
+PROHIBIDO, sin excepciones:
+- Tocar la entrada de `dominadas`, la de `dominadas-comando` o la de cualquier otro ejercicio.
+- Modificar constantes, listas, mapas, funciones o tipos COMPARTIDOS por más de un ejercicio. Si `trackedJoints` o alguna lista de la supina apunta a una constante o a un arreglo que otro ejercicio también usa, NO lo edites: crea una copia propia solo para la supina.
+- Cambiar umbrales, tracker, ángulo, feedback, detector, filtros, muestreo o CSS.
+- Refactorizar, renombrar, mover, reformatear o "limpiar" código.
+
+Si en algún momento un cambio podría afectar a otro ejercicio, DETENTE y avísame antes de editar.
+
+OBJETIVO: `dominadas-supinas` debe seguir las mismas articulaciones que `dominadas`. Hoy la estándar incluye la cadera en `trackedJoints` (App.tsx:L1796–L1803) y la supina no (App.tsx:L1812–L1818). Esa lista alimenta `getCameraGuidance` (L6393–L6459), el preanálisis de video (L15279–L15283) y el diagnóstico derivado (L9083).
+
+CAMBIO MÍNIMO permitido: SOLO en la entrada de `dominadas-supinas`, agrega la cadera en `trackedJoints` con los mismos campos que usa la estándar, y lo estrictamente necesario asociado a ella (por ejemplo etiquetas o lecturas de cadera si la estándar las tiene). No cambies el nombre, la imagen, la descripción, la etiqueta de ángulo ni la nota de cámara de la supina.
+
+ANTES de editar, muéstrame las dos entradas lado a lado, dime la línea exacta que vas a agregar y confirma que esa línea vive solo dentro de la entrada de la supina y no en nada compartido.
+
+VERIFICACIÓN FINAL, obligatoria y con pruebas:
+a) Archivos y líneas cambiados, y el diff completo.
+b) Cuántas líneas cambiaste en total y confirma que TODAS están dentro de la entrada de `dominadas-supinas`. Si alguna está fuera, dime cuál y por qué.
+c) Confirma, citando líneas, que las entradas de `dominadas` y `dominadas-comando` no tienen ninguna modificación, y que ninguna constante o lista compartida cambió.
+d) Dime qué cambia para el supino al agregar la cadera (guía de cámara, preanálisis de video, HUD de diagnóstico) y qué comportamiento de la estándar y del resto queda idéntico.
+e) Confirma que no tocaste tracker, ángulo, detector, CSS ni muestreo.
+
+RECUERDA: si lo que ya funciona cambia aunque sea un poco, el cambio está mal.
