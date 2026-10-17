@@ -1813,6 +1813,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
       { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
     ],
     trackBothSides: true,
     trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas'],
