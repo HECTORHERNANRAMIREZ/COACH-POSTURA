@@ -11615,6 +11615,7 @@ function Home() {
   });
   const uploadedPikePushupLatestTechniqueReasonRef = useRef('sin medición');
   const uploadedPullupPreflightRef = useRef(false);
+  const uploadedPullupTransitionStartingRef = useRef(false);
   const uploadedPullupVideoEndedRef = useRef(false);
   const uploadedDipSearchActiveRef = useRef(false);
   const uploadedDipDetectionConfirmedRef = useRef(false);
@@ -12198,6 +12199,9 @@ function Home() {
   const pressBenchAnalysisTransitionPendingRef = useRef(false);
   const pressBenchAnalysisStartingRef = useRef(false);
   const uploadedPressBenchStartPlaybackRef = useRef<(() => Promise<void>) | null>(null);
+  const uploadedPullupStartPlaybackRef = useRef<
+    ((accumulatedMs: number) => Promise<void>) | null
+  >(null);
   const pressBenchDetectionTransitionTimerRef = useRef<number | null>(null);
   const crossoverDetectionLastSearchingLogAtRef = useRef<number | null>(null);
   const crossoverDetectionCompletedLoggedRef = useRef(false);
@@ -15303,7 +15307,10 @@ function Home() {
           invalidReasons.join('; ') || 'condición de búsqueda no satisfecha',
           selectedExerciseForFrame,
         );
-        if (pullupPreflightFrameReady) {
+        if (
+          pullupPreflightFrameReady
+          && accumulatedMs >= PULLUP_BODY_DETECTION_HOLD_MS
+        ) {
           uploadedPullupPreflightRef.current = false;
           uploadedPullupSearchPausedRef.current = false;
           uploadedPullupVideoEndedRef.current = false;
@@ -15312,9 +15319,6 @@ function Home() {
           uploadedPullupCalibrationRunBaseMsRef.current = 0;
           uploadedPullupCalibrationRunStartVideoTimeRef.current = null;
           uploadedPullupSearchGapRef.current = null;
-          setUploadedPullupPreflightActive(false);
-          setUploadedPullupSearchPaused(false);
-          hideUploadedPushupSearchOverlay(accumulatedMs);
           pullupCalibrationSuccessfulRef.current = true;
           pullupCalibrationReadySinceRef.current = null;
           updatePullupCalibrationStatus('ready');
@@ -15327,18 +15331,13 @@ function Home() {
           setPullupPhase('esperando abajo');
           setPullupMinimumAngle(null);
           setPullupFeedback(defaultTechniqueFeedback);
-          exerciseStartedRef.current = true;
-          setExerciseStarted(true);
-          updatePullupPreparationStage('active');
-          updatePullupPreparationCountdown(null);
-          video.playbackRate = UPLOADED_PULLUP_PLAYBACK_RATE;
-          video.controls = true;
-          setVideoExportStatus('Conteo en curso desde el cuadro actual del video.');
+          setVideoExportStatus('Cuerpo detectado. Preparando conteo desde el inicio del video…');
           console.log(
             `[dominadas-video] ejercicio=${selectedExerciseForFrame} t=${video.currentTime.toFixed(2)}s cuerpo detectado `
             + `segundosVálidos=${(accumulatedMs / 1000).toFixed(2)}/5.00 `
-            + `conteoDesde=${video.currentTime.toFixed(2)}s en vivo`,
+            + 'conteoDesde=0.00s tras pausa y retorno al inicio',
           );
+          void uploadedPullupStartPlaybackRef.current?.(accumulatedMs);
         }
       }
       if (
@@ -21133,6 +21132,127 @@ function Home() {
     updatePressBenchPreparationStage,
   ]);
   uploadedPressBenchStartPlaybackRef.current = startUploadedPressBenchPlayback;
+
+  const startUploadedPullupPlayback = useCallback(async (accumulatedMs: number) => {
+    const video = videoRef.current;
+    if (
+      !video
+      || inputModeRef.current !== 'video'
+      || !isStandardOrSupinePullup(selectedExerciseRef.current)
+      || uploadedPullupTransitionStartingRef.current
+    ) return;
+    uploadedPullupTransitionStartingRef.current = true;
+    try {
+      video.pause();
+      video.controls = true;
+      activeRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+      while (processingFrameRef.current) {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      }
+      if (
+        inputModeRef.current !== 'video'
+        || !isStandardOrSupinePullup(selectedExerciseRef.current)
+      ) return;
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, PRESS_BANCA_VIDEO_TRANSITION_DELAY_MS);
+      });
+      if (
+        inputModeRef.current !== 'video'
+        || !isStandardOrSupinePullup(selectedExerciseRef.current)
+      ) return;
+      if (Math.abs(video.currentTime) > 0.01) {
+        await new Promise<void>((resolve, reject) => {
+          let timeoutId = 0;
+          let settled = false;
+          const finishSeeking = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finishSeeking);
+            if (Math.abs(video.currentTime) > 0.01) {
+              reject(new Error('El video no llegó al inicio.'));
+              return;
+            }
+            resolve();
+          };
+          video.addEventListener('seeked', finishSeeking, { once: true });
+          timeoutId = window.setTimeout(finishSeeking, 1500);
+          try {
+            video.currentTime = 0;
+          } catch (error) {
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finishSeeking);
+            reject(error);
+          }
+        });
+      }
+      if (
+        inputModeRef.current !== 'video'
+        || !isStandardOrSupinePullup(selectedExerciseRef.current)
+        || Math.abs(video.currentTime) > 0.01
+      ) throw new Error('No se pudo confirmar el salto al inicio del video.');
+      poseFilterRef.current.reset();
+      poseFilterRef.current.setPersistentHold(false);
+      poseFilterRef.current.setTemporalJumpGuard(false);
+      sideConsistencyRef.current.reset();
+      boneConstraintRef.current.reset();
+      stabilityFramesRef.current = 0;
+      diagnosticBufferRef.current = [];
+      lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
+      setVideoTimeSeconds(video.currentTime);
+      updatePullupPreparationStage('active');
+      updatePullupPreparationCountdown(null);
+      setUploadedPullupPreflightActive(false);
+      setUploadedPullupSearchPaused(false);
+      hideUploadedPushupSearchOverlay(accumulatedMs);
+      setVideoExportStatus('Conteo en curso desde el inicio del video.');
+      video.playbackRate = UPLOADED_PULLUP_PLAYBACK_RATE;
+      await video.play();
+      if (
+        inputModeRef.current === 'video'
+        && isStandardOrSupinePullup(selectedExerciseRef.current)
+      ) {
+        uploadedPullupTransitionStartingRef.current = false;
+        exerciseStartedRef.current = true;
+        setExerciseStarted(true);
+        activeRef.current = true;
+        scheduleNextFrame();
+      }
+    } catch {
+      if (
+        inputModeRef.current === 'video'
+        && isStandardOrSupinePullup(selectedExerciseRef.current)
+      ) {
+        activeRef.current = false;
+        video.pause();
+        video.controls = true;
+        exerciseStartedRef.current = false;
+        setExerciseStarted(false);
+        setUploadedPullupPreflightActive(false);
+        hideUploadedPushupSearchOverlay(accumulatedMs);
+        setVideoExportStatus(
+          'No se pudo iniciar el análisis desde t=0. Pulsa Reproducir para reintentar.',
+        );
+      }
+    } finally {
+      uploadedPullupTransitionStartingRef.current = false;
+    }
+  }, [
+    hideUploadedPushupSearchOverlay,
+    scheduleNextFrame,
+    updatePullupPreparationCountdown,
+    updatePullupPreparationStage,
+  ]);
+  uploadedPullupStartPlaybackRef.current = startUploadedPullupPlayback;
 
   useEffect(() => {
     if (
