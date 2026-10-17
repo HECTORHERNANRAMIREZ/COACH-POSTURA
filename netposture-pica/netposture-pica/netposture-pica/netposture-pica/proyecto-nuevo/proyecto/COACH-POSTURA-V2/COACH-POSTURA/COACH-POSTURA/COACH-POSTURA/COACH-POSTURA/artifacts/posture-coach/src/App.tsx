@@ -412,6 +412,11 @@ const clerkAppearance = {
 const GREEN = '#39ff6a';
 
 type ExerciseId = 'fondos' | 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up' | 'jalon' | 'pull-over-polea-alta' | 'remo-barra' | 'remos-australianos-elevados' | 'remo-sentado-polea-agarre-cerrado' | 'remo-mancuerna-una-mano' | 'peso-muerto-rumano' | 'peso-muerto-piernas-rigidas' | 'flexiones' | 'flexiones-declinadas' | 'flexiones-pica' | 'press-militar' | 'press-hombros-maquina' | 'elevaciones-laterales' | 'elevaciones-laterales-polea-baja' | 'pajaros-mancuernas' | 'face-pulls-polea-alta' | 'aperturas-inversas-maquina' | 'cruces-polea-baja-alta' | 'press-banca' | 'press-banca-agarre-cerrado' | 'press-banca-inclinado' | 'press-plano-mancuernas' | 'press-plano-inclinado' | 'triceps-polea-alta' | 'triceps-tras-nuca-polea-alta' | 'copa-mancuernas' | 'extension-horizontal-barra' | 'curl-biceps' | 'curl-inclinado-mancuernas' | 'curl-predicador' | 'curl-arana' | 'curl-martillo' | 'curl-inverso-barra' | 'curl-muneca-sentado' | 'rodillo-muneca' | 'sentadillas' | 'prensa-piernas' | 'extensiones-maquina' | 'curl-femoral' | 'elevacion-talones-pie' | 'maquina-aductores' | 'hip-thrust-barra' | 'zancadas' | 'zancada-banco' | 'plancha' | 'crunch-invertido' | 'rueda-abdominal' | 'elevaciones-piernas-barra' | 'barra-reloj' | 'elevaciones-piernas-suelo' | 'press-pallof-polea-banda' | 'giros-rusos';
+const isStandardOrSupinePullup = (
+  exercise: ExerciseId | null | undefined,
+): exercise is 'dominadas' | 'dominadas-supinas' => (
+  exercise === 'dominadas' || exercise === 'dominadas-supinas'
+);
 function isPressBenchExercise(
   exercise: ExerciseId | null,
 ): exercise is 'press-banca' | 'press-banca-inclinado' {
@@ -11780,7 +11785,7 @@ function Home() {
       hideUploadedPushupSearchOverlay();
     }
     console.log(
-      `[dominadas-video] t=${videoTime.toFixed(2)}s reinicio de cuenta `
+      `[dominadas-video] ejercicio=${selectedExerciseRef.current} t=${videoTime.toFixed(2)}s reinicio de cuenta `
       + `motivo=${reason} segundosVálidosAntes=${(accumulatedBeforeReset / 1000).toFixed(2)} `
       + 'segundosVálidosDespués=0.00',
     );
@@ -11793,6 +11798,7 @@ function Home() {
     videoTime: number,
     frameReady: boolean,
     invalidReason: string,
+    exercise: 'dominadas' | 'dominadas-supinas',
   ) => {
     let runStartVideoTime = uploadedPullupCalibrationRunStartVideoTimeRef.current;
     const activeSearchGap = uploadedPullupSearchGapRef.current;
@@ -11814,7 +11820,7 @@ function Home() {
       updateUploadedPushupSearchOverlayProgress(videoTime, 0);
       // TEMP-DIAGNOSTICO: añade la línea existente de rep al log descargable.
       logUploadedDipDiagnostic(
-        `[dominadas-video] t=${videoTime.toFixed(2)}s reinicio de cuenta `
+        `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s reinicio de cuenta `
         + `motivo=seek segundosVálidosAntes=${(accumulatedBeforeSeek / 1000).toFixed(2)} `
         + 'segundosVálidosDespués=0.00',
       );
@@ -11836,7 +11842,7 @@ function Home() {
             uploadedPullupCalibrationRunStartVideoTimeRef.current = null;
             closedSearchGap.reset = true;
             console.log(
-              `[dominadas-video] t=${videoTime.toFixed(2)}s reinicio de cuenta `
+              `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s reinicio de cuenta `
               + `motivo=hueco continuo > ${UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s `
               + `sin cuadro válido (${closedSearchGap.invalidReason}) `
               + `duraciónHueco=${gapDurationSeconds.toFixed(2)}s `
@@ -11846,7 +11852,7 @@ function Home() {
           }
         } else if (!closedSearchGap.reset) {
           console.log(
-            `[dominadas-video] t=${videoTime.toFixed(2)}s hueco tolerado `
+            `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s hueco tolerado `
             + `duración=${gapDurationSeconds.toFixed(2)}s `
             + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
             + `motivo=${closedSearchGap.invalidReason}`,
@@ -11897,7 +11903,7 @@ function Home() {
         uploadedPushupSearchOverlayLastProgressSecondRef.current = null;
         updateUploadedPushupSearchOverlayProgress(videoTime, 0);
         console.log(
-          `[dominadas-video] t=${videoTime.toFixed(2)}s reinicio de cuenta `
+          `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s reinicio de cuenta `
           + `motivo=hueco continuo > ${UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS.toFixed(2)}s `
           + `sin cuadro válido (${currentSearchGap.invalidReason}) `
           + `duraciónHueco=${gapDurationSeconds.toFixed(2)}s `
@@ -11916,7 +11922,7 @@ function Home() {
       uploadedPullupSearchLastLoggedSecondRef.current = videoSecond;
       // TEMP-DIAGNOSTICO: conserva puntuaciones y bloqueos de la ventana reciente.
       logUploadedDipDiagnostic(
-        `[dominadas-video] t=${videoTime.toFixed(2)}s búsqueda `
+        `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s búsqueda `
         + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
         + `cuadroVálido=${frameReady} motivo=${frameReady ? '—' : invalidReason}`,
       );
@@ -13439,7 +13445,7 @@ function Home() {
       ].slice(-FPS_WINDOW_FRAMES);
       const poses = detectedResult ? [detectedResult] : [];
       const selectedExerciseForFrame = selectedExerciseRef.current ?? 'fondos';
-      const pullupSessionActive = selectedExerciseForFrame === 'dominadas'
+      const pullupSessionActive = isStandardOrSupinePullup(selectedExerciseForFrame)
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current;
       const pushupTrackingLocked = selectedExerciseForFrame === 'flexiones'
@@ -13781,7 +13787,7 @@ function Home() {
         && uploadedPikePushupPreflightStageRef.current === 'counting';
       const uploadedPikePushupVideoTrackerFrame = inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'flexiones-pica';
-      const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
+      const pullupTrackingIsAnchored = isStandardOrSupinePullup(selectedExerciseForFrame)
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current
         && !pullupSessionFinishedRef.current;
@@ -13865,7 +13871,7 @@ function Home() {
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
       const nextFaceDetected = hasFaceDetected(pose?.keypoints);
-      const pullupCalibrationLocked = selectedExerciseForFrame === 'dominadas'
+      const pullupCalibrationLocked = isStandardOrSupinePullup(selectedExerciseForFrame)
         && pullupCalibrationSuccessfulRef.current;
       const pushupCalibrationLocked = selectedExerciseForFrame === 'flexiones'
         && pushupCalibrationSuccessfulRef.current;
@@ -14077,7 +14083,7 @@ function Home() {
             ? effectiveFrameCameraReady && effectiveFrameDetectionStable
             : frameCameraReady;
       if (
-        selectedExerciseForFrame === 'dominadas'
+        isStandardOrSupinePullup(selectedExerciseForFrame)
         && !pullupCalibrationSuccessfulRef.current
         && !exerciseStartedRef.current
         && !(inputModeRef.current === 'video' && uploadedPullupPreflightRef.current)
@@ -15255,7 +15261,7 @@ function Home() {
       }
       if (
         inputModeRef.current === 'video'
-        && selectedExerciseForFrame === 'dominadas'
+        && isStandardOrSupinePullup(selectedExerciseForFrame)
         && uploadedPullupPreflightRef.current
       ) {
         const pullupArmPoints = (['left', 'right'] as PoseSide[]).flatMap((side) => {
@@ -15294,6 +15300,7 @@ function Home() {
           video.currentTime,
           pullupPreflightFrameReady,
           invalidReasons.join('; ') || 'condición de búsqueda no satisfecha',
+          selectedExerciseForFrame,
         );
         if (pullupPreflightFrameReady) {
           uploadedPullupPreflightRef.current = false;
@@ -15327,7 +15334,7 @@ function Home() {
           video.controls = true;
           setVideoExportStatus('Conteo en curso desde el cuadro actual del video.');
           console.log(
-            `[dominadas-video] t=${video.currentTime.toFixed(2)}s cuerpo detectado `
+            `[dominadas-video] ejercicio=${selectedExerciseForFrame} t=${video.currentTime.toFixed(2)}s cuerpo detectado `
             + `segundosVálidos=${(accumulatedMs / 1000).toFixed(2)}/5.00 `
             + `conteoDesde=${video.currentTime.toFixed(2)}s en vivo`,
           );
@@ -15409,7 +15416,7 @@ function Home() {
         }
       }
       if (
-        selectedExerciseForFrame === 'dominadas'
+        isStandardOrSupinePullup(selectedExerciseForFrame)
         && pullupCalibrationSuccessfulRef.current
         && !exerciseStartedRef.current
         && pullupPreparationStageRef.current === 'bar-preparation'
@@ -16261,11 +16268,12 @@ function Home() {
         pullupTrackerRef.current = pullupUpdate.tracker;
         if (
           inputModeRef.current === 'video'
-          && selectedExerciseRef.current === 'dominadas'
+          && isStandardOrSupinePullup(selectedExerciseRef.current)
           && pullupUpdate.tracker.phase !== phaseBeforeUpdate
         ) {
           console.log(
             `[pullup-event] video=${video.currentTime.toFixed(3)}s `
+            + `ejercicio=${selectedExerciseRef.current} `
             + `faseAnterior=${phaseBeforeUpdate} faseNueva=${pullupUpdate.tracker.phase} `
             + `ánguloMedioCodos=${pullupUpdate.smoothedAngle}° `
             + `cabezaSobreMuñecas=${pullupTopReached} `
@@ -20539,7 +20547,7 @@ function Home() {
         }
         if (
           inputModeRef.current === 'video'
-          && selectedExerciseRef.current === 'dominadas'
+          && isStandardOrSupinePullup(selectedExerciseRef.current)
           && uploadedPullupPreflightRef.current
         ) {
           resetUploadedPullupSearch('error de procesamiento', {
@@ -20614,7 +20622,7 @@ function Home() {
       && selectedExerciseRef.current === 'flexiones'
       && !canInspectPausedPushupVideo;
     const isUploadedPullupPlayback = inputModeRef.current === 'video'
-      && selectedExerciseRef.current === 'dominadas'
+      && isStandardOrSupinePullup(selectedExerciseRef.current)
       && !uploadedPullupPreflightRef.current;
     // TEMP-DIAGNOSTICO: limita los contadores a fondos subidos, sin tocar el scheduler.
     const isUploadedDipPlayback = inputModeRef.current === 'video'
@@ -22097,7 +22105,7 @@ function Home() {
     }
     applyUploadedDipPlaybackRate(video);
     if (
-      selectedExerciseRef.current === 'dominadas'
+      isStandardOrSupinePullup(selectedExerciseRef.current)
       && uploadedPullupPreflightRef.current
     ) {
       uploadedPullupSearchPausedRef.current = false;
@@ -22189,7 +22197,7 @@ function Home() {
     }
     if (
       inputModeRef.current !== 'video'
-      || selectedExerciseRef.current !== 'dominadas'
+      || !isStandardOrSupinePullup(selectedExerciseRef.current)
       || !uploadedPullupPreflightRef.current
       || uploadedPushupTransitionPauseRef.current
       || video?.ended
@@ -22299,7 +22307,9 @@ function Home() {
     const isUploadedDeclinedPushupVideo = Boolean(
       videoFile && activeExercise === 'flexiones-declinadas',
     );
-    const isUploadedPullupVideo = Boolean(videoFile && activeExercise === 'dominadas');
+    const isUploadedPullupVideo = Boolean(
+      videoFile && isStandardOrSupinePullup(activeExercise),
+    );
     const isUploadedDipVideo = Boolean(videoFile && activeExercise === 'fondos');
     const isUploadedSquatVideo = Boolean(videoFile && activeExercise === 'sentadillas');
     const isUploadedCrossoverVideo = Boolean(
@@ -22449,7 +22459,7 @@ function Home() {
     // preparación de cámara en vivo. Las flexiones conservan su calibración.
     const shouldStartUploadedExercise = Boolean(videoFile)
       && activeExercise !== 'flexiones'
-      && activeExercise !== 'dominadas'
+      && !isStandardOrSupinePullup(activeExercise)
       && activeExercise !== 'sentadillas';
     const shouldStartExercise = videoFile
       ? shouldStartUploadedExercise
@@ -22489,7 +22499,7 @@ function Home() {
     pullupSessionFinishedRef.current = false;
     pullupDetachFramesRef.current = 0;
     setPullupSessionFinished(false);
-    if (!(activeExercise === 'dominadas' && preserveExerciseStarted)) {
+    if (!(isStandardOrSupinePullup(activeExercise) && preserveExerciseStarted)) {
       pullupCalibrationSuccessfulRef.current = false;
       pullupCalibrationReadySinceRef.current = null;
       updatePullupCalibrationStatus('pending');
@@ -22817,7 +22827,7 @@ function Home() {
         }
         if (isUploadedPullupVideo) {
           console.log(
-            `[dominadas-video] t=${video.currentTime.toFixed(2)}s subida `
+            `[dominadas-video] ejercicio=${activeExercise} t=${video.currentTime.toFixed(2)}s subida `
             + `nombre=${JSON.stringify(videoFile.name)} `
             + `duración=${Number.isFinite(video.duration) ? video.duration.toFixed(2) : 'no disponible'}s `
             + `velocidadInicial=${video.playbackRate.toFixed(2)}x `
@@ -22827,7 +22837,7 @@ function Home() {
             + 'detección=false videoTerminado=false',
           );
           console.log(
-            `[dominadas-video] t=${video.currentTime.toFixed(2)}s reinicio de cuenta `
+            `[dominadas-video] ejercicio=${activeExercise} t=${video.currentTime.toFixed(2)}s reinicio de cuenta `
             + `motivo=subida de nuevo video `
             + `segundosVálidosAntes=${(uploadedPullupValidMsBeforeReset / 1000).toFixed(2)} `
             + 'segundosVálidosDespués=0.00',
@@ -23102,7 +23112,7 @@ function Home() {
             'detener',
           );
         }
-        if (selectedExerciseRef.current === 'dominadas') {
+        if (isStandardOrSupinePullup(selectedExerciseRef.current)) {
           activeRef.current = false;
         }
         if (
@@ -23129,7 +23139,7 @@ function Home() {
       pullupDetachFramesRef.current = 0;
       setPullupSessionFinished(false);
       poseFilterRef.current.setPersistentHold(false);
-      if (selectedExerciseRef.current === 'dominadas') {
+      if (isStandardOrSupinePullup(selectedExerciseRef.current)) {
         if (inputModeRef.current === 'video') {
           resetUploadedPullupSearch('detener', {
             keepPreflight: true,
@@ -23247,7 +23257,7 @@ function Home() {
       }
 
       if (
-        selectedExerciseRef.current === 'dominadas'
+        isStandardOrSupinePullup(selectedExerciseRef.current)
         && uploadedPullupPreflightRef.current
       ) {
         if (uploadedPullupSearchPausedRef.current || video.paused) {
@@ -23359,7 +23369,7 @@ function Home() {
     ) return;
 
     if (
-      selectedExerciseRef.current === 'dominadas'
+      isStandardOrSupinePullup(selectedExerciseRef.current)
       || selectedExerciseRef.current === 'flexiones'
     ) return;
 
@@ -23535,7 +23545,7 @@ function Home() {
     );
     const isUploadedStandardPullup = (
       inputModeRef.current === 'video'
-      && selectedExerciseRef.current === 'dominadas'
+      && isStandardOrSupinePullup(selectedExerciseRef.current)
     );
     // TEMP-DIAGNOSTICO: finaliza la búsqueda o el conteo solo en sentadillas subidas.
     const isUploadedSquatVideo = (
@@ -24184,7 +24194,7 @@ function Home() {
     || selectedExercise === 'dominadas-comando';
   const canExportDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED && phase === 'tracking';
   const canExportPullupDiagnostics = canExportDiagnostics && isPullupExerciseSelected;
-  const isStandardPullupSelected = selectedExercise === 'dominadas';
+  const isStandardPullupSelected = isStandardOrSupinePullup(selectedExercise);
   const isStandardPushupSelected = selectedExercise === 'flexiones';
   const isCableCrossoverSelected = selectedExercise === 'cruces-polea-baja-alta';
   const isLiveSquatSelected = inputMode === 'camera' && selectedExercise === 'sentadillas';
@@ -25434,7 +25444,7 @@ function Home() {
                   controls={
                     inputMode === 'video'
                     && !(
-                      selectedExercise === 'dominadas'
+                      isStandardOrSupinePullup(selectedExercise)
                       && uploadedPullupPreflightActive
                     )
                     && (
@@ -25783,7 +25793,7 @@ function Home() {
                       )
                       || (
                         inputMode === 'video'
-                        && selectedExercise === 'dominadas'
+                        && isStandardOrSupinePullup(selectedExercise)
                         && uploadedPullupPreflightActive
                         && !uploadedPullupSearchPaused
                       )
@@ -25806,7 +25816,7 @@ function Home() {
                             ? crossoverPreparationCountdown !== null
                               ? `Acomódate para empezar · ${crossoverPreparationCountdown}`
                               : 'Acomódate para empezar'
-                          : selectedExercise === 'dominadas'
+                          : isStandardOrSupinePullup(selectedExercise)
                             && uploadedPullupPreflightActive
                             ? uploadedPullupSearchPaused
                               ? 'Reanudar búsqueda'
