@@ -2582,7 +2582,7 @@ const exercises: ExerciseDefinition[] = [
       { joint: 'knee', label: 'rodilla' },
       { joint: 'ankle', label: 'tobillo' },
     ],
-    trackedAngleLabels: ['Rodilla: inicio ≥140°, regreso >115°, fondo 83–90°'],
+    trackedAngleLabels: ['Rodilla: arriba/de pie ≥135°, profundidad correcta ≤95° (más profundo también válido), regreso arriba ≥135°'],
   },
   {
     id: 'prensa-piernas',
@@ -4788,9 +4788,9 @@ function getExerciseConditionRows(exercise: ExerciseId | null): string[] {
   switch (exercise) {
     case 'sentadillas':
       return [
-        `Inicio arriba: ≥${SQUAT_TOP_THRESHOLD}°`,
-        `Profundidad válida: ${SQUAT_VALID_MIN_ANGLE}–${SQUAT_VALID_MAX_ANGLE}°`,
-        `Regreso arriba: >${SQUAT_RISE_THRESHOLD}°`,
+        'Posición arriba/de pie: rodilla ≥135°',
+        'Profundidad correcta: rodilla ≤95° (más profundo también válido)',
+        'Regreso arriba para completar: rodilla ≥135°',
       ];
     case 'prensa-piernas':
       return [
@@ -10025,7 +10025,7 @@ function calculateLiveAngleReadings(
           empty('Muñeca der.', `Inicio ${WRIST_CURL_START_MIN_ANGLE}–${WRIST_CURL_START_MAX_ANGLE}° · final ${WRIST_CURL_END_MIN_ANGLE}–${WRIST_CURL_END_MAX_ANGLE}°`),
         ];
       case 'sentadillas':
-        return [empty('Rodilla', 'Inicio ≥140° · regreso >115° · fondo 83–90°')];
+        return [empty('Rodilla', 'Arriba/de pie ≥135° · profundidad ≤95° (más profundo también válido) · regreso ≥135°')];
       case 'prensa-piernas':
       case 'extensiones-maquina':
       case 'curl-femoral':
@@ -10411,7 +10411,7 @@ function calculateLiveAngleReadings(
       return [createLiveAngleReading(
         'Rodilla',
         calculateSquatAngle(keypoints),
-        'Inicio ≥140° · regreso >115° · fondo 83–90°',
+        'Arriba/de pie ≥135° · profundidad ≤95° (más profundo también válido) · regreso ≥135°',
         SQUAT_VALID_MIN_ANGLE,
         SQUAT_VALID_MAX_ANGLE,
       )];
@@ -16314,20 +16314,20 @@ function Home() {
           setSquatFeedback({
             tone: 'success',
             message: `Repetición ${squatUpdate.tracker.repetitions}: BIEN ✓`,
-            detail: `Ángulo mínimo ${squatUpdate.completedMinimumAngle}°; la profundidad es suficiente hasta ${SQUAT_VALID_MAX_ANGLE + TOLERANCIA_GRADOS}° o más abajo.`,
+            detail: `Ángulo mínimo ${squatUpdate.completedMinimumAngle}°; profundidad correcta con rodilla ≤${SQUAT_VALID_MAX_ANGLE + TOLERANCIA_GRADOS}° (más profundo también válido); regreso arriba ≥135°.`,
           });
         } else if (squatUpdate.tracker.event === 'too-shallow') {
           setSquatFeedback({
             tone: 'warning',
-            message: `Repetición ${squatUpdate.tracker.repetitions}: MAL · muy arriba`,
-            detail: `Solo llegó a ${squatUpdate.completedMinimumAngle}°. Baja hasta 83–90°.`,
+            message: `Repetición ${squatUpdate.tracker.repetitions}: MAL · profundidad insuficiente`,
+            detail: `Solo llegó a ${squatUpdate.completedMinimumAngle}°. Se requiere rodilla ≤95°; más profundo también es válido.`,
           });
         } else if (squatUpdate.smoothedAngle >= SQUAT_VALID_MIN_ANGLE
           && squatUpdate.smoothedAngle <= SQUAT_VALID_MAX_ANGLE) {
           setSquatFeedback({
             tone: 'success',
-            message: 'Rango válido',
-            detail: 'Mantén el control y vuelve a subir para completar la repetición.',
+            message: 'Profundidad válida',
+            detail: 'La regla acepta una rodilla ≤95°; más profundo también es válido. Vuelve a subir hasta ≥135° para completar la repetición.',
           });
         }
         if (
@@ -25293,7 +25293,7 @@ function Home() {
                     <span>Total evaluadas</span>
                     <strong>{squatRepetitions}</strong>
                   </div>
-                  <p>Rango objetivo 83–90° · ángulo compensado para la posición de la cámara.</p>
+                  <p>Rodilla en 3D: arriba/de pie y regreso ≥135° · profundidad correcta ≤95° (más profundo también válido).</p>
                 </div>
               )}
               {(selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas') && (
