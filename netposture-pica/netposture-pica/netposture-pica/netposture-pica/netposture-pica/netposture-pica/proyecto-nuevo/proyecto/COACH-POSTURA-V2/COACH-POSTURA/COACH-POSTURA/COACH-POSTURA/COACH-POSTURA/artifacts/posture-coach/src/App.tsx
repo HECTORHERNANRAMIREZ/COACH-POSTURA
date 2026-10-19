@@ -12342,6 +12342,7 @@ function Home() {
     blockingReasonSignature: string;
     lastLogAt: number;
   } | null>(null);
+  const muscleUpTraceLastLogAtRef = useRef<number | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
   const sideConsistencyRef = useRef(createSideConsistencyFilter());
@@ -16321,6 +16322,106 @@ function Home() {
       setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
       setMuscleUpAngles(displayMuscleUpAngles);
+      if (
+        selectedExerciseForFrame === 'muscle-up'
+        && inputModeRef.current === 'video'
+      ) {
+        const muscleUpTraceVideoTime = diagnosticVideoTime ?? video.currentTime;
+        const muscleUpTraceDuration = video.duration;
+        if (
+          Number.isFinite(muscleUpTraceVideoTime)
+          && Number.isFinite(muscleUpTraceDuration)
+          && muscleUpTraceDuration > 0
+          && muscleUpTraceVideoTime >= Math.max(0, muscleUpTraceDuration - 3)
+          && now - (muscleUpTraceLastLogAtRef.current ?? Number.NEGATIVE_INFINITY) >= 150
+        ) {
+          const readY = (index: number): number | null => {
+            const value = pose?.keypoints?.[index]?.y;
+            return typeof value === 'number' && Number.isFinite(value) ? value : null;
+          };
+          const readConfidence = (index: number): number | null => {
+            const value = pose?.keypoints?.[index]?.score;
+            return typeof value === 'number' && Number.isFinite(value) ? value : null;
+          };
+          const leftKeypoints = sideKeypoints.left;
+          const rightKeypoints = sideKeypoints.right;
+          const verticalHipWristDistance = (side: PoseSide): number | null => {
+            const indexes = sideKeypoints[side];
+            const hipY = readY(indexes.hip);
+            const wristY = readY(indexes.wrist);
+            return hipY === null || wristY === null ? null : Math.abs(hipY - wristY);
+          };
+          console.log(`[muscleup-trace] ${JSON.stringify({
+            videoTimeSeconds: muscleUpTraceVideoTime,
+            poseDetected: visiblePoints >= 5,
+            hasFreshPose,
+            view: {
+              estimatedView: nextViewAlignment.estimatedView,
+              status: nextViewAlignment.status,
+            },
+            angles: {
+              elbows: {
+                left: muscleUpAnglesForFrame.leftElbow,
+                right: muscleUpAnglesForFrame.rightElbow,
+              },
+              knees: {
+                left: muscleUpAnglesForFrame.leftKnee,
+                right: muscleUpAnglesForFrame.rightKnee,
+              },
+              ankles: {
+                left: muscleUpAnglesForFrame.leftAnkle,
+                right: muscleUpAnglesForFrame.rightAnkle,
+              },
+            },
+            coordinatesY: {
+              nose: readY(0),
+              shoulders: {
+                left: readY(leftKeypoints.shoulder),
+                right: readY(rightKeypoints.shoulder),
+              },
+              hips: {
+                left: readY(leftKeypoints.hip),
+                right: readY(rightKeypoints.hip),
+              },
+              wrists: {
+                left: readY(leftKeypoints.wrist),
+                right: readY(rightKeypoints.wrist),
+              },
+              knees: {
+                left: readY(leftKeypoints.knee),
+                right: readY(rightKeypoints.knee),
+              },
+              ankles: {
+                left: readY(leftKeypoints.ankle),
+                right: readY(rightKeypoints.ankle),
+              },
+            },
+            confidence: {
+              shoulders: {
+                left: readConfidence(leftKeypoints.shoulder),
+                right: readConfidence(rightKeypoints.shoulder),
+              },
+              elbows: {
+                left: readConfidence(leftKeypoints.elbow),
+                right: readConfidence(rightKeypoints.elbow),
+              },
+              wrists: {
+                left: readConfidence(leftKeypoints.wrist),
+                right: readConfidence(rightKeypoints.wrist),
+              },
+              hips: {
+                left: readConfidence(leftKeypoints.hip),
+                right: readConfidence(rightKeypoints.hip),
+              },
+            },
+            verticalHipWristDistanceY: {
+              left: verticalHipWristDistance('left'),
+              right: verticalHipWristDistance('right'),
+            },
+          })}`);
+          muscleUpTraceLastLogAtRef.current = now;
+        }
+      }
       let nextAngle = frameMeasurementBlocked ? null : rawAngle;
       const pullupExtremityReadings = isPullupExercise
         && !pullupMeasurementBlocked
