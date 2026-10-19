@@ -595,6 +595,7 @@ type UploadedSquatDiagnosticState = {
 type PullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
 type PullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
 type PullupPreparationStage = 'body-detection' | 'bar-preparation' | 'active';
+type MuscleUpPullupPreparationStage = 'body-detection' | 'bar-preparation' | 'active';
 type SquatLivePreparationStage = 'idle' | 'body-detection' | 'accommodate' | 'active';
 type PushupPreparationStage = 'body-detection' | 'pushup-preparation' | 'active';
 type CrossoverPreparationStage = 'idle' | 'body-detection' | 'pushup-preparation' | 'active';
@@ -3605,6 +3606,15 @@ const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
     noDepthReason: 'sin profundidad',
     countOnReturn: true,
   },
+  'muscle-up': {
+    direction: 'decrease',
+    startMinAngle: STANDARD_PULLUP_TRACKER_CONFIG.bottomMinAngle,
+    startMaxAngle: STANDARD_PULLUP_TRACKER_CONFIG.bottomMaxAngle,
+    activationAngle: STANDARD_PULLUP_TRACKER_CONFIG.pullActivationAngle,
+    endMinAngle: STANDARD_PULLUP_TRACKER_CONFIG.topElbowMinAngle,
+    endMaxAngle: STANDARD_PULLUP_TRACKER_CONFIG.topElbowMaxAngle,
+    endLabel: `codo entre ${STANDARD_PULLUP_TRACKER_CONFIG.topElbowMinAngle}–${STANDARD_PULLUP_TRACKER_CONFIG.topElbowMaxAngle}°`,
+  },
   jalon: {
     direction: 'decrease',
     startMinAngle: 130,
@@ -5485,6 +5495,29 @@ function logPullupVerdict(
     + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
     + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
     + `motivo=${verdict.reason}`,
+  );
+}
+
+function logMuscleUpPullupVerdict(verdict: MuscleUpPullupRepVerdict) {
+  console.log(
+    `[pullup-veredicto] ejercicio=muscle-up `
+    + `repeticion=${verdict.repetition} `
+    + `cabezaSobreMuñecas=${verdict.headOverWrists ? 'sí' : 'no'} `
+    + `cuadrosCabezaEvaluados=${verdict.headFramesEvaluated} `
+    + `cuadrosCabezaSi=${verdict.headFramesYes} `
+    + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
+    + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
+    + `motivo=${verdict.reason}`,
+  );
+}
+
+function logMuscleUpPullupFinish(tracker: MuscleUpPullupTracker) {
+  console.log(
+    `[fin] ejercicio=muscle-up fase=${tracker.phase}`
+    + ` | total=${tracker.repetitions}`
+    + ` | correctas=${tracker.goodRepetitions}`
+    + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
+    + ` | pendientes=${tracker.pendingRepHeadOverWrists === null ? 0 : 1}`,
   );
 }
 
@@ -9439,6 +9472,9 @@ function calculateRepetitionAngle(
       ? null
       : Math.max(leftShoulderAngle, rightShoulderAngle);
   }
+  if (exercise === 'muscle-up') {
+    return calculateMuscleUpPullupElbowAngles(keypoints).averagedRawAngle;
+  }
   if (!keypoints || !side) return null;
   const indexes = sideKeypoints[side];
 
@@ -12798,6 +12834,8 @@ function Home() {
   const exerciseStartedRef = useRef(false);
   const [exerciseStarted, setExerciseStarted] = useState(false);
   const [pullupCalibrationStatus, setPullupCalibrationStatus] = useState<PullupCalibrationStatus>('pending');
+  const [muscleUpCalibrationStatus, setMuscleUpCalibrationStatus] =
+    useState<PullupCalibrationStatus>('pending');
   const [poseDetected, setPoseDetected] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [detectionStable, setDetectionStable] = useState(false);
@@ -12813,6 +12851,10 @@ function Home() {
     useState<number | null>(null);
   const [pullupPreparationStage, setPullupPreparationStage] = useState<PullupPreparationStage>('body-detection');
   const [pullupPreparationCountdown, setPullupPreparationCountdown] = useState<number | null>(null);
+  const [muscleUpPreparationStage, setMuscleUpPreparationStage] =
+    useState<MuscleUpPullupPreparationStage>('body-detection');
+  const [muscleUpPreparationCountdown, setMuscleUpPreparationCountdown] =
+    useState<number | null>(null);
   const [pushupCalibrationStatus, setPushupCalibrationStatus] = useState<PullupCalibrationStatus>('pending');
   const [pushupPreparationStage, setPushupPreparationStage] = useState<PushupPreparationStage>('body-detection');
   const [pushupPreparationCountdown, setPushupPreparationCountdown] = useState<number | null>(null);
@@ -12884,6 +12926,16 @@ function Home() {
   const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
   const [pullupFeedback, setPullupFeedback] = useState<TechniqueFeedback>(defaultTechniqueFeedback);
   const [pullupSessionFinished, setPullupSessionFinished] = useState(false);
+  const [muscleUpPullupSessionFinished, setMuscleUpPullupSessionFinished] = useState(false);
+  const [muscleUpPullupRepetitions, setMuscleUpPullupRepetitions] = useState(0);
+  const [muscleUpPullupGoodRepetitions, setMuscleUpPullupGoodRepetitions] = useState(0);
+  const [muscleUpPullupPendingRepetitions, setMuscleUpPullupPendingRepetitions] = useState(0);
+  const [muscleUpPullupPhase, setMuscleUpPullupPhase] =
+    useState<MuscleUpPullupPhase>('esperando abajo');
+  const [muscleUpPullupMinimumAngle, setMuscleUpPullupMinimumAngle] =
+    useState<number | null>(null);
+  const [muscleUpPullupFeedback, setMuscleUpPullupFeedback] =
+    useState<TechniqueFeedback>(muscleUpReferenceFeedback);
   const [exerciseRepetitions, setExerciseRepetitions] = useState(0);
   const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
@@ -12964,8 +13016,15 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const muscleUpPullupTrackerRef = useRef<MuscleUpPullupTracker>(
+    createMuscleUpPullupTracker(),
+  );
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
+  const muscleUpPullupSessionFinishedRef = useRef(false);
+  const muscleUpPullupDetachFramesRef = useRef(0);
+  const muscleUpPullupFinLoggedRef = useRef(false);
+  const muscleUpPullupPreviousPhaseRef = useRef<MuscleUpPullupPhase | null>(null);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
   // TEMP-DIAGNOSTICO: datos de observación aislados del tracker compartido.
   const uploadedDeclinedPushupDiagnosticsRef = useRef<DeclinedPushupVideoDiagnosticState>(
@@ -12988,6 +13047,12 @@ function Home() {
     wasCorrect: boolean;
   } | null>(null);
   const pullupCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
+  const muscleUpCalibrationStatusRef = useRef<PullupCalibrationStatus>('pending');
+  const muscleUpCalibrationReadySinceRef = useRef<number | null>(null);
+  const muscleUpCalibrationSuccessfulRef = useRef(false);
+  const muscleUpPreparationStageRef = useRef<MuscleUpPullupPreparationStage>('body-detection');
+  const muscleUpPreparationStartedAtRef = useRef<number | null>(null);
+  const muscleUpPreparationCountdownRef = useRef<number | null>(null);
   const pullupCalibrationReadySinceRef = useRef<number | null>(null);
   const pullupCalibrationSuccessfulRef = useRef(false);
   const pullupPreparationStageRef = useRef<PullupPreparationStage>('body-detection');
@@ -13089,6 +13154,24 @@ function Home() {
     if (pullupCalibrationStatusRef.current === status) return;
     pullupCalibrationStatusRef.current = status;
     setPullupCalibrationStatus(status);
+  }, []);
+
+  const updateMuscleUpCalibrationStatus = useCallback((status: PullupCalibrationStatus) => {
+    if (muscleUpCalibrationStatusRef.current === status) return;
+    muscleUpCalibrationStatusRef.current = status;
+    setMuscleUpCalibrationStatus(status);
+  }, []);
+
+  const updateMuscleUpPreparationStage = useCallback((stage: MuscleUpPullupPreparationStage) => {
+    if (muscleUpPreparationStageRef.current === stage) return;
+    muscleUpPreparationStageRef.current = stage;
+    setMuscleUpPreparationStage(stage);
+  }, []);
+
+  const updateMuscleUpPreparationCountdown = useCallback((seconds: number | null) => {
+    if (muscleUpPreparationCountdownRef.current === seconds) return;
+    muscleUpPreparationCountdownRef.current = seconds;
+    setMuscleUpPreparationCountdown(seconds);
   }, []);
 
   const updatePullupPreparationStage = useCallback((stage: PullupPreparationStage) => {
@@ -14320,6 +14403,9 @@ function Home() {
       )
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current;
+      const muscleUpPullupSessionActive = selectedExerciseForFrame === 'muscle-up'
+        && exerciseStartedRef.current
+        && muscleUpCalibrationSuccessfulRef.current;
       const pushupTrackingLocked = selectedExerciseForFrame === 'flexiones'
         && pushupCalibrationSuccessfulRef.current
         && (
@@ -14327,7 +14413,7 @@ function Home() {
           || uploadedPushupPostSeekFilterStageRef.current === null
         );
       poseFilterRef.current.setPersistentHold(
-        pullupSessionActive || pushupTrackingLocked,
+        pullupSessionActive || muscleUpPullupSessionActive || pushupTrackingLocked,
         selectedExerciseForFrame === 'flexiones'
           ? PUSHUP_PERSISTENT_HOLD_MAX_FRAMES
           : MAX_HELD_FRAMES,
@@ -14430,7 +14516,7 @@ function Home() {
       }
       const pose: Pose | undefined = constrainedPose
         ? poseFilterRef.current.filter(constrainedPose, frameTimestamp)
-        : pullupSessionActive || pushupTrackingLocked
+        : pullupSessionActive || muscleUpPullupSessionActive || pushupTrackingLocked
           ? poseFilterRef.current.getPersistentPose(video.videoWidth, video.videoHeight)
           : undefined;
       const recommendedView = activeExerciseDefinition?.recommendedView ?? 'any';
@@ -14701,6 +14787,7 @@ function Home() {
       const isPullupExercise = selectedExerciseForFrame === 'dominadas'
         || selectedExerciseForFrame === 'dominadas-supinas'
         || selectedExerciseForFrame === 'dominadas-comando';
+      const isMuscleUpExercise = selectedExerciseForFrame === 'muscle-up';
       const isPushupExercise = selectedExerciseForFrame === 'flexiones'
         || selectedExerciseForFrame === 'flexiones-declinadas'
         || selectedExerciseForFrame === 'flexiones-pica';
@@ -14716,6 +14803,10 @@ function Home() {
         && exerciseStartedRef.current
         && pullupCalibrationSuccessfulRef.current
         && !pullupSessionFinishedRef.current;
+      const muscleUpPullupTrackingIsAnchored = isMuscleUpExercise
+        && exerciseStartedRef.current
+        && muscleUpCalibrationSuccessfulRef.current
+        && !muscleUpPullupSessionFinishedRef.current;
       const pushupTrackingIsAnchored = selectedExerciseForFrame === 'flexiones'
         && exerciseStartedRef.current
         && pushupCalibrationSuccessfulRef.current;
@@ -14730,12 +14821,14 @@ function Home() {
           pose?.keypoints,
           measurementSide,
         );
-      const frameLowConfidence = pullupTrackingIsAnchored
+      const frameLowConfidence = pullupTrackingIsAnchored || muscleUpPullupTrackingIsAnchored
         ? false
         : uploadedPikePushupHeldWristException
           ? false
           : detectedFrameLowConfidence;
-      const effectiveViewBlocksFrame = pullupTrackingIsAnchored || pushupTrackingIsAnchored
+      const effectiveViewBlocksFrame = pullupTrackingIsAnchored
+        || muscleUpPullupTrackingIsAnchored
+        || pushupTrackingIsAnchored
         ? false
         : viewBlocksFrame;
       const rawCameraGuidance = getCameraGuidance(
@@ -14795,10 +14888,13 @@ function Home() {
           )
           || !frameCameraReady
         );
+      const muscleUpPullupMeasurementBlocked = isMuscleUpExercise
+        && !hasFreshMuscleUpPullupMeasurement(pose?.keypoints);
       const frameMeasurementBlocked = frameLowConfidence
         || effectiveViewBlocksFrame
         || pullupMeasurementBlocked
-        || pushupMeasurementBlocked;
+        || pushupMeasurementBlocked
+        || muscleUpPullupMeasurementBlocked;
       const visiblePoints = pose?.keypoints?.filter((point) => (
         isVisibleCameraPoint(point, 0.3)
       )).length ?? 0;
@@ -14808,10 +14904,14 @@ function Home() {
         || isCommandPullup(selectedExerciseForFrame)
       )
         && pullupCalibrationSuccessfulRef.current;
+      const muscleUpPullupCalibrationLocked = isMuscleUpExercise
+        && muscleUpCalibrationSuccessfulRef.current;
       const pushupCalibrationLocked = selectedExerciseForFrame === 'flexiones'
         && pushupCalibrationSuccessfulRef.current;
       const currentPullupPreparationStage = pullupPreparationStageRef.current;
       const currentPullupPreparationCountdown = pullupPreparationCountdownRef.current;
+      const currentMuscleUpPreparationStage = muscleUpPreparationStageRef.current;
+      const currentMuscleUpPreparationCountdown = muscleUpPreparationCountdownRef.current;
       const currentPushupPreparationStage = pushupPreparationStageRef.current;
       const currentPushupPreparationCountdown = pushupPreparationCountdownRef.current;
       const isLiveDipCameraFrame = isLiveDipCamera()
@@ -14823,6 +14923,34 @@ function Home() {
             tone: 'ready' as const,
             message: 'Ejercicio finalizado · conteo congelado',
             detail: `Se detectó que soltaste la barra. El resultado queda en ${pullupTrackerRef.current.repetitions} repeticiones.`,
+          }
+        : muscleUpPullupSessionFinishedRef.current
+        ? {
+            tone: 'ready' as const,
+            message: 'Ejercicio finalizado · conteo congelado',
+            detail: `El conteo de muscle-up quedó en ${muscleUpPullupTrackerRef.current.repetitions} repeticiones.`,
+          }
+        : muscleUpPullupCalibrationLocked || muscleUpPullupTrackingIsAnchored
+        ? {
+            tone: 'ready' as const,
+            message: muscleUpPullupMeasurementBlocked
+              ? 'Seguimiento pausado · recuperando extremidades'
+              : muscleUpPullupTrackingIsAnchored
+                ? 'Sesión de muscle-up activa · seguimiento anclado'
+                : currentMuscleUpPreparationStage === 'bar-preparation'
+                  ? `Cuerpo registrado ✓ · cuélgate en la barra${
+                    currentMuscleUpPreparationCountdown === null
+                      ? ''
+                      : ` · ${currentMuscleUpPreparationCountdown}`
+                  }`
+                  : 'Calibración exitosa',
+            detail: muscleUpPullupMeasurementBlocked
+              ? 'Mantén visibles y sin retención cabeza, hombros, codos y muñecas para contar.'
+              : muscleUpPullupTrackingIsAnchored
+                ? 'La calibración terminó; el conteo usa las lecturas frescas del movimiento.'
+                : currentMuscleUpPreparationStage === 'bar-preparation'
+                  ? 'Acomódate en la barra. El análisis comenzará al terminar la cuenta regresiva.'
+                  : 'La detección inicial terminó. Prepárate para continuar.',
           }
         : pullupCalibrationLocked || pullupTrackingIsAnchored
         ? {
@@ -15012,11 +15140,18 @@ function Home() {
             rawCameraGuidance.message,
           )
         : [];
-      setDetectionStable(frameDetectionStable || pullupTrackingIsAnchored || pushupTrackingIsAnchored);
+      setDetectionStable(
+        frameDetectionStable
+        || pullupTrackingIsAnchored
+        || muscleUpPullupTrackingIsAnchored
+        || pushupTrackingIsAnchored,
+      );
       const effectiveFrameDetectionStable = frameDetectionStable
-        || pullupTrackingIsAnchored;
+        || pullupTrackingIsAnchored
+        || muscleUpPullupTrackingIsAnchored;
       const effectiveFrameCameraReady = frameCameraReady
-        || pullupTrackingIsAnchored;
+        || pullupTrackingIsAnchored
+        || muscleUpPullupTrackingIsAnchored;
       const pressBenchCountFrameReady = isPressBenchExercise(selectedExerciseForFrame)
         && hasFreshPose
         && (pressBenchDetectionDecisionRef.current?.evaluatedSides.length ?? 0) > 0;
@@ -15076,6 +15211,47 @@ function Home() {
           updatePullupCalibrationStatus('pending');
           if (pullupPreparationStageRef.current === 'body-detection') {
             updatePullupPreparationCountdown(null);
+          }
+        }
+      }
+      if (
+        isMuscleUpExercise
+        && inputModeRef.current === 'camera'
+        && !muscleUpCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+      ) {
+        const calibrationPoints = getMuscleUpPullupCalibrationPoints(pose?.keypoints);
+        const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
+          && calibrationPoints.length > 0
+          && calibrationPoints.every(({ point }) => isFreshMuscleUpPullupCalibrationPoint(point));
+
+        if (calibrationFrameReady) {
+          muscleUpCalibrationReadySinceRef.current ??= now;
+          updateMuscleUpCalibrationStatus('calibrating');
+          const calibrationElapsed = now - muscleUpCalibrationReadySinceRef.current;
+          updateMuscleUpPreparationCountdown(
+            Math.max(
+              1,
+              Math.ceil(
+                (MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS - calibrationElapsed) / 1000,
+              ),
+            ),
+          );
+          if (calibrationElapsed >= MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS) {
+            muscleUpCalibrationSuccessfulRef.current = true;
+            muscleUpCalibrationReadySinceRef.current = null;
+            updateMuscleUpCalibrationStatus('ready');
+            muscleUpPreparationStartedAtRef.current = now;
+            updateMuscleUpPreparationStage('bar-preparation');
+            updateMuscleUpPreparationCountdown(
+              Math.ceil(MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS / 1000),
+            );
+          }
+        } else {
+          muscleUpCalibrationReadySinceRef.current = null;
+          updateMuscleUpCalibrationStatus('pending');
+          if (muscleUpPreparationStageRef.current === 'body-detection') {
+            updateMuscleUpPreparationCountdown(null);
           }
         }
       }
@@ -16414,6 +16590,42 @@ function Home() {
           );
         }
       }
+      if (
+        isMuscleUpExercise
+        && muscleUpCalibrationSuccessfulRef.current
+        && !exerciseStartedRef.current
+        && muscleUpPreparationStageRef.current === 'bar-preparation'
+      ) {
+        const preparationStartedAt = muscleUpPreparationStartedAtRef.current ?? now;
+        muscleUpPreparationStartedAtRef.current = preparationStartedAt;
+        const preparationElapsed = now - preparationStartedAt;
+        if (preparationElapsed >= MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
+          muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+          muscleUpPullupSessionFinishedRef.current = false;
+          muscleUpPullupDetachFramesRef.current = 0;
+          muscleUpPullupFinLoggedRef.current = false;
+          setMuscleUpPullupRepetitions(0);
+          setMuscleUpPullupGoodRepetitions(0);
+          setMuscleUpPullupPendingRepetitions(0);
+          setMuscleUpPullupPhase('esperando abajo');
+          setMuscleUpPullupMinimumAngle(null);
+          exerciseStartedRef.current = true;
+          setExerciseStarted(true);
+          setMuscleUpPullupSessionFinished(false);
+          updateMuscleUpPreparationStage('active');
+          updateMuscleUpPreparationCountdown(null);
+          setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
+        } else {
+          updateMuscleUpPreparationCountdown(
+            Math.max(
+              1,
+              Math.ceil(
+                (MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS - preparationElapsed) / 1000,
+              ),
+            ),
+          );
+        }
+      }
       const repetitionConfig = getRepetitionConfig(selectedExerciseForFrame);
       const repetitionAngle = repetitionConfig
         ? calculateRepetitionAngle(
@@ -16955,15 +17167,63 @@ function Home() {
             const wristY = readY(indexes.wrist);
             return hipY === null || wristY === null ? null : Math.abs(hipY - wristY);
           };
+          const muscleUpAngleKeypoints = pose?.keypoints;
+          const muscleUpAnglePoints = muscleUpAngleKeypoints
+            ? (['left', 'right'] as PoseSide[]).flatMap((side) => {
+                const indexes = sideKeypoints[side];
+                const sideLabel = side === 'left' ? 'izquierdo' : 'derecho';
+                return [
+                  { label: `hombro ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.shoulder] },
+                  { label: `codo ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.elbow] },
+                  { label: `muñeca ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.wrist] },
+                ];
+              })
+            : [];
+          const muscleUpAngleNullReasons = repetitionAngle === null
+            ? [
+                !repetitionConfig ? 'configuración de repetición ausente' : null,
+                !pose?.keypoints ? 'pose sin puntos clave' : null,
+                ...muscleUpAnglePoints.flatMap(({ label, point }) => (
+                  !point
+                    ? [`falta el punto ${label}`]
+                    : (point.score ?? 0) < 0.2
+                      ? [`confianza insuficiente en ${label}`]
+                      : []
+                )),
+              ].filter((reason): reason is string => Boolean(reason))
+            : [];
+          if (repetitionAngle === null && muscleUpAngleNullReasons.length === 0) {
+            muscleUpAngleNullReasons.push(
+              'el cálculo geométrico de hombro-codo-muñeca no produjo un ángulo válido',
+            );
+          }
+          const muscleUpTrackerGateBlockers = [
+            !muscleUpCalibrationSuccessfulRef.current ? 'calibración pendiente' : null,
+            !frameCameraReady && !muscleUpPullupTrackingIsAnchored
+              ? 'cámara no lista'
+              : null,
+            !exerciseStartedRef.current ? 'ejercicio no iniciado' : null,
+            !hasFreshPose ? 'pose no fresca' : null,
+            !effectiveFrameDetectionStable ? 'cuadros no estables' : null,
+            !effectiveFrameCameraReady ? 'cámara no lista para conteo' : null,
+            muscleUpPullupMeasurementBlocked ? 'medición de extremidades bloqueada' : null,
+            frameMeasurementBlocked ? 'medición del cuadro bloqueada' : null,
+            repetitionAngle === null ? 'ángulo de repetición nulo' : null,
+            muscleUpPullupSessionFinishedRef.current ? 'sesión finalizada' : null,
+          ].filter((reason): reason is string => Boolean(reason));
           console.log(`[muscleup-trace] ${JSON.stringify({
             videoTimeSeconds: muscleUpTraceVideoTime,
             poseDetected: visiblePoints >= 5,
             hasFreshPose,
             counter: {
-              phaseCurrent: exerciseRepTrackerRef.current?.phase ?? null,
-              phasePrevious: null,
-              repetitions: exerciseRepTrackerRef.current?.repetitions ?? null,
+              phaseCurrent: muscleUpPullupTrackerRef.current.phase,
+              phasePrevious: muscleUpPullupPreviousPhaseRef.current,
+              repetitions: muscleUpPullupTrackerRef.current.repetitions,
               angleSentToTracker: repetitionAngle,
+              angleSentToTrackerNullReason: repetitionAngle === null
+                ? muscleUpAngleNullReasons
+                : null,
+              trackerGateBlockers: muscleUpTrackerGateBlockers,
             },
             view: {
               estimatedView: nextViewAlignment.estimatedView,
@@ -17148,6 +17408,27 @@ function Home() {
           pullupHeadOverWrists === true
           || pullupExtremityValidation.atTop
         );
+      const muscleUpPullupHeadOverWrists = isMuscleUpExercise
+        && !muscleUpPullupMeasurementBlocked
+        ? getMuscleUpPullupHeadOverBothWrists(pose?.keypoints)
+        : null;
+      const muscleUpPullupExtremityReadings = isMuscleUpExercise
+        ? getMuscleUpPullupExtremityReadings(pose?.keypoints)
+        : {
+            left: { shoulder: null, elbow: null },
+            right: { shoulder: null, elbow: null },
+          };
+      const muscleUpPullupExtremityValidation = isMuscleUpExercise
+        ? getMuscleUpPullupExtremityValidation(muscleUpPullupExtremityReadings)
+        : { atBottom: false, atTop: false };
+      const muscleUpPullupTopReached = isMuscleUpExercise
+        && !muscleUpPullupMeasurementBlocked
+        && (
+          muscleUpPullupHeadOverWrists === true
+          || muscleUpPullupExtremityValidation.atTop
+        );
+      const muscleUpPullupBarDetached = isMuscleUpExercise
+        && isMuscleUpPullupBarDetached(pose?.keypoints);
       const pullupBarDetached = isPullupBarDetached(
         pose?.keypoints,
         usesCommandPullupSideMeasurement
@@ -17225,6 +17506,50 @@ function Home() {
         || (
           pullupBarDetached
           && pullupTrackerRef.current.phase !== 'abajo'
+        )
+      );
+      const muscleUpPullupTracker = muscleUpPullupTrackerRef.current;
+      const muscleUpPullupDetachCandidate = isMuscleUpExercise
+        && exerciseStartedRef.current
+        && muscleUpCalibrationSuccessfulRef.current
+        && muscleUpPullupTracker.isArmed
+        && muscleUpPullupTracker.repetitions > 0
+        && !muscleUpPullupSessionFinishedRef.current
+        && muscleUpPullupExtremityValidation.atBottom
+        && muscleUpPullupBarDetached;
+      if (muscleUpPullupDetachCandidate) {
+        muscleUpPullupDetachFramesRef.current = Math.min(
+          MUSCLE_UP_PULLUP_BAR_DETACH_STABLE_FRAMES,
+          muscleUpPullupDetachFramesRef.current + 1,
+        );
+      } else if (!muscleUpPullupSessionFinishedRef.current) {
+        muscleUpPullupDetachFramesRef.current = 0;
+      }
+      const muscleUpPullupDetachConfirmed = (
+        muscleUpPullupDetachFramesRef.current >= MUSCLE_UP_PULLUP_BAR_DETACH_STABLE_FRAMES
+      );
+      if (muscleUpPullupDetachConfirmed && !muscleUpPullupSessionFinishedRef.current) {
+        muscleUpPullupSessionFinishedRef.current = true;
+        setMuscleUpPullupSessionFinished(true);
+        const settled = settlePendingMuscleUpPullupRep(
+          muscleUpPullupTrackerRef.current,
+          { bottomReached: false, sessionEnded: true },
+        );
+        muscleUpPullupTrackerRef.current = settled.tracker;
+        setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupPendingRepetitions(0);
+        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (!muscleUpPullupFinLoggedRef.current) {
+          muscleUpPullupFinLoggedRef.current = true;
+          logMuscleUpPullupFinish(settled.tracker);
+        }
+      }
+      const muscleUpPullupCountingBlockedByDetach = (
+        muscleUpPullupDetachCandidate
+        || muscleUpPullupDetachConfirmed
+        || (
+          muscleUpPullupBarDetached
+          && muscleUpPullupTracker.phase !== 'abajo'
         )
       );
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
@@ -17593,6 +17918,87 @@ function Home() {
               : isSupinePullup
               ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
+          );
+        }
+      }
+      if (
+        isMuscleUpExercise
+        && muscleUpCalibrationSuccessfulRef.current
+        && exerciseStartedRef.current
+        && hasFreshPose
+        && effectiveFrameCameraReady
+        && effectiveFrameDetectionStable
+        && repetitionConfig
+        && repetitionAngle !== null
+        && !frameMeasurementBlocked
+        && !muscleUpPullupSessionFinishedRef.current
+        && !muscleUpPullupCountingBlockedByDetach
+      ) {
+        const trackerBeforeUpdate = muscleUpPullupTrackerRef.current;
+        const phaseBeforeUpdate = trackerBeforeUpdate.phase;
+        const update = advanceMuscleUpPullupTracker(
+          trackerBeforeUpdate,
+          repetitionAngle,
+          muscleUpPullupTopReached,
+          muscleUpPullupHeadOverWrists,
+          muscleUpPullupExtremityValidation,
+          inputModeRef.current === 'video' || !muscleUpPullupBarDetached,
+          MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+        );
+        muscleUpPullupTrackerRef.current = update.tracker;
+        if (update.tracker.phase !== phaseBeforeUpdate) {
+          muscleUpPullupPreviousPhaseRef.current = phaseBeforeUpdate;
+        }
+        nextAngle = update.smoothedAngle;
+        setMuscleUpPullupRepetitions(update.tracker.repetitions);
+        setMuscleUpPullupGoodRepetitions(update.tracker.goodRepetitions);
+        setMuscleUpPullupPendingRepetitions(
+          update.tracker.pendingRepHeadOverWrists === null ? 0 : 1,
+        );
+        setMuscleUpPullupPhase(update.tracker.phase);
+        setMuscleUpPullupMinimumAngle(
+          update.tracker.minimumAngle ?? update.completedMinimumAngle,
+        );
+        if (update.verdict) {
+          logMuscleUpPullupVerdict(update.verdict);
+          setMuscleUpPullupFeedback({
+            tone: update.verdict.correct ? 'success' : 'warning',
+            message: `Repetición ${update.verdict.repetition}: ${
+              update.verdict.correct ? 'BIEN ✓' : 'EVALUADA'
+            }`,
+            detail: update.verdict.reason === 'no-top-cabeza'
+              ? 'La repetición no alcanzó la posición alta con la cabeza sobre las muñecas.'
+              : update.verdict.reason === 'no-fondo'
+                ? 'La repetición terminó sin regresar al fondo antes de soltar la barra.'
+                : update.verdict.reason === 'no-lockout'
+                  ? 'La repetición no alcanzó el rango alto de los codos.'
+                  : update.verdict.correct
+                    ? 'Recorrido completo: posición alta validada y regreso al fondo.'
+                    : 'El recorrido se evaluó como incorrecto.',
+          });
+        } else if (update.tracker.event === 'valid' || update.tracker.event === 'invalid') {
+          setMuscleUpPullupFeedback({
+            tone: 'checking',
+            message: `Repetición ${update.tracker.repetitions}: en evaluación`,
+            detail: 'La posición alta se registró; el veredicto se confirma al regresar al fondo.',
+          });
+        }
+        if (
+          update.tracker.phase !== phaseBeforeUpdate
+          || update.tracker.repetitions > trackerBeforeUpdate.repetitions
+          || update.tracker.event !== trackerBeforeUpdate.event
+        ) {
+          const eventTime = inputModeRef.current === 'video'
+            ? `video=${video.currentTime.toFixed(3)}s`
+            : `t=${(now / 1000).toFixed(3)}s`;
+          console.log(
+            `[pullup-event] ${eventTime} ejercicio=muscle-up `
+            + `faseAnterior=${phaseBeforeUpdate} faseNueva=${update.tracker.phase} `
+            + `ángulo=${update.smoothedAngle}° `
+            + `cabezaSobreMuñecas=${muscleUpPullupHeadOverWrists} `
+            + `total=${update.tracker.repetitions} `
+            + `correctas=${update.tracker.goodRepetitions} `
+            + `evento=${update.tracker.event ?? 'ninguno'}`,
           );
         }
       }
@@ -18367,6 +18773,7 @@ function Home() {
       }
       if (
         exerciseStartedRef.current
+        && selectedExerciseForFrame !== 'muscle-up'
         && (
           isPressBenchExercise(selectedExerciseForFrame)
             ? countFrameReady
@@ -20482,12 +20889,18 @@ function Home() {
         lastVideoTimeUiUpdateRef.current = now;
         setVideoTimeSeconds(video.currentTime);
       }
-      setPoseDetected(pullupTrackingIsAnchored || visiblePoints >= 5);
+      setPoseDetected(
+        pullupTrackingIsAnchored
+        || muscleUpPullupTrackingIsAnchored
+        || visiblePoints >= 5,
+      );
       setFaceDetected(nextFaceDetected);
       setCameraReady(
         frameCameraReady
         || pullupCalibrationLocked
-        || pullupTrackingIsAnchored,
+        || pullupTrackingIsAnchored
+        || muscleUpPullupCalibrationLocked
+        || muscleUpPullupTrackingIsAnchored,
       );
       setCameraGuidance(nextCameraGuidance);
       setDominantSide(measurementSide);
@@ -21051,7 +21464,9 @@ function Home() {
       }
       const genericTracker = isPullupExercise
         ? pullupTrackerRef.current
-        : exerciseRepTrackerRef.current;
+        : isMuscleUpExercise
+          ? muscleUpPullupTrackerRef.current
+          : exerciseRepTrackerRef.current;
       const getExtremityDiagnosticSample = (
         side: PoseSide,
         landmark: 'wrist' | 'ankle',
@@ -21106,7 +21521,9 @@ function Home() {
           phase: genericTracker.phase,
           minimumAngle: isPullupExercise
             ? pullupTrackerRef.current.minimumAngle
-            : exerciseRepTrackerRef.current.endpointAngle,
+            : isMuscleUpExercise
+              ? muscleUpPullupTrackerRef.current.minimumAngle
+              : exerciseRepTrackerRef.current.endpointAngle,
           // Un evento pertenece al frame que lo generó. No lo repitas durante
           // frames retenidos, poses ausentes o después de detener la sesión.
           event: exerciseStartedRef.current
@@ -21967,6 +22384,9 @@ function Home() {
     updatePullupPreparationCountdown,
     updatePullupCalibrationStatus,
     updatePullupPreparationStage,
+    updateMuscleUpCalibrationStatus,
+    updateMuscleUpPreparationCountdown,
+    updateMuscleUpPreparationStage,
     updateSquatLivePreparationCountdown,
     updateSquatLivePreparationStage,
     updatePushupPreparationCountdown,
@@ -24064,6 +24484,32 @@ function Home() {
       pullupCalibrationReadySinceRef.current = null;
       updatePullupCalibrationStatus('pending');
     }
+    const preserveMuscleUpCalibration = activeExercise === 'muscle-up'
+      && preserveExerciseStarted
+      && muscleUpCalibrationSuccessfulRef.current;
+    const muscleUpCalibrationReady = activeExercise === 'muscle-up'
+      && (Boolean(videoFile) || preserveMuscleUpCalibration);
+    muscleUpCalibrationSuccessfulRef.current = muscleUpCalibrationReady;
+    muscleUpCalibrationStatusRef.current = muscleUpCalibrationReady ? 'ready' : 'pending';
+    muscleUpCalibrationReadySinceRef.current = null;
+    muscleUpPreparationStageRef.current = muscleUpCalibrationReady ? 'active' : 'body-detection';
+    muscleUpPreparationStartedAtRef.current = null;
+    muscleUpPreparationCountdownRef.current = null;
+    setMuscleUpCalibrationStatus(muscleUpCalibrationReady ? 'ready' : 'pending');
+    setMuscleUpPreparationStage(muscleUpCalibrationReady ? 'active' : 'body-detection');
+    setMuscleUpPreparationCountdown(null);
+    muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpPullupSessionFinishedRef.current = false;
+    muscleUpPullupDetachFramesRef.current = 0;
+    muscleUpPullupFinLoggedRef.current = false;
+    muscleUpPullupPreviousPhaseRef.current = null;
+    setMuscleUpPullupSessionFinished(false);
+    setMuscleUpPullupRepetitions(0);
+    setMuscleUpPullupGoodRepetitions(0);
+    setMuscleUpPullupPendingRepetitions(0);
+    setMuscleUpPullupPhase('esperando abajo');
+    setMuscleUpPullupMinimumAngle(null);
+    setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
     if (!(activeExercise === 'flexiones' && preserveExerciseStarted)) {
       pushupCalibrationSuccessfulRef.current = false;
       pushupCalibrationReadySinceRef.current = null;
@@ -24610,6 +25056,19 @@ function Home() {
     ) {
       return;
     }
+    if (
+      selectedExerciseRef.current === 'muscle-up'
+      && !exerciseStartedRef.current
+      && (
+        muscleUpPullupSessionFinishedRef.current
+        || (
+          inputModeRef.current === 'camera'
+          && muscleUpPreparationStageRef.current !== 'active'
+        )
+      )
+    ) {
+      return;
+    }
     const isUploadedStandardPushup = (
       inputModeRef.current === 'video'
       && selectedExerciseRef.current === 'flexiones'
@@ -24653,6 +25112,22 @@ function Home() {
     if (exerciseStartedRef.current) {
       if (uploadedPushupTransitionPauseRef.current) {
         cancelUploadedPushupTransitionPause();
+      }
+      if (selectedExerciseRef.current === 'muscle-up') {
+        const settled = settlePendingMuscleUpPullupRep(
+          muscleUpPullupTrackerRef.current,
+          { bottomReached: false, sessionEnded: true },
+        );
+        muscleUpPullupTrackerRef.current = settled.tracker;
+        muscleUpPullupSessionFinishedRef.current = true;
+        setMuscleUpPullupSessionFinished(true);
+        setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupPendingRepetitions(0);
+        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (!muscleUpPullupFinLoggedRef.current) {
+          muscleUpPullupFinLoggedRef.current = true;
+          logMuscleUpPullupFinish(settled.tracker);
+        }
       }
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
@@ -25696,12 +26171,22 @@ function Home() {
         && !muscleUpExtremitiesSummaryLoggedRef.current
       ) {
         muscleUpExtremitiesSummaryLoggedRef.current = true;
-        const tracker = exerciseRepTrackerRef.current;
-        console.log(
-          `[fin] ejercicio=muscle-up fase=${tracker.phase}`
-          + ` | total=${tracker.repetitions}`
-          + ` | correctas=${tracker.goodRepetitions}`,
+        const settled = settlePendingMuscleUpPullupRep(
+          muscleUpPullupTrackerRef.current,
+          { bottomReached: false, sessionEnded: true },
         );
+        muscleUpPullupTrackerRef.current = settled.tracker;
+        muscleUpPullupSessionFinishedRef.current = true;
+        setMuscleUpPullupSessionFinished(true);
+        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
+        setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupPendingRepetitions(0);
+        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (!muscleUpPullupFinLoggedRef.current) {
+          muscleUpPullupFinLoggedRef.current = true;
+          logMuscleUpPullupFinish(settled.tracker);
+        }
+        const tracker = settled.tracker;
         const stats = muscleUpExtremityVisibilityStatsRef.current;
         const points = Object.fromEntries(
           Object.entries(stats).map(([point, pointStats]) => [
@@ -25764,6 +26249,26 @@ function Home() {
         );
       }
     }
+    if (
+      exerciseAtFinish === 'muscle-up'
+      && (
+        exerciseStartedRef.current
+        || muscleUpPullupTrackerRef.current.repetitions > 0
+      )
+    ) {
+      const settled = settlePendingMuscleUpPullupRep(
+        muscleUpPullupTrackerRef.current,
+        { bottomReached: false, sessionEnded: true },
+      );
+      muscleUpPullupTrackerRef.current = settled.tracker;
+      setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+      setMuscleUpPullupPendingRepetitions(0);
+      if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+      if (!muscleUpPullupFinLoggedRef.current) {
+        muscleUpPullupFinLoggedRef.current = true;
+        logMuscleUpPullupFinish(settled.tracker);
+      }
+    }
     stopResources();
     inputModeRef.current = 'camera';
     setInputMode('camera');
@@ -25784,6 +26289,27 @@ function Home() {
     pullupPreparationCountdownRef.current = null;
     setPullupPreparationStage('body-detection');
     setPullupPreparationCountdown(null);
+    muscleUpCalibrationSuccessfulRef.current = false;
+    muscleUpCalibrationStatusRef.current = 'pending';
+    muscleUpCalibrationReadySinceRef.current = null;
+    setMuscleUpCalibrationStatus('pending');
+    muscleUpPreparationStageRef.current = 'body-detection';
+    muscleUpPreparationStartedAtRef.current = null;
+    muscleUpPreparationCountdownRef.current = null;
+    setMuscleUpPreparationStage('body-detection');
+    setMuscleUpPreparationCountdown(null);
+    muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpPullupSessionFinishedRef.current = false;
+    muscleUpPullupDetachFramesRef.current = 0;
+    muscleUpPullupFinLoggedRef.current = false;
+    muscleUpPullupPreviousPhaseRef.current = null;
+    setMuscleUpPullupSessionFinished(false);
+    setMuscleUpPullupRepetitions(0);
+    setMuscleUpPullupGoodRepetitions(0);
+    setMuscleUpPullupPendingRepetitions(0);
+    setMuscleUpPullupPhase('esperando abajo');
+    setMuscleUpPullupMinimumAngle(null);
+    setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
     pushupCalibrationSuccessfulRef.current = false;
     pushupCalibrationReadySinceRef.current = null;
     pushupCalibrationReadyVideoTimeRef.current = null;
@@ -26071,7 +26597,7 @@ function Home() {
       : isCommandPullupSideMeasurementActive
         ? exerciseStarted ? pullupFeedback : commandoPullupReferenceFeedback
       : selectedExercise === 'muscle-up'
-        ? muscleUpReferenceFeedback
+        ? muscleUpPullupFeedback
       : techniqueFeedback;
   const viewFeedback: TechniqueFeedback = {
     tone: 'warning',
@@ -26096,10 +26622,20 @@ function Home() {
       ? 'AJUSTAR CÁMARA'
       : viewAlignment.blocking
         ? 'AJUSTAR VISTA'
+      : selectedExercise === 'muscle-up' && muscleUpPullupSessionFinished
+        ? 'FINALIZADO'
+        : selectedExercise === 'muscle-up'
+          && !exerciseStarted
+          && muscleUpPreparationStage === 'bar-preparation'
+          ? `PREPÁRATE EN BARRA${
+            muscleUpPreparationCountdown === null ? '' : ` · ${muscleUpPreparationCountdown}`
+          }`
+        : selectedExercise === 'muscle-up' && muscleUpCalibrationStatus !== 'ready'
+          ? 'CALIBRACIÓN PENDIENTE'
       : !exerciseStarted
         ? 'LISTO PARA INICIAR'
         : selectedExercise === 'muscle-up'
-          ? 'CALIBRACIÓN PENDIENTE'
+          ? muscleUpPullupPhase.toLocaleUpperCase('es-CO')
         : angle === null
       ? 'ESPERANDO'
       : displayedAngleFeedback.tone === 'success'
@@ -26124,6 +26660,15 @@ function Home() {
         : pullupPhase === 'arriba'
           ? 'Arriba'
           : 'Bajando';
+  const muscleUpPullupPhaseLabel = muscleUpPullupPhase === 'esperando abajo'
+    ? 'Cuélgate en la barra'
+    : muscleUpPullupPhase === 'abajo'
+      ? 'Abajo'
+      : muscleUpPullupPhase === 'subiendo'
+        ? 'Subiendo'
+        : muscleUpPullupPhase === 'arriba'
+          ? 'Arriba'
+          : 'Bajando';
   const exerciseRepPhaseLabel = exerciseRepPhase === 'esperando inicio'
     ? 'Colócate en la posición inicial'
     : exerciseRepPhase === 'inicio'
@@ -26141,12 +26686,16 @@ function Home() {
     ? squatRepetitions
     : isStandardOrSupinePullup(selectedExercise) || isCommandPullup(selectedExercise)
       ? pullupRepetitions
-      : exerciseRepetitions;
+      : selectedExercise === 'muscle-up'
+        ? muscleUpPullupRepetitions
+        : exerciseRepetitions;
   const correctRepetitions = selectedExercise === 'sentadillas'
     ? squatGoodRepetitions
     : isStandardOrSupinePullup(selectedExercise) || isCommandPullup(selectedExercise)
       ? pullupGoodRepetitions
-      : exerciseGoodRepetitions;
+      : selectedExercise === 'muscle-up'
+        ? muscleUpPullupGoodRepetitions
+        : exerciseGoodRepetitions;
   const incorrectRepetitions = (
     isStandardOrSupinePullup(selectedExercise)
     || isCommandPullup(selectedExercise)
@@ -26155,14 +26704,23 @@ function Home() {
         0,
         evaluatedRepetitions - correctRepetitions - pullupPendingRepetitions,
       )
-    : Math.max(0, evaluatedRepetitions - correctRepetitions);
+    : selectedExercise === 'muscle-up'
+      ? Math.max(
+          0,
+          evaluatedRepetitions - correctRepetitions - muscleUpPullupPendingRepetitions,
+        )
+      : Math.max(0, evaluatedRepetitions - correctRepetitions);
   const evaluationPhase = selectedExercise === 'sentadillas'
     ? squatPhaseLabel
     : isStandardOrSupinePullup(selectedExercise) || isCommandPullup(selectedExercise)
       ? pullupPhaseLabel
-      : exerciseRepPhaseLabel;
+      : selectedExercise === 'muscle-up'
+        ? muscleUpPullupPhaseLabel
+        : exerciseRepPhaseLabel;
   const evaluationLabel = selectedExercise === 'muscle-up'
-    ? 'Pendiente de calibración'
+    ? hasEvaluationCounter
+      ? `${correctRepetitions} / ${evaluatedRepetitions}`
+      : 'Pendiente'
     : selectedExercise === 'plancha'
       ? 'Sostener posición'
       : hasEvaluationCounter
@@ -26700,11 +27258,12 @@ function Home() {
               )}
               {selectedExercise === 'muscle-up' && (
                 <details className="pulldown-instructions" open>
-                  <summary>Lecturas de referencia del muscle-up</summary>
+                  <summary>Cómo se cuenta el muscle-up</summary>
                   <ul>
                     <li><b>Encuadre:</b> usa una vista lateral y deja dentro de la imagen la barra, las manos, la cabeza y todo el cuerpo.</li>
                     <li><b>Medición:</b> se muestran los ángulos de ambos codos, rodillas y tobillos mientras te mueves.</li>
-                    <li><b>Balanceo:</b> por ahora solo registramos los valores; no marcamos un rango correcto hasta calibrarlo con tu ejecución de referencia.</li>
+                    <li><b>Veredicto:</b> se valida la posición alta con la cabeza sobre ambas muñecas, el rango superior de codo y el regreso al fondo.</li>
+                    <li><b>Balanceo:</b> se registra como referencia, pero no forma parte del veredicto.</li>
                     <li><b>Seguridad:</b> si estás empezando, practica con asistencia y prioriza un recorrido controlado, sin forzar hombros, codos o muñecas.</li>
                   </ul>
                 </details>
@@ -26713,18 +27272,32 @@ function Home() {
                 <div className="squat-summary" aria-label={`Contador de ${activeExercise?.name ?? 'ejercicio'}`}>
                   <div className="squat-summary-stat">
                     <span>Correctas</span>
-                    <strong>{exerciseGoodRepetitions}</strong>
+                    <strong>
+                      {selectedExercise === 'muscle-up'
+                        ? muscleUpPullupGoodRepetitions
+                        : exerciseGoodRepetitions}
+                    </strong>
                   </div>
                   <div className="squat-summary-stat">
                     <span>Total evaluadas</span>
-                    <strong>{exerciseRepetitions}</strong>
+                    <strong>
+                      {selectedExercise === 'muscle-up'
+                        ? muscleUpPullupRepetitions
+                        : exerciseRepetitions}
+                    </strong>
                   </div>
                    <div className="squat-summary-stat">
                      <span>Incorrectas</span>
                      <strong>{incorrectRepetitions}</strong>
                    </div>
                   <p>
-                    {selectedExercise === 'jalon'
+                    {selectedExercise === 'muscle-up'
+                      ? `Se cuenta al alcanzar la parte alta y se evalúa al regresar al fondo. Es correcta si la cabeza pasa sobre ambas muñecas y se completa el rango de codo. Pendientes: ${muscleUpPullupPendingRepetitions}. Ángulo mínimo observado: ${
+                        muscleUpPullupMinimumAngle === null
+                          ? '—'
+                          : `${muscleUpPullupMinimumAngle.toFixed(1)}°`
+                      }.`
+                      : selectedExercise === 'jalon'
                       ? `Se evalúa al completar el recorrido. Es correcta solo si mantienes el torso entre ${PULLDOWN_TORSO_MIN_ANGLE}° y ${PULLDOWN_TORSO_MAX_ANGLE}° y el ángulo cadera–hombro–codo entra entre ${PULLDOWN_ANGLE_MIN}° y ${PULLDOWN_ANGLE_MAX}° antes de volver a subir.`
                       : selectedExercise === 'fondos'
                         ? `Solo cuenta si mantienes el torso entre ${DIP_TORSO_MIN_ANGLE}° y ${DIP_TORSO_MAX_ANGLE}° y llegas con el codo entre ${DIP_VALID_MIN_ANGLE}° y ${DIP_VALID_MAX_ANGLE}°.`
@@ -27726,7 +28299,7 @@ function Home() {
                 {diagnosisStatus === 'AJUSTAR CÁMARA' ? (
                   <p>{cameraGuidance.detail}</p>
                 ) : diagnosisStatus === 'CALIBRACIÓN PENDIENTE' ? (
-                  <p>Los valores se muestran como referencia. Aún no se marca el balanceo como correcto o incorrecto.</p>
+                  <p>El conteo comenzará después de registrar el cuerpo y completar la preparación en la barra.</p>
                 ) : diagnosisStatus === 'AJUSTAR' && angle !== null ? (
                   <p>{displayedAngleFeedback.message}</p>
                 ) : null}
