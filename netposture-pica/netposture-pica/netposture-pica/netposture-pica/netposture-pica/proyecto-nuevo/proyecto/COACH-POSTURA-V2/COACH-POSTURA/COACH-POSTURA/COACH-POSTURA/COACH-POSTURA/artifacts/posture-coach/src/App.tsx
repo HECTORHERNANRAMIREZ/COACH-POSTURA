@@ -12353,6 +12353,11 @@ function Home() {
   const sideViewCandidateRef = useRef<PoseSide | null>(null);
   const sideViewStableFramesRef = useRef(0);
   const commandPullupSideRef = useRef<PoseSide | null>(null);
+  const commandPullupTraceStateRef = useRef<{
+    phase: PullupTracker['phase'];
+    frameMeasurementBlocked: boolean;
+    pullupMeasurementBlocked: boolean;
+  } | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
   const sideConsistencyRef = useRef(createSideConsistencyFilter());
@@ -16684,6 +16689,12 @@ function Home() {
           });
         }
       }
+      const commandPullupTraceTrackerBefore = isCommandPullup(selectedExerciseForFrame)
+        ? {
+            phase: pullupTrackerRef.current.phase,
+            lastAngle: pullupTrackerRef.current.lastAngle,
+          }
+        : null;
       if (
         (
           isStandardOrSupinePullup(selectedExerciseRef.current)
@@ -16796,6 +16807,81 @@ function Home() {
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
           );
         }
+      }
+      if (isCommandPullup(selectedExerciseForFrame)) {
+        const measuredSide = commandPullupMeasurementSideForFrame;
+        const measuredSideIndexes = measuredSide ? sideKeypoints[measuredSide] : null;
+        const phaseAfter = pullupTrackerRef.current.phase;
+        const previousTraceState = commandPullupTraceStateRef.current;
+        const phaseChanged = previousTraceState !== null
+          && previousTraceState.phase !== phaseAfter;
+        const blockingChanged = previousTraceState !== null
+          && (
+            previousTraceState.frameMeasurementBlocked !== frameMeasurementBlocked
+            || previousTraceState.pullupMeasurementBlocked !== pullupMeasurementBlocked
+          );
+        const videoTimeSeconds = Number.isFinite(video?.currentTime)
+          ? video.currentTime
+          : null;
+        const shouldLogEveryLateVideoFrame = inputModeRef.current === 'video'
+          && videoTimeSeconds !== null
+          && videoTimeSeconds > 28;
+
+        if (phaseChanged || blockingChanged || shouldLogEveryLateVideoFrame) {
+          const pointTrace = (index: number | undefined) => {
+            const point = index === undefined ? undefined : pose?.keypoints?.[index];
+            return {
+              score: point?.score ?? null,
+              held: point ? isHeldPoint(point) : null,
+              heldReason: point?.heldReason ?? null,
+            };
+          };
+          const elbowAngles = calculatePullupElbowAngles(pose?.keypoints);
+          console.log('[pullup-trace] ' + JSON.stringify({
+            videoTimeSeconds,
+            measuredSide,
+            candidateSide: commandPullupCandidateSide,
+            candidateStableFrames: sideViewStableFramesRef.current,
+            hasFreshPose,
+            frameCameraReadyRaw: frameCameraReady,
+            frameCameraReadyEffective: effectiveFrameCameraReady,
+            frameMeasurementBlocked,
+            pullupMeasurementBlocked,
+            measuredSidePoints: {
+              shoulder: pointTrace(measuredSideIndexes?.shoulder),
+              elbow: pointTrace(measuredSideIndexes?.elbow),
+              wrist: pointTrace(measuredSideIndexes?.wrist),
+            },
+            headPoints: HEAD_LANDMARK_INDICES.map((index) => ({
+              index,
+              ...pointTrace(index),
+            })),
+            hasFreshPullupMeasurement: measuredSide !== null
+              && hasFreshPullupMeasurement(pose?.keypoints, measuredSide),
+            elbowAngles: {
+              right: elbowAngles.right,
+              left: elbowAngles.left,
+              trackerReceived: pullupDiagnosticUpdate ? rawAngle : null,
+            },
+            phaseBefore: commandPullupTraceTrackerBefore?.phase ?? phaseAfter,
+            phaseAfter,
+            isRising: pullupDiagnosticUpdate && commandPullupTraceTrackerBefore
+              ? commandPullupTraceTrackerBefore.lastAngle !== null
+                && pullupDiagnosticUpdate.smoothedAngle
+                  < commandPullupTraceTrackerBefore.lastAngle - 3
+              : null,
+            atBottom: pullupDiagnosticUpdate?.isAtBottom ?? null,
+            barDetached: pullupBarDetached,
+            detachmentFrames: pullupDetachFramesRef.current,
+            pullupSessionFinished: pullupSessionFinishedRef.current,
+          }));
+        }
+
+        commandPullupTraceStateRef.current = {
+          phase: phaseAfter,
+          frameMeasurementBlocked,
+          pullupMeasurementBlocked,
+        };
       }
       if (isPullupExercise) {
         const nose = pose?.keypoints?.[0];
