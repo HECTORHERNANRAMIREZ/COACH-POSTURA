@@ -1844,23 +1844,17 @@ const exercises: ExerciseDefinition[] = [
     id: 'dominadas-comando',
     name: 'Dominadas comando',
     muscleGroup: 'espalda',
-    description: 'Alterna el agarre sobre la barra y sube con control; la técnica se evalúa usando un solo lado visible.',
-    angleLabel: 'Hombros · codos · muñecas · cabeza',
-    cameraNote: 'Nota: vista trasera o en 3/4; deja visibles la barra, la cabeza y al menos un hombro, codo y muñeca durante todo el recorrido.',
+    description: 'Alterna el agarre sobre la barra y sube con control.',
+    angleLabel: 'Codo · tracción vertical',
+    cameraNote: 'Nota: vista trasera recomendada; la frontal también es válida si dejas visibles ambos brazos, las manos y todo el cuerpo.',
     trackedJoints: [
-      { joint: 'shoulder', label: 'hombro' },
-      { joint: 'elbow', label: 'codo' },
-      { joint: 'wrist', label: 'muñeca' },
-      { joint: 'head', label: 'cabeza' },
+      { joint: 'shoulder', label: 'hombros' },
+      { joint: 'elbow', label: 'codos' },
+      { joint: 'wrist', label: 'muñecas' },
+      { joint: 'hip', label: 'caderas' },
     ],
-    trackBothSides: false,
-    trackedAngleLabels: [
-      'Lado medido: hombro, codo y muñeca',
-      'Inicio / regreso: codo 125–180° · tolerancia ±5°',
-      'Activación: codo ≤120°',
-      'Parte alta: cabeza sobre la muñeca o codo 45–145°',
-      'Veredicto al completar la bajada y volver al fondo',
-    ],
+    trackBothSides: true,
+    trackedAngleLabels: ['Codo: inicio/regreso 145–180° · tolerancia ±5°', 'Parte alta: cabeza sobre ambas muñecas'],
   },
   {
     id: 'muscle-up',
@@ -2936,10 +2930,7 @@ const exerciseViewDefinitions: Record<ExerciseId, {
   fondos: { recommendedView: 'side' },
   dominadas: { recommendedView: 'back' },
   'dominadas-supinas': { recommendedView: 'back' },
-  'dominadas-comando': {
-    recommendedView: 'back',
-    viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
-  },
+  'dominadas-comando': { recommendedView: 'back' },
   'muscle-up': {
     recommendedView: 'side',
     viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
@@ -3098,6 +3089,7 @@ const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   ...STANDARD_PULLUP_TRACKER_CONFIG,
 };
+const COMMAND_PULLUP_TRACE_ENABLED = false;
 const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
@@ -4822,7 +4814,6 @@ function getRepetitionConfig(exercise: ExerciseId | null) {
 
 function getExerciseConditionRows(
   exercise: ExerciseId | null,
-  measuredSide: PoseSide | null = null,
 ): string[] {
   if (!exercise) return ['Esperando ejercicio'];
   const dipConfig = repetitionConfigs.fondos!;
@@ -4884,17 +4875,11 @@ function getExerciseConditionRows(
       ];
     case 'dominadas':
     case 'dominadas-supinas':
+    case 'dominadas-comando':
       return [
         `Inicio / regreso: codo ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · tolerancia ±${PULLUP_TOLERANCE_DEG}°`,
         `Activación: codo ≤${PULLUP_PULL_ACTIVATION_ANGLE}°`,
         'Parte alta: cabeza sobre ambas muñecas',
-      ];
-    case 'dominadas-comando':
-      return [
-        `Lado medido: ${measuredSide === 'left' ? 'izquierdo' : measuredSide === 'right' ? 'derecho' : 'buscando'}`,
-        `Inicio / regreso: codo ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · tolerancia ±${PULLUP_TOLERANCE_DEG}° · activación ≤${PULLUP_PULL_ACTIVATION_ANGLE}°`,
-        `Parte alta: cabeza sobre la muñeca medida o codo ${PULLUP_TOP_ELBOW_MIN_ANGLE}–${PULLUP_TOP_ELBOW_MAX_ANGLE}°`,
-        'Veredicto al volver al fondo; no se compara la simetría entre lados',
       ];
     case 'muscle-up':
       return [
@@ -5373,7 +5358,7 @@ function logPullupVerdict(
 
   console.log(
     `[pullup-veredicto] ejercicio=${exercise} `
-    + (isCommandPullup(exercise)
+    + (isCommandPullup(exercise) && measuredSide !== null
       ? `ladoMedido=${measuredSide === 'left' ? 'izquierdo' : measuredSide === 'right' ? 'derecho' : 'no definido'} `
       : '')
     + `repeticion=${verdict.repetition} `
@@ -6571,7 +6556,7 @@ function getCameraGuidance(
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas-comando'
-          ? 'Ponte de espaldas o en 3/4; deja visibles la barra, la cabeza y al menos un hombro, codo y muñeca durante todo el recorrido.'
+          ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
           ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
@@ -6797,7 +6782,7 @@ function getCameraGuidance(
       : exercise === 'elevaciones-piernas-suelo'
         ? 'Usa una vista lateral, con ambos tobillos, rodillas y caderas completos dentro del encuadre. La cara no interviene.'
       : exercise === 'dominadas-comando'
-        ? 'Usa una vista trasera o en 3/4, con la barra, la cabeza y al menos un brazo completo dentro del encuadre.'
+        ? 'Medición 3D lista. Puedes iniciar aunque el móvil esté bajo, alto o inclinado; esas posiciones no cambian los grados.'
       : exercise === 'remo-sentado-polea-agarre-cerrado'
         ? 'Usa una vista lateral o en 3/4, con ambos brazos completos y la polea baja dentro del encuadre.'
       : exercise === 'remo-mancuerna-una-mano'
@@ -9066,7 +9051,6 @@ function getAngleDiagnosticPoints(
       { label: 'Hombro', joint: 'shoulder' },
       { label: 'Codo', joint: 'elbow' },
       { label: 'Muñeca', joint: 'wrist' },
-      { label: 'Cabeza', joint: 'head' },
     ],
     'muscle-up': [
       { label: 'Hombro', joint: 'shoulder' },
@@ -13809,7 +13793,10 @@ function Home() {
       }
       const activeExerciseDefinition = getExercise(selectedExerciseForFrame);
       const allowsFrontView = selectedExerciseForFrame === 'dominadas'
-        || selectedExerciseForFrame === 'dominadas-supinas';
+        || selectedExerciseForFrame === 'dominadas-supinas'
+        || selectedExerciseForFrame === 'dominadas-comando';
+      const usesCommandPullupSideMeasurement = isCommandPullup(selectedExerciseForFrame)
+        && activeExerciseDefinition?.trackBothSides === false;
       const sideConsistentPose = detectedPose
         ? sideConsistencyRef.current.filter(
             detectedPose,
@@ -14063,7 +14050,7 @@ function Home() {
       }
       const nextDominantSide = nextDominantSideResult?.side ?? null;
       const nextSideViewCandidate = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
-        || isCommandPullup(selectedExerciseForFrame)
+        || usesCommandPullupSideMeasurement
         ? getSideViewCandidate(pose?.keypoints)
         : null;
       if (!nextSideViewCandidate) {
@@ -14081,11 +14068,12 @@ function Home() {
       const stableLateralSide = sideViewStableFramesRef.current >= SIDE_VIEW_STABLE_FRAMES
         ? sideViewCandidateRef.current
         : null;
-      const commandPullupCandidateSide = isCommandPullup(selectedExerciseForFrame)
+      const commandPullupCandidateSide = usesCommandPullupSideMeasurement
         ? stableLateralSide
         : null;
-      let commandPullupMeasurementSideForFrame = commandPullupSideRef.current;
-      if (isCommandPullup(selectedExerciseForFrame) && commandPullupCandidateSide) {
+      let commandPullupMeasurementSideForFrame: PoseSide | null =
+        usesCommandPullupSideMeasurement ? commandPullupSideRef.current : null;
+      if (usesCommandPullupSideMeasurement && commandPullupCandidateSide) {
         const currentTracker = pullupTrackerRef.current;
         const canChooseSideBeforeRep = !exerciseStartedRef.current
           || !currentTracker.isArmed
@@ -14115,7 +14103,7 @@ function Home() {
         }
       }
       if (
-        isCommandPullup(selectedExerciseForFrame)
+        usesCommandPullupSideMeasurement
         && commandPullupMeasurementSideForFrame !== commandPullupSideRef.current
       ) {
         commandPullupSideRef.current = commandPullupMeasurementSideForFrame;
@@ -14124,7 +14112,7 @@ function Home() {
       const detectedMeasurementSide = selectedExerciseForFrame === 'peso-muerto-piernas-rigidas'
         && stableLateralSide
         ? stableLateralSide
-        : isCommandPullup(selectedExerciseForFrame)
+        : usesCommandPullupSideMeasurement
           ? commandPullupMeasurementSideForFrame
           : nextDominantSide;
       const measurementSide = inputModeRef.current === 'video'
@@ -14207,14 +14195,13 @@ function Home() {
       const frameCameraReady = rawCameraGuidance.tone === 'ready';
       const pullupMeasurementBlocked = isPullupExercise
         && (
-          isCommandPullup(selectedExerciseForFrame)
-            ? commandPullupMeasurementSideForFrame === null
-              || !hasFreshPullupMeasurement(
-                  pose?.keypoints,
-                  commandPullupMeasurementSideForFrame,
-                )
-            : !pullupTrackingIsAnchored
-              && !hasFreshPullupMeasurement(pose?.keypoints)
+          !pullupTrackingIsAnchored
+          && !hasFreshPullupMeasurement(
+            pose?.keypoints,
+            usesCommandPullupSideMeasurement
+              ? commandPullupMeasurementSideForFrame
+              : null,
+          )
         );
       // El anclaje conserva la última pose para que el overlay no desaparezca
       // ante un frame perdido, pero nunca convierte esos puntos retenidos en
@@ -14275,9 +14262,7 @@ function Home() {
                 }`
                 : 'Calibración exitosa',
             detail: pullupMeasurementBlocked
-              ? isCommandPullup(selectedExerciseForFrame)
-                ? `El lado medido ${commandPullupMeasurementSideForFrame === 'left' ? 'izquierdo' : commandPullupMeasurementSideForFrame === 'right' ? 'derecho' : 'aún no está elegido'} perdió puntos frescos. No se contará ni evaluará este instante ni se mezclarán lados.`
-                : 'Hay una muñeca, codo, hombro o punto de la cabeza retenido. No se contará ni evaluará este instante.'
+              ? 'Hay una muñeca, codo, hombro o punto de la cabeza retenido. No se contará ni evaluará este instante.'
               : pullupTrackingIsAnchored
                 ? 'Los puntos confirmados permanecen anclados. Los ángulos siguen actualizándose con tu movimiento real.'
               : currentPullupPreparationStage === 'bar-preparation'
@@ -14334,7 +14319,7 @@ function Home() {
         && !pullupMeasurementBlocked
         ? calculatePullupElbowAngles(
             pose?.keypoints,
-            isCommandPullup(selectedExerciseForFrame)
+            usesCommandPullupSideMeasurement
               ? commandPullupMeasurementSideForFrame
               : null,
           )
@@ -14352,7 +14337,7 @@ function Home() {
         && !pullupMeasurementBlocked
         ? isHeadOverBothWrists(
             pose?.keypoints,
-            isCommandPullup(selectedExerciseForFrame)
+            usesCommandPullupSideMeasurement
               ? commandPullupMeasurementSideForFrame
               : null,
           )
@@ -14476,11 +14461,11 @@ function Home() {
       ) {
         const calibrationPoints = getPullupCalibrationPoints(
           pose?.keypoints,
-          isCommandPullup(selectedExerciseForFrame)
+          usesCommandPullupSideMeasurement
             ? commandPullupMeasurementSideForFrame
             : null,
         );
-        const requiredCalibrationPointCount = isCommandPullup(selectedExerciseForFrame)
+        const requiredCalibrationPointCount = usesCommandPullupSideMeasurement
           ? 9
           : 15;
         const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
@@ -15661,12 +15646,12 @@ function Home() {
         )
         && uploadedPullupPreflightRef.current
       ) {
-        const preflightSide = isCommandPullup(selectedExerciseForFrame)
+        const preflightSide = usesCommandPullupSideMeasurement
           ? commandPullupMeasurementSideForFrame
           : null;
         const preflightSides = preflightSide
           ? [preflightSide]
-          : isCommandPullup(selectedExerciseForFrame)
+          : usesCommandPullupSideMeasurement
             ? []
             : ['left', 'right'] as PoseSide[];
         const pullupArmPoints = preflightSides.flatMap((pointSide) => {
@@ -15693,7 +15678,7 @@ function Home() {
             : null,
           !hasFreshPose ? 'pose no fresca' : null,
           !pullupArmPointsFresh
-            ? isCommandPullup(selectedExerciseForFrame)
+            ? usesCommandPullupSideMeasurement
               ? `hombro, codo y muñeca del lado ${preflightSide ?? 'sin elegir'} no frescos o sin coordenadas 3D`
               : 'hombros, codos y muñecas de ambos lados no frescos o sin coordenadas 3D'
             : null,
@@ -16345,10 +16330,10 @@ function Home() {
         ? getPullupExtremityValidation(
             pose?.keypoints,
             pullupExtremityReadings,
-            isCommandPullup(selectedExerciseForFrame)
+            usesCommandPullupSideMeasurement
               ? commandPullupMeasurementSideForFrame
               : null,
-            isCommandPullup(selectedExerciseForFrame)
+            usesCommandPullupSideMeasurement
               ? COMMAND_PULLUP_TRACKER_CONFIG
               : STANDARD_PULLUP_TRACKER_CONFIG,
           )
@@ -16361,7 +16346,7 @@ function Home() {
         );
       const pullupBarDetached = isPullupBarDetached(
         pose?.keypoints,
-        isCommandPullup(selectedExerciseForFrame)
+        usesCommandPullupSideMeasurement
           ? commandPullupMeasurementSideForFrame
           : null,
       );
@@ -16417,9 +16402,7 @@ function Home() {
             logPullupVerdict(
               exerciseAtFinish,
               settled.verdict,
-              isCommandPullup(exerciseAtFinish)
-                ? commandPullupMeasurementSideForFrame
-                : null,
+              null,
             );
           }
         }
@@ -16689,7 +16672,8 @@ function Home() {
           });
         }
       }
-      const commandPullupTraceTrackerBefore = isCommandPullup(selectedExerciseForFrame)
+      const commandPullupTraceTrackerBefore = COMMAND_PULLUP_TRACE_ENABLED
+        && isCommandPullup(selectedExerciseForFrame)
         ? {
             phase: pullupTrackerRef.current.phase,
             lastAngle: pullupTrackerRef.current.lastAngle,
@@ -16710,7 +16694,7 @@ function Home() {
         && !pullupCountingBlockedByDetach
       ) {
         const isSupinePullup = selectedExerciseRef.current === 'dominadas-supinas';
-        const isCommandPullupFrame = isCommandPullup(selectedExerciseRef.current);
+        const isCommandPullupFrame = usesCommandPullupSideMeasurement;
         const pullupTrackerConfig = isCommandPullupFrame
           ? COMMAND_PULLUP_TRACKER_CONFIG
           : STANDARD_PULLUP_TRACKER_CONFIG;
@@ -16808,7 +16792,7 @@ function Home() {
           );
         }
       }
-      if (isCommandPullup(selectedExerciseForFrame)) {
+      if (COMMAND_PULLUP_TRACE_ENABLED && isCommandPullup(selectedExerciseForFrame)) {
         const measuredSide = commandPullupMeasurementSideForFrame;
         const measuredSideIndexes = measuredSide ? sideKeypoints[measuredSide] : null;
         const phaseAfter = pullupTrackerRef.current.phase;
@@ -17071,7 +17055,7 @@ function Home() {
             visiblePoints,
             pullupAngleForFrame,
             pullupTrackingIsAnchored,
-            isCommandPullup(selectedExerciseForFrame)
+            usesCommandPullupSideMeasurement
               ? commandPullupMeasurementSideForFrame
               : null,
           ),
@@ -20059,7 +20043,7 @@ function Home() {
         selectedExerciseForFrame === 'dominadas'
           || selectedExerciseForFrame === 'dominadas-supinas'
           || selectedExerciseForFrame === 'dominadas-comando'
-          ? isCommandPullup(selectedExerciseForFrame)
+          ? usesCommandPullupSideMeasurement
             ? commandPullupMeasurementSideForFrame
               ? calculatePullupJointReadings(
                   pose?.keypoints,
@@ -23100,10 +23084,8 @@ function Home() {
     }
     selectedExerciseRef.current = activeExercise;
     setSelectedExercise(activeExercise);
-    if (!(isCommandPullup(activeExercise) && preserveExerciseStarted)) {
-      commandPullupSideRef.current = null;
-      setCommandPullupSide(null);
-    }
+    commandPullupSideRef.current = null;
+    setCommandPullupSide(null);
     if (activeExercise === 'cruces-polea-baja-alta') {
       if (crossoverDetectionOverlayTimerRef.current !== null) {
         window.clearTimeout(crossoverDetectionOverlayTimerRef.current);
@@ -24499,7 +24481,7 @@ function Home() {
           logPullupVerdict(
             exerciseAtFinish,
             settled.verdict,
-            isCommandPullup(exerciseAtFinish) ? commandPullupSideRef.current : null,
+            null,
           );
         }
       }
@@ -24866,7 +24848,7 @@ function Home() {
         logPullupVerdict(
           exerciseAtFinish,
           settled.verdict,
-          isCommandPullup(exerciseAtFinish) ? commandPullupSideRef.current : null,
+          null,
         );
       }
     }
@@ -24985,6 +24967,8 @@ function Home() {
   const activeExercise = getExercise(selectedExercise);
   const isStandardPullupSelected = isStandardOrSupinePullup(selectedExercise);
   const isCommandPullupSelected = isCommandPullup(selectedExercise);
+  const isCommandPullupSideMeasurementActive = isCommandPullupSelected
+    && activeExercise?.trackBothSides === false;
   const isPullupExerciseSelected = isStandardPullupSelected || isCommandPullupSelected;
   const canExportDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED && phase === 'tracking';
   const canExportPullupDiagnostics = canExportDiagnostics && isPullupExerciseSelected;
@@ -25170,8 +25154,9 @@ function Home() {
   const angleFeedback = selectedExercise === 'sentadillas'
     ? squatFeedback
     : selectedExercise === 'dominadas' || selectedExercise === 'dominadas-supinas'
+      || (isCommandPullupSelected && activeExercise?.trackBothSides)
       ? pullupFeedback
-      : selectedExercise === 'dominadas-comando'
+      : isCommandPullupSideMeasurementActive
         ? exerciseStarted ? pullupFeedback : commandoPullupReferenceFeedback
       : selectedExercise === 'muscle-up'
         ? muscleUpReferenceFeedback
@@ -25234,7 +25219,7 @@ function Home() {
       : exerciseRepPhase === 'en movimiento'
         ? 'En movimiento'
         : 'Repetición válida';
-  const conditionRows = getExerciseConditionRows(selectedExercise, commandPullupSide);
+  const conditionRows = getExerciseConditionRows(selectedExercise);
   const hasEvaluationCounter = selectedExercise === 'sentadillas'
     || selectedExercise === 'dominadas'
     || selectedExercise === 'dominadas-supinas'
@@ -25483,7 +25468,7 @@ function Home() {
                     <span className="active-meta-dot" aria-hidden="true" />
                     <span>
                       {activeExercise?.cameraNote && `${activeExercise.cameraNote} · `}
-                      {isCommandPullup(selectedExercise)
+                      {isCommandPullupSideMeasurementActive
                         ? commandPullupSide === 'left'
                           ? 'lado medido izquierdo'
                           : commandPullupSide === 'right'
@@ -25574,7 +25559,7 @@ function Home() {
                       Qué está siguiendo la cámara
                     </span>
                     <strong>
-                      {isCommandPullup(selectedExercise)
+                      {isCommandPullupSideMeasurementActive
                         ? commandPullupSide === 'left'
                           ? 'Lado medido: izquierdo'
                           : commandPullupSide === 'right'
@@ -25630,7 +25615,7 @@ function Home() {
                           ? 'Detectando el cuerpo en el video...'
                           : pullupPreparationCountdown !== null
                             ? `Registrando cuerpo · ${pullupPreparationCountdown}`
-                            : isCommandPullup(selectedExercise)
+                            : isCommandPullupSideMeasurementActive
                               ? 'Buscando cabeza y un lado visible...'
                               : 'Buscando tu cuerpo...'
                       : isPullupExerciseSelected && pullupPreparationStage === 'bar-preparation'
@@ -25698,11 +25683,11 @@ function Home() {
                         : isLiveSquatSelected && squatLivePreparationStage === 'accommodate'
                           ? 'Acomódate para hacer la sentadilla. Al terminar la cuenta regresiva comenzarán la evaluación y el conteo.'
                       : isPullupExerciseSelected && pullupPreparationStage === 'body-detection'
-                        ? isCommandPullup(selectedExercise)
+                        ? isCommandPullupSideMeasurementActive
                           ? 'Mantén visibles la cabeza y hombro, codo, muñeca, cadera, rodilla y tobillo del mismo lado.'
                           : 'Mantén cabeza, hombros, codos, muñecas, caderas, rodillas y tobillos visibles para registrar tu cuerpo.'
                         : isPullupExerciseSelected && pullupPreparationStage === 'bar-preparation'
-                          ? isCommandPullup(selectedExercise)
+                          ? isCommandPullupSideMeasurementActive
                             ? 'Cuélgate en la barra. El lado medido se mantiene fijo durante cada repetición.'
                             : 'Cuélgate en la barra. Al terminar la cuenta regresiva se activarán automáticamente el monitoreo y el conteo.'
                         : isStandardPushupSelected && pushupPreparationStage === 'body-detection'
@@ -26460,7 +26445,7 @@ function Home() {
                     >
                       <span>
                         {isPullupExerciseSelected
-                          ? isCommandPullup(selectedExercise)
+                          ? isCommandPullupSideMeasurementActive
                             ? pullupPreparationStage === 'body-detection'
                               ? 'Registrando un lado'
                               : 'Cuélgate en la barra'
@@ -26490,7 +26475,7 @@ function Home() {
                       </strong>
                       <small>
                         {isPullupExerciseSelected
-                          ? isCommandPullup(selectedExercise)
+                          ? isCommandPullupSideMeasurementActive
                             ? pullupPreparationStage === 'body-detection'
                               ? 'Mantén visibles cabeza y el mismo lado del cuerpo'
                               : 'El ejercicio comenzará automáticamente'
@@ -26750,14 +26735,14 @@ function Home() {
                     || selectedExercise === 'dominadas-comando') && (
                     <div
                       className="dip-joints-hud pullup-joints-hud"
-                      aria-label={isCommandPullup(selectedExercise)
+                      aria-label={isCommandPullupSideMeasurementActive
                         ? `Medición en vivo del lado ${commandPullupSide === 'left' ? 'izquierdo' : commandPullupSide === 'right' ? 'derecho' : 'en selección'}, con posición de cabeza`
                         : 'Medición en vivo de ambos hombros, codos, muñecas y posición de la cabeza'}
                     >
                       <div className="dip-joints-hud-heading">
                         <span>Articulaciones en vivo</span>
                         <strong>
-                          {isCommandPullup(selectedExercise)
+                          {isCommandPullupSideMeasurementActive
                             ? commandPullupSide === 'left'
                               ? 'LADO IZQ.'
                               : commandPullupSide === 'right'
