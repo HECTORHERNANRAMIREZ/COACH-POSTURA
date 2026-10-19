@@ -16327,12 +16327,8 @@ function Home() {
         && inputModeRef.current === 'video'
       ) {
         const muscleUpTraceVideoTime = diagnosticVideoTime ?? video.currentTime;
-        const muscleUpTraceDuration = video.duration;
         if (
           Number.isFinite(muscleUpTraceVideoTime)
-          && Number.isFinite(muscleUpTraceDuration)
-          && muscleUpTraceDuration > 0
-          && muscleUpTraceVideoTime >= Math.max(0, muscleUpTraceDuration - 3)
           && now - (muscleUpTraceLastLogAtRef.current ?? Number.NEGATIVE_INFINITY) >= 150
         ) {
           const readY = (index: number): number | null => {
@@ -16355,6 +16351,12 @@ function Home() {
             videoTimeSeconds: muscleUpTraceVideoTime,
             poseDetected: visiblePoints >= 5,
             hasFreshPose,
+            counter: {
+              phaseCurrent: exerciseRepTrackerRef.current?.phase ?? null,
+              phasePrevious: null,
+              repetitions: exerciseRepTrackerRef.current?.repetitions ?? null,
+              angleSentToTracker: repetitionAngle,
+            },
             view: {
               estimatedView: nextViewAlignment.estimatedView,
               status: nextViewAlignment.status,
