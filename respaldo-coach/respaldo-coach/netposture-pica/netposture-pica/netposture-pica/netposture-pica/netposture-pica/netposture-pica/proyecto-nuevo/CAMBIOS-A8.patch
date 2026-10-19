@@ -1,0 +1,207 @@
+diff --git a/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx b/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx
+index 3b61d07..e343cfc 100644
+--- a/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx
++++ b/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach/src/App.tsx
+@@ -3118,6 +3118,9 @@ const PIKE_MIN_HIP_LIFT_RATIO = 0.616;
+ const PIKE_MAX_HIP_LIFT_RATIO = 0.794;
+ const PIKE_MIN_BODY_FOLD_ANGLE = 72;
+ const PIKE_MAX_BODY_FOLD_ANGLE = 97;
++const UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE = 142;
++const UPLOADED_PIKE_PUSHUP_END_MIN_ANGLE = 94;
++const UPLOADED_PIKE_PUSHUP_END_MAX_ANGLE = 109;
+ const LUNGE_KNEE_MIN_ANGLE = 80;
+ const LUNGE_KNEE_MAX_ANGLE = 100;
+ const LUNGE_HIP_MIN_ANGLE = 80;
+@@ -11312,6 +11315,7 @@ function Home() {
+   const uploadedPikePushupGoodFramesAccumulatedRef = useRef(0);
+   const uploadedPikePushupLastLoggedReasonKeyRef = useRef<string | null>(null);
+   const uploadedPikePushupLastTechniqueRuleLogKeyRef = useRef<string | null>(null);
++  const uploadedPikePushupStartRangeRunRef = useRef({ inside: 0, outside: 0 });
+   const uploadedPikePushupSearchGapRef = useRef<{
+     startedAtVideoTime: number;
+     invalidReason: string;
+@@ -13253,6 +13257,9 @@ function Home() {
+       const isPushupExercise = selectedExerciseForFrame === 'flexiones'
+         || selectedExerciseForFrame === 'flexiones-declinadas'
+         || selectedExerciseForFrame === 'flexiones-pica';
++      const uploadedPikePushupCountingFrame = inputModeRef.current === 'video'
++        && selectedExerciseForFrame === 'flexiones-pica'
++        && uploadedPikePushupPreflightStageRef.current === 'counting';
+       const pullupTrackingIsAnchored = selectedExerciseForFrame === 'dominadas'
+         && exerciseStartedRef.current
+         && pullupCalibrationSuccessfulRef.current
+@@ -13265,9 +13272,17 @@ function Home() {
+         pose?.keypoints,
+         measurementSide,
+       );
++      const uploadedPikePushupHeldWristException =
++        uploadedPikePushupCountingFrame
++        && hasFreshPushupWristHeldExceptionMeasurement(
++          pose?.keypoints,
++          measurementSide,
++        );
+       const frameLowConfidence = pullupTrackingIsAnchored
+         ? false
+-        : detectedFrameLowConfidence;
++        : uploadedPikePushupHeldWristException
++          ? false
++          : detectedFrameLowConfidence;
+       const effectiveViewBlocksFrame = pullupTrackingIsAnchored || pushupTrackingIsAnchored
+         ? false
+         : viewBlocksFrame;
+@@ -13311,10 +13326,13 @@ function Home() {
+       // una lectura válida para contar o evaluar una flexión.
+       const pushupMeasurementBlocked = isPushupExercise
+         && (
+-          !hasFreshPushupMeasurement(
+-            pose?.keypoints,
+-            measurementSide,
+-            selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
++          (
++            !hasFreshPushupMeasurement(
++              pose?.keypoints,
++              measurementSide,
++              selectedExerciseForFrame === 'flexiones-declinadas' ? 'declined' : 'regular',
++            )
++            && !uploadedPikePushupHeldWristException
+           )
+           || !frameCameraReady
+         );
+@@ -13472,7 +13490,9 @@ function Home() {
+       const requiredStableFramesForFrame = selectedExerciseForFrame === 'flexiones'
+         || selectedExerciseForFrame === 'flexiones-declinadas'
+         ? PUSHUP_COUNT_STABLE_FRAMES
+-        : 4;
++        : uploadedPikePushupCountingFrame
++          ? 1
++          : 4;
+       if (
+         inputModeRef.current === 'video'
+         && selectedExerciseForFrame === 'flexiones'
+@@ -15887,17 +15907,26 @@ function Home() {
+         uploadedPushupTrackerGatePassed = true;
+         const trackerConfig = isUploadedDipVideo
+           ? repetitionConfig
+-          : repetitionConfig.postBottomRawPeakForReturn
+-          ? {
+-              ...repetitionConfig,
+-              ...(inputModeRef.current === 'video'
+-                && selectedExerciseForFrame === 'flexiones'
+-                ? { endMaxAngle: UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE }
+-                : {}),
+-              postBottomRawPeakForReturn: inputModeRef.current === 'video'
+-                && selectedExerciseForFrame === 'flexiones',
+-            }
+-          : repetitionConfig;
++          : uploadedPikePushupCountingFrame
++            ? {
++                ...repetitionConfig,
++                startMinAngle: UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE,
++                endMinAngle: UPLOADED_PIKE_PUSHUP_END_MIN_ANGLE,
++                endMaxAngle: UPLOADED_PIKE_PUSHUP_END_MAX_ANGLE,
++                endLabel: `codo entre ${UPLOADED_PIKE_PUSHUP_END_MIN_ANGLE}–${UPLOADED_PIKE_PUSHUP_END_MAX_ANGLE}°`,
++                smoothingSamples: 1,
++              }
++            : repetitionConfig.postBottomRawPeakForReturn
++              ? {
++                  ...repetitionConfig,
++                  ...(inputModeRef.current === 'video'
++                    && selectedExerciseForFrame === 'flexiones'
++                    ? { endMaxAngle: UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE }
++                    : {}),
++                  postBottomRawPeakForReturn: inputModeRef.current === 'video'
++                    && selectedExerciseForFrame === 'flexiones',
++                }
++              : repetitionConfig;
+         uploadedPushupTrackerEndMaxAngle = trackerConfig.endMaxAngle;
+         const previousExerciseRepTracker = exerciseRepTrackerRef.current;
+         if (isUploadedDipVideo && uploadedDipVideoSegmentation) {
+@@ -17927,6 +17956,80 @@ function Home() {
+                         : uploadedPikePushupPostflightTracker.phase === 'final'
+                           ? 'tracker espera el retorno al inicio'
+                           : 'tracker espera la siguiente transición';
++        if (uploadedPikePushupPreflightStageRef.current === 'counting') {
++          const uploadedPikePushupWithinStartRange = repetitionAngle !== null
++            && isWithinAngle(
++              repetitionAngle,
++              UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE,
++              180,
++            );
++          const uploadedPikePushupStartRangeRuns =
++            uploadedPikePushupStartRangeRunRef.current;
++          if (repetitionAngle !== null && !frameMeasurementBlocked) {
++            if (uploadedPikePushupWithinStartRange) {
++              uploadedPikePushupStartRangeRuns.inside += 1;
++              uploadedPikePushupStartRangeRuns.outside = 0;
++            } else {
++              uploadedPikePushupStartRangeRuns.outside += 1;
++              uploadedPikePushupStartRangeRuns.inside = 0;
++            }
++          } else {
++            uploadedPikePushupStartRangeRuns.inside = 0;
++            uploadedPikePushupStartRangeRuns.outside = 0;
++          }
++          const uploadedPikePushupTrackerBlockReasons = [
++            ...uploadedPikePushupFrameBlockReasons,
++            !hasFreshPose ? 'hasFreshPose=false' : null,
++            !frameCameraReady ? 'frameCameraReady=false' : null,
++            !countFrameReady
++              ? `countFrameReady=false (${stabilityFramesRef.current}/1 cuadros estables)`
++              : null,
++            !uploadedPushupTrackerGatePassed ? 'trackerGatePassed=false' : null,
++            !pushupTechniqueReady
++              ? `técnica inválida: ${uploadedPikePushupTechniqueFeedbackForLog.message}`
++              : null,
++            repetitionAngle === null ? 'repetitionAngle=null' : null,
++          ].filter((reason): reason is string => reason !== null);
++          const uploadedPikePushupTrackerWrist = measurementSide
++            ? pose?.keypoints?.[sideKeypoints[measurementSide].wrist]
++            : undefined;
++          console.log(
++            `[pica-tracker] ${JSON.stringify({
++              tVideoS: video.currentTime,
++              angulo: repetitionAngle,
++              rangoInicio: [
++                UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE,
++                repetitionConfig?.startMaxAngle ?? 180,
++              ],
++              dentroRangoInicio: uploadedPikePushupWithinStartRange,
++              cuadrosConsecutivosDentro:
++                uploadedPikePushupStartRangeRuns.inside,
++              cuadrosConsecutivosFuera:
++                uploadedPikePushupStartRangeRuns.outside,
++              activacion: '<130°',
++              rangoFondo: [
++                UPLOADED_PIKE_PUSHUP_END_MIN_ANGLE,
++                UPLOADED_PIKE_PUSHUP_END_MAX_ANGLE,
++              ],
++              fase: uploadedPikePushupPostflightTracker.phase,
++              repeticiones: uploadedPikePushupPostflightTracker.repetitions,
++              frameLowConfidence,
++              muñecaRetenidaAceptada: uploadedPikePushupHeldWristException,
++              muñeca: uploadedPikePushupTrackerWrist
++                ? {
++                    x: uploadedPikePushupTrackerWrist.x,
++                    y: uploadedPikePushupTrackerWrist.y,
++                    score: uploadedPikePushupTrackerWrist.score,
++                    held: uploadedPikePushupTrackerWrist.held,
++                    heldFrames: uploadedPikePushupTrackerWrist.heldFrames,
++                    heldReason: uploadedPikePushupTrackerWrist.heldReason,
++                  }
++                : null,
++              bloqueado: uploadedPikePushupTrackerBlockReasons.length > 0,
++              motivosBloqueo: uploadedPikePushupTrackerBlockReasons,
++            })}`,
++          );
++        }
+         const uploadedPikePushupReasonLogKey = JSON.stringify({
+           frameMeasurementBlocked,
+           frameBlockReasons: uploadedPikePushupFrameBlockReasons,
+@@ -19643,6 +19746,7 @@ function Home() {
+       boneConstraintRef.current.reset();
+       stabilityFramesRef.current = 0;
+       exerciseRepTrackerRef.current = createExerciseRepTracker();
++      uploadedPikePushupStartRangeRunRef.current = { inside: 0, outside: 0 };
+       setExerciseRepetitions(0);
+       setExerciseGoodRepetitions(0);
+       setExerciseRepPhase('esperando inicio');

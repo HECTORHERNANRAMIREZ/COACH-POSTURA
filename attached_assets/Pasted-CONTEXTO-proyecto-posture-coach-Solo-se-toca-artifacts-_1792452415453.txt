@@ -1,0 +1,23 @@
+CONTEXTO: proyecto posture-coach. Solo se toca artifacts/posture-coach/src/App.tsx. Esta rama tiene la etapa A de 'muscle-up' a medias, hecha por un agente anterior que se quedó sin créditos. Ya existen: entrada 'muscle-up' en repetitionConfigs (copiada de STANDARD_PULLUP_TRACKER_CONFIG), calculateRepetitionAngle para muscle-up, MuscleUpPullupTracker y sus funciones, logMuscleUpPullupVerdict, logMuscleUpPullupFinish, y un bloque en el frame (~línea 17920) que llama a advanceMuscleUpPullupTracker. Hay estado propio de calibración y preparación (muscleUpCalibrationStatus, muscleUpPreparationStage, muscleUpCalibrationSuccessfulRef).
+
+OBJETIVO: que 'muscle-up' se comporte EXACTAMENTE igual que 'dominadas' con barra, usando un camino independiente (copia con refs, estado y contadores propios, sin compartir referencias con dominadas). Este es el requisito de fondo.
+
+PASO 1, SOLO LECTURA, SIN EDITAR: audita qué falta comparando el camino de 'dominadas' con el de 'muscle-up'. Revisa en concreto:
+a) que muscleUpPullupTrackerRef, muscleUpPullupSessionFinishedRef, muscleUpPullupCountingBlockedByDetach, muscleUpPullupTopReached, muscleUpPullupHeadOverWrists, muscleUpPullupExtremityValidation y muscleUpPullupBarDetached estén definidos y se calculen con la misma lógica que dominadas;
+b) calibración, prevalidación de cámara y cuenta regresiva de preparación para muscle-up;
+c) que exerciseStartedRef se active para muscle-up igual que en dominadas;
+d) que se escriban [pullup-event], [pullup-veredicto] y [fin] con ejercicio=muscle-up;
+e) reinicio de estado al subir un video nuevo o cambiar de ejercicio;
+f) pantalla final de resultados;
+g) que el archivo compile sin errores de TypeScript.
+Dame la lista de lo que falta ANTES de editar.
+
+PASO 2: completa SOLO lo que falte, copiando del camino de dominadas.
+
+PASO 3: en [muscleup-trace] agrega el motivo por el que angleSentToTracker es null (qué compuerta lo bloquea), para depurar con la consola.
+
+REGLAS:
+- No uses números, tiempos, umbrales ni coordenadas sacados de un video concreto. Debe funcionar con cualquier video y cualquier cantidad de repeticiones.
+- No cambies la lógica de dominadas, dominadas-supinas, dominadas-comando ni ningún otro ejercicio.
+- No ajustes umbrales ni pruebes con video.
+- Al terminar, dime las líneas modificadas y haz commit.
