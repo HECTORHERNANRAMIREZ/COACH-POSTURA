@@ -1846,7 +1846,7 @@ const exercises: ExerciseDefinition[] = [
     muscleGroup: 'espalda',
     description: 'Alterna el agarre sobre la barra y sube con control.',
     angleLabel: 'Codo · tracción vertical',
-    cameraNote: 'Nota: vista trasera recomendada; la frontal también es válida si dejas visibles ambos brazos, las manos y todo el cuerpo.',
+    cameraNote: 'Nota: puedes colocarte de frente, de espaldas, de lado o en 3/4. Deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.',
     trackedJoints: [
       { joint: 'shoulder', label: 'hombros' },
       { joint: 'elbow', label: 'codos' },
@@ -2930,7 +2930,7 @@ const exerciseViewDefinitions: Record<ExerciseId, {
   fondos: { recommendedView: 'side' },
   dominadas: { recommendedView: 'back' },
   'dominadas-supinas': { recommendedView: 'back' },
-  'dominadas-comando': { recommendedView: 'back' },
+  'dominadas-comando': { recommendedView: 'any' },
   'muscle-up': {
     recommendedView: 'side',
     viewToleranceDeg: VIEW_SEMIPROFILE_TOLERANCE_DEG,
@@ -3089,7 +3089,7 @@ const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   ...STANDARD_PULLUP_TRACKER_CONFIG,
 };
-const COMMAND_PULLUP_TRACE_ENABLED = false;
+const COMMAND_PULLUP_TRACE_ENABLED = true;
 const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
@@ -6556,7 +6556,7 @@ function getCameraGuidance(
         : exercise === 'muscle-up'
           ? 'Ponte en semiperfil, unos 30°–45° respecto a la cámara; no uses un perfil totalmente lateral. Deja separados y visibles ambos codos, ambas rodillas y ambos tobillos, además de las manos y la barra.'
         : exercise === 'dominadas-comando'
-          ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
+          ? 'Colócate de frente, de espaldas, de lado o en 3/4; deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'dominadas' || exercise === 'dominadas-supinas'
           ? 'Ponte de espaldas a la cámara y deja visibles ambos brazos, las manos, la cabeza y todo el cuerpo.'
         : exercise === 'fondos'
@@ -12339,8 +12339,8 @@ function Home() {
   const commandPullupSideRef = useRef<PoseSide | null>(null);
   const commandPullupTraceStateRef = useRef<{
     phase: PullupTracker['phase'];
-    frameMeasurementBlocked: boolean;
-    pullupMeasurementBlocked: boolean;
+    blockingReasonSignature: string;
+    lastLogAt: number;
   } | null>(null);
   const sideSwitchesRef = useRef(0);
   const primaryPoseTrackRef = useRef<PoseTrack | null>(null);
@@ -13876,7 +13876,7 @@ function Home() {
         viewEstimatorRef.current.markPoseMissing();
         viewAlignmentGuardRef.current.markPoseMissing();
       }
-      const nextViewAlignment = pose
+      const assessedViewAlignment = pose
         ? viewAlignmentGuardRef.current.update(
             assessExerciseView(
               recommendedView,
@@ -13900,6 +13900,9 @@ function Home() {
             alertVisible: false,
             suggestionVisible: false,
           };
+      const nextViewAlignment = isCommandPullup(selectedExerciseForFrame)
+        ? { ...assessedViewAlignment, blocking: false }
+        : assessedViewAlignment;
       const previousViewAlignment = viewAlignmentRef.current;
       viewAlignmentRef.current = nextViewAlignment;
       if (allowsFrontView) {
@@ -16794,77 +16797,120 @@ function Home() {
       }
       if (COMMAND_PULLUP_TRACE_ENABLED && isCommandPullup(selectedExerciseForFrame)) {
         const measuredSide = commandPullupMeasurementSideForFrame;
-        const measuredSideIndexes = measuredSide ? sideKeypoints[measuredSide] : null;
         const phaseAfter = pullupTrackerRef.current.phase;
         const previousTraceState = commandPullupTraceStateRef.current;
-        const phaseChanged = previousTraceState !== null
-          && previousTraceState.phase !== phaseAfter;
-        const blockingChanged = previousTraceState !== null
-          && (
-            previousTraceState.frameMeasurementBlocked !== frameMeasurementBlocked
-            || previousTraceState.pullupMeasurementBlocked !== pullupMeasurementBlocked
-          );
         const videoTimeSeconds = Number.isFinite(video?.currentTime)
           ? video.currentTime
           : null;
-        const shouldLogEveryLateVideoFrame = inputModeRef.current === 'video'
-          && videoTimeSeconds !== null
-          && videoTimeSeconds > 28;
-
-        if (phaseChanged || blockingChanged || shouldLogEveryLateVideoFrame) {
-          const pointTrace = (index: number | undefined) => {
-            const point = index === undefined ? undefined : pose?.keypoints?.[index];
-            return {
-              score: point?.score ?? null,
-              held: point ? isHeldPoint(point) : null,
-              heldReason: point?.heldReason ?? null,
-            };
+        const pointTrace = (index: number) => {
+          const point = pose?.keypoints?.[index];
+          return {
+            fresh: Boolean(point && isFreshPullupMeasurementPoint(point)),
+            confidence: point?.score ?? null,
+            held: point ? isHeldPoint(point) : null,
+            heldReason: point?.heldReason ?? null,
+            hasWorldCoordinates: Boolean(point && hasWorldCoordinates(point)),
           };
-          const elbowAngles = calculatePullupElbowAngles(pose?.keypoints);
+        };
+        const elbowAngles = calculatePullupElbowAngles(pose?.keypoints);
+        const measurementBlockingReasons = [
+          frameLowConfidence ? 'puntos retenidos o con confianza baja' : null,
+          effectiveViewBlocksFrame ? 'vista incorrecta' : null,
+          pullupMeasurementBlocked ? 'puntos de dominada no frescos o incompletos' : null,
+          pushupMeasurementBlocked ? 'medición de flexiones bloqueada' : null,
+        ].filter((reason): reason is string => reason !== null);
+        if (frameMeasurementBlocked && measurementBlockingReasons.length === 0) {
+          measurementBlockingReasons.push('bloqueo de medición sin causa clasificada');
+        }
+        const blockingReasons = [...new Set([
+          ...getPullupDiagnosticBlockingReasons(
+            pose?.keypoints,
+            exerciseStartedRef.current,
+            frameDetectionStable,
+            viewBlocksFrame,
+            visiblePoints,
+            pullupAngleForFrame,
+            pullupTrackingIsAnchored,
+            measuredSide,
+          ),
+          ...measurementBlockingReasons,
+          !hasFreshPose ? 'pose no fresca' : null,
+          !frameCameraReady
+            ? `cámara no lista: ${rawCameraGuidance.message}${rawCameraGuidance.detail ? `; ${rawCameraGuidance.detail}` : ''}`
+            : null,
+          !effectiveFrameCameraReady ? 'cámara efectiva no lista' : null,
+          !effectiveFrameDetectionStable ? 'pose inestable para conteo' : null,
+          pullupMeasurementBlocked ? 'medición de dominada sin puntos frescos' : null,
+          !pullupCalibrationSuccessfulRef.current ? 'calibración no completada' : null,
+          pullupCountingBlockedByDetach ? 'conteo pausado por barra separada' : null,
+        ].filter((reason): reason is string => reason !== null))];
+        const blockingReasonSignature = JSON.stringify({
+          measurementBlockingReasons,
+          blockingReasons,
+        });
+        const phaseChanged = previousTraceState === null
+          || previousTraceState.phase !== phaseAfter;
+        const blockingChanged = previousTraceState === null
+          || previousTraceState.blockingReasonSignature !== blockingReasonSignature;
+        const intervalElapsed = previousTraceState === null
+          || now - previousTraceState.lastLogAt >= 500;
+        const shouldLog = phaseChanged || blockingChanged || intervalElapsed;
+
+        if (shouldLog) {
           console.log('[pullup-trace] ' + JSON.stringify({
             videoTimeSeconds,
-            measuredSide,
-            candidateSide: commandPullupCandidateSide,
-            candidateStableFrames: sideViewStableFramesRef.current,
-            hasFreshPose,
-            frameCameraReadyRaw: frameCameraReady,
-            frameCameraReadyEffective: effectiveFrameCameraReady,
-            frameMeasurementBlocked,
-            pullupMeasurementBlocked,
-            measuredSidePoints: {
-              shoulder: pointTrace(measuredSideIndexes?.shoulder),
-              elbow: pointTrace(measuredSideIndexes?.elbow),
-              wrist: pointTrace(measuredSideIndexes?.wrist),
+            view: {
+              estimatedView: nextViewAlignment.estimatedView,
+              status: nextViewAlignment.status,
+              blockingReasons: viewBlocksFrame ? ['vista incorrecta'] : [],
+              shoulderYawDeg: viewEstimate.shoulderYawDeg,
             },
-            headPoints: HEAD_LANDMARK_INDICES.map((index) => ({
-              index,
-              ...pointTrace(index),
-            })),
-            hasFreshPullupMeasurement: measuredSide !== null
-              && hasFreshPullupMeasurement(pose?.keypoints, measuredSide),
+            poseDetected: visiblePoints >= 5,
+            frameStable: frameDetectionStable,
+            hasFreshPose,
+            cameraReadyRaw: frameCameraReady,
+            cameraReadyEffective: effectiveFrameCameraReady,
+            measurementBlocked: frameMeasurementBlocked,
+            measurementBlockingReasons,
+            blockingReasons,
+            points: {
+              shoulder: {
+                left: pointTrace(sideKeypoints.left.shoulder),
+                right: pointTrace(sideKeypoints.right.shoulder),
+              },
+              elbow: {
+                left: pointTrace(sideKeypoints.left.elbow),
+                right: pointTrace(sideKeypoints.right.elbow),
+              },
+              wrist: {
+                left: pointTrace(sideKeypoints.left.wrist),
+                right: pointTrace(sideKeypoints.right.wrist),
+              },
+              head: HEAD_LANDMARK_INDICES.map((index) => ({
+                index,
+                ...pointTrace(index),
+              })),
+            },
             elbowAngles: {
-              right: elbowAngles.right,
               left: elbowAngles.left,
+              right: elbowAngles.right,
+              average: elbowAngles.averagedRawAngle,
               trackerReceived: pullupDiagnosticUpdate ? rawAngle : null,
             },
+            noseY: pose?.keypoints?.[0]?.y ?? null,
+            leftWristY: pose?.keypoints?.[sideKeypoints.left.wrist]?.y ?? null,
+            rightWristY: pose?.keypoints?.[sideKeypoints.right.wrist]?.y ?? null,
+            phase: phaseAfter,
             phaseBefore: commandPullupTraceTrackerBefore?.phase ?? phaseAfter,
-            phaseAfter,
-            isRising: pullupDiagnosticUpdate && commandPullupTraceTrackerBefore
-              ? commandPullupTraceTrackerBefore.lastAngle !== null
-                && pullupDiagnosticUpdate.smoothedAngle
-                  < commandPullupTraceTrackerBefore.lastAngle - 3
-              : null,
-            atBottom: pullupDiagnosticUpdate?.isAtBottom ?? null,
             barDetached: pullupBarDetached,
             detachmentFrames: pullupDetachFramesRef.current,
-            pullupSessionFinished: pullupSessionFinishedRef.current,
           }));
         }
 
         commandPullupTraceStateRef.current = {
           phase: phaseAfter,
-          frameMeasurementBlocked,
-          pullupMeasurementBlocked,
+          blockingReasonSignature,
+          lastLogAt: shouldLog ? now : previousTraceState?.lastLogAt ?? now,
         };
       }
       if (isPullupExercise) {
