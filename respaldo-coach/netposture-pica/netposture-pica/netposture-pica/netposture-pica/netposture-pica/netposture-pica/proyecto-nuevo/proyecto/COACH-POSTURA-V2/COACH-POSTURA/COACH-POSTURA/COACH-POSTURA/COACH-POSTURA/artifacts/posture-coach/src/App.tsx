@@ -24381,6 +24381,15 @@ function Home() {
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video') return;
     const video = videoRef.current;
+    if (
+      selectedExerciseRef.current === 'muscle-up'
+      && uploadedPullupPreflightRef.current
+      && !detectorRef.current
+    ) {
+      video?.pause();
+      if (video && video.currentTime > 0) video.currentTime = 0;
+      return;
+    }
     if (selectedExerciseRef.current === 'fondos' && video) {
       const origin = uploadedDipCodePlayPendingRef.current
         ? 'código'
@@ -25198,18 +25207,21 @@ function Home() {
           0.001,
           Math.max(0, Number.isFinite(video.duration) ? video.duration - 0.001 : 0),
         );
-        await new Promise<void>((resolve) => {
-          let timeoutId = 0;
-          const finishSeeking = () => {
-            window.clearTimeout(timeoutId);
-            video.removeEventListener('seeked', finishSeeking);
-            resolve();
-          };
-          video.addEventListener('seeked', finishSeeking, { once: true });
-          timeoutId = window.setTimeout(finishSeeking, 1500);
-          video.currentTime = firstMillisecond;
-        });
-        setVideoTimeSeconds(firstMillisecond);
+        const firstFrameTime = isUploadedMuscleUpVideo ? 0 : firstMillisecond;
+        if (video.seeking || video.currentTime !== firstFrameTime) {
+          await new Promise<void>((resolve) => {
+            let timeoutId = 0;
+            const finishSeeking = () => {
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finishSeeking);
+              resolve();
+            };
+            video.addEventListener('seeked', finishSeeking, { once: true });
+            timeoutId = window.setTimeout(finishSeeking, 1500);
+            video.currentTime = firstFrameTime;
+          });
+        }
+        setVideoTimeSeconds(firstFrameTime);
       } else {
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
           throw new Error('La cámara necesita una conexión segura y compatible con el navegador.');
