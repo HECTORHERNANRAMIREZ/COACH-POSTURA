@@ -5805,13 +5805,59 @@ function isFreshMuscleUpPullupMeasurementPoint(point: PosePoint | undefined) {
   );
 }
 
+function getMuscleUpPullupMeasurementSides(
+  keypoints: PosePoint[] | undefined,
+): PoseSide[] {
+  if (!keypoints) return [];
+
+  const candidates = (['left', 'right'] as PoseSide[]).map((side) => {
+    const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+    const points = [
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+      keypoints[indexes.wrist],
+      keypoints[indexes.hip],
+    ];
+    return {
+      side,
+      averageConfidence: points.reduce(
+        (sum, point) => sum + (point?.score ?? 0),
+        0,
+      ) / points.length,
+      reliable: points.every(isFreshMuscleUpPullupMeasurementPoint),
+    };
+  });
+  const reliableSides = candidates.filter(({ reliable }) => reliable);
+  if (reliableSides.length === 2) {
+    return reliableSides.map(({ side }) => side);
+  }
+
+  const mostConfidentSide = candidates.reduce((best, candidate) => (
+    candidate.averageConfidence > best.averageConfidence ? candidate : best
+  ));
+  return [mostConfidentSide.side];
+}
+
+function getMuscleUpPullupHeadPointIndexes(keypoints: PosePoint[] | undefined) {
+  return [...HEAD_LANDMARK_INDICES]
+    .sort((firstIndex, secondIndex) => {
+      const firstPoint = keypoints?.[firstIndex];
+      const secondPoint = keypoints?.[secondIndex];
+      const firstIsFresh = isFreshMuscleUpPullupMeasurementPoint(firstPoint);
+      const secondIsFresh = isFreshMuscleUpPullupMeasurementPoint(secondPoint);
+      if (firstIsFresh !== secondIsFresh) return firstIsFresh ? -1 : 1;
+      return (secondPoint?.score ?? 0) - (firstPoint?.score ?? 0);
+    })
+    .slice(0, 2);
+}
+
 function getMuscleUpPullupCalibrationPoints(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return [];
-  const headPoints = HEAD_LANDMARK_INDICES.map((index, pointIndex) => ({
+  const headPoints = getMuscleUpPullupHeadPointIndexes(keypoints).map((index, pointIndex) => ({
     label: `cabeza ${pointIndex + 1}`,
     point: keypoints[index],
   }));
-  const bodyPoints = (['left', 'right'] as PoseSide[]).flatMap((side) => {
+  const bodyPoints = getMuscleUpPullupMeasurementSides(keypoints).flatMap((side) => {
     const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
     const sideLabel = side === 'left' ? 'izquierda' : 'derecha';
     return [
@@ -5819,8 +5865,6 @@ function getMuscleUpPullupCalibrationPoints(keypoints: PosePoint[] | undefined) 
       { label: `codo ${sideLabel}`, point: keypoints[indexes.elbow] },
       { label: `muñeca ${sideLabel}`, point: keypoints[indexes.wrist] },
       { label: `cadera ${sideLabel}`, point: keypoints[indexes.hip] },
-      { label: `rodilla ${sideLabel}`, point: keypoints[indexes.knee] },
-      { label: `tobillo ${sideLabel}`, point: keypoints[indexes.ankle] },
     ];
   });
   return [...headPoints, ...bodyPoints];
@@ -5828,14 +5872,15 @@ function getMuscleUpPullupCalibrationPoints(keypoints: PosePoint[] | undefined) 
 
 function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return false;
-  const armPoints = (['left', 'right'] as PoseSide[]).flatMap((side) => {
+  const measurementPoints = getMuscleUpPullupMeasurementSides(keypoints).flatMap((side) => {
     const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
-    return [indexes.shoulder, indexes.elbow, indexes.wrist];
+    return [indexes.shoulder, indexes.elbow, indexes.wrist, indexes.hip];
   });
   const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
     isFreshMuscleUpPullupMeasurementPoint(keypoints[index])
   )).length;
-  return armPoints.every((index) => isFreshMuscleUpPullupMeasurementPoint(keypoints[index]))
+  return measurementPoints.length > 0
+    && measurementPoints.every((index) => isFreshMuscleUpPullupMeasurementPoint(keypoints[index]))
     && freshHeadPoints >= 2;
 }
 
@@ -5848,12 +5893,19 @@ function calculateMuscleUpPullupElbowAngles(keypoints: PosePoint[] | undefined) 
   );
   const left = getSideAngle('left');
   const right = getSideAngle('right');
+  const evaluatedAngles = getMuscleUpPullupMeasurementSides(keypoints).map((side) => (
+    side === 'left' ? left : right
+  ));
+  const averagedRawAngle = evaluatedAngles.length > 0
+    && evaluatedAngles.every((angle): angle is number => angle !== null)
+    ? Math.round(
+        evaluatedAngles.reduce((sum, angle) => sum + angle, 0) / evaluatedAngles.length,
+      )
+    : null;
   return {
     left,
     right,
-    averagedRawAngle: left === null || right === null
-      ? null
-      : Math.round((left + right) / 2),
+    averagedRawAngle,
   };
 }
 
@@ -5896,10 +5948,12 @@ function getMuscleUpPullupExtremityReadings(keypoints: PosePoint[] | undefined) 
 
 function getMuscleUpPullupExtremityValidation(
   readings: ReturnType<typeof getMuscleUpPullupExtremityReadings>,
+  evaluatedSides: PoseSide[] = ['left', 'right'],
 ): MuscleUpPullupExtremityValidation {
   const allElbowsInRange = (min: number, max: number) => (
-    [readings.left, readings.right].every((reading) => (
-      reading.elbow !== null && isWithinMuscleUpPullupAngle(reading.elbow, min, max)
+    evaluatedSides.length > 0 && evaluatedSides.every((side) => (
+      readings[side].elbow !== null
+      && isWithinMuscleUpPullupAngle(readings[side].elbow!, min, max)
     ))
   );
   return {
@@ -7111,6 +7165,11 @@ function hasHeldPointForExercise(
 ) {
   if (!keypoints) return false;
 
+  if (exercise === 'muscle-up') {
+    return getMuscleUpPullupCalibrationPoints(keypoints)
+      .some(({ point }) => isHeldPoint(point));
+  }
+
   if (exercise === 'sentadillas') {
     return (['left', 'right'] as PoseSide[]).some((side) => {
       const indexes = sideKeypoints[side];
@@ -7131,7 +7190,7 @@ function getCameraGuidance(
   videoHeight: number,
   lateralSide: PoseSide | null = null,
 ): CameraGuidance {
-  if (!keypoints || !side) {
+  if (!keypoints || (!side && exercise !== 'muscle-up')) {
     return {
       tone: 'checking',
       message: 'Ajustando la cámara',
@@ -7223,7 +7282,9 @@ function getCameraGuidance(
     };
   }
 
-  const requiredPoints = getTrackedPointsForExercise(exercise, keypoints, side);
+  const requiredPoints = exercise === 'muscle-up'
+    ? getMuscleUpPullupCalibrationPoints(keypoints)
+    : getTrackedPointsForExercise(exercise, keypoints, side);
   const missingLabels = requiredPoints
     .filter(({ label, point }) => {
       if (exercise === 'flexiones-declinadas') {
@@ -14821,11 +14882,13 @@ function Home() {
           pose?.keypoints,
           measurementSide,
         );
-      const frameLowConfidence = pullupTrackingIsAnchored || muscleUpPullupTrackingIsAnchored
-        ? false
-        : uploadedPikePushupHeldWristException
+      const frameLowConfidence = isMuscleUpExercise
+        ? detectedFrameLowConfidence
+        : pullupTrackingIsAnchored
           ? false
-          : detectedFrameLowConfidence;
+          : uploadedPikePushupHeldWristException
+            ? false
+            : detectedFrameLowConfidence;
       const effectiveViewBlocksFrame = pullupTrackingIsAnchored
         || muscleUpPullupTrackingIsAnchored
         || pushupTrackingIsAnchored
@@ -17412,6 +17475,9 @@ function Home() {
         && !muscleUpPullupMeasurementBlocked
         ? getMuscleUpPullupHeadOverBothWrists(pose?.keypoints)
         : null;
+      const muscleUpPullupMeasurementSides = isMuscleUpExercise
+        ? getMuscleUpPullupMeasurementSides(pose?.keypoints)
+        : [];
       const muscleUpPullupExtremityReadings = isMuscleUpExercise
         ? getMuscleUpPullupExtremityReadings(pose?.keypoints)
         : {
@@ -17419,7 +17485,10 @@ function Home() {
             right: { shoulder: null, elbow: null },
           };
       const muscleUpPullupExtremityValidation = isMuscleUpExercise
-        ? getMuscleUpPullupExtremityValidation(muscleUpPullupExtremityReadings)
+        ? getMuscleUpPullupExtremityValidation(
+            muscleUpPullupExtremityReadings,
+            muscleUpPullupMeasurementSides,
+          )
         : { atBottom: false, atTop: false };
       const muscleUpPullupTopReached = isMuscleUpExercise
         && !muscleUpPullupMeasurementBlocked
