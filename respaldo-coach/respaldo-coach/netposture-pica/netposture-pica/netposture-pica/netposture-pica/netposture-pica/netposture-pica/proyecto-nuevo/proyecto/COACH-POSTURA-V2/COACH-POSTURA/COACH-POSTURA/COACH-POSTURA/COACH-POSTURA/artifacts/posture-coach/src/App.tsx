@@ -18370,6 +18370,46 @@ function Home() {
           );
         }
       }
+      if (
+        isMuscleUpExercise
+        && muscleUpPullupTrackerRef.current.phase === 'arriba'
+      ) {
+        const muscleUpHeadPointsForTrace = HEAD_LANDMARK_INDICES.flatMap((index) => {
+          const point = pose?.keypoints?.[index];
+          return (point?.score ?? 0) >= 0.2
+            ? [{ index, score: point?.score ?? null }]
+            : [];
+        });
+        const muscleUpWristsForTrace = muscleUpPullupMeasurementSides.map((side) => {
+          const wrist = pose?.keypoints?.[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].wrist];
+          return { side, score: wrist?.score ?? null };
+        });
+        const muscleUpHeadNullReason = muscleUpPullupHeadOverWrists !== null
+          ? null
+          : muscleUpPullupMeasurementBlocked
+            ? 'medición-bloqueada'
+            : muscleUpPullupMeasurementSides.length === 0
+              ? 'sin-lado-seleccionado'
+              : muscleUpHeadPointsForTrace.length < 2
+                ? 'menos-de-2-puntos-cabeza'
+                : muscleUpWristsForTrace.some(({ score }) => (score ?? 0) < 0.2)
+                  ? 'sin-muñeca-válida'
+                  : 'otro';
+        console.log(`[muscleup-cabeza] ${JSON.stringify({
+          videoTimeSeconds: inputModeRef.current === 'video'
+            && Number.isFinite(video.currentTime)
+            ? video.currentTime
+            : null,
+          selectedSides: muscleUpPullupMeasurementSides,
+          wristsUsed: muscleUpWristsForTrace,
+          headPointsAtScoreGte02: {
+            count: muscleUpHeadPointsForTrace.length,
+            scores: muscleUpHeadPointsForTrace.map(({ score }) => score),
+          },
+          headOverWrists: muscleUpPullupHeadOverWrists,
+          nullReason: muscleUpHeadNullReason,
+        })}`);
+      }
       if (COMMAND_PULLUP_TRACE_ENABLED && isCommandPullup(selectedExerciseForFrame)) {
         const measuredSide = commandPullupMeasurementSideForFrame;
         const phaseAfter = pullupTrackerRef.current.phase;
