@@ -12571,6 +12571,7 @@ function Home() {
     busySkipped: 0,
   });
   const detectorRef = useRef<PoseDetector | null>(null);
+  const uploadedMuscleUpDetectorReadyRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
   const videoFrameCallbackRef = useRef<number | null>(null);
   const processingFrameRef = useRef(false);
@@ -13770,6 +13771,9 @@ function Home() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     detectorTransitionRef.current = null;
+    if (selectedExerciseRef.current === 'muscle-up') {
+      uploadedMuscleUpDetectorReadyRef.current = false;
+    }
     detectorRef.current?.close();
     detectorRef.current = null;
     if (
@@ -24432,7 +24436,10 @@ function Home() {
     if (
       selectedExerciseRef.current === 'muscle-up'
       && uploadedPullupPreflightRef.current
-      && !detectorRef.current
+      && (
+        !uploadedMuscleUpDetectorReadyRef.current
+        || !detectorRef.current
+      )
     ) {
       video?.pause();
       if (video && video.currentTime > 0) video.currentTime = 0;
@@ -24673,6 +24680,9 @@ function Home() {
       ),
     );
     const isUploadedMuscleUpVideo = Boolean(videoFile && activeExercise === 'muscle-up');
+    if (isUploadedMuscleUpVideo) {
+      uploadedMuscleUpDetectorReadyRef.current = false;
+    }
     const isUploadedPullupSearchVideo = isUploadedPullupVideo || isUploadedMuscleUpVideo;
     const isUploadedDipVideo = Boolean(videoFile && activeExercise === 'fondos');
     const isUploadedSquatVideo = Boolean(videoFile && activeExercise === 'sentadillas');
@@ -25296,7 +25306,29 @@ function Home() {
         logUploadedDipStartupStageOnce('inicio-carga-modelo');
       }
       const detector = await loadDetector(Boolean(videoFile));
+      if (isUploadedMuscleUpVideo) {
+        activeRef.current = false;
+        video.pause();
+        if (video.seeking || video.currentTime !== 0) {
+          await new Promise<void>((resolve) => {
+            let timeoutId = 0;
+            const finishSeeking = () => {
+              window.clearTimeout(timeoutId);
+              video.removeEventListener('seeked', finishSeeking);
+              resolve();
+            };
+            video.addEventListener('seeked', finishSeeking, { once: true });
+            timeoutId = window.setTimeout(finishSeeking, 1500);
+            video.currentTime = 0;
+          });
+        }
+        video.pause();
+        setVideoTimeSeconds(0);
+      }
       detectorRef.current = detector;
+      if (isUploadedMuscleUpVideo) {
+        uploadedMuscleUpDetectorReadyRef.current = true;
+      }
       if (
         picaDiagActiveRef.current
         && inputModeRef.current === 'video'
