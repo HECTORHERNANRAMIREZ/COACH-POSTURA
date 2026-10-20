@@ -1,0 +1,14 @@
+PROTECCIÓN (lo más importante): `dominadas`, `dominadas-supinas` y todos los demás ejercicios deben dar EXACTAMENTE el mismo resultado que hoy. Todo cambio va solo detrás de la identidad `dominadas-comando`. No cambies umbrales, fases, conteo, veredicto, calibración ni reglas de frescura de ningún ejercicio. Cambios mínimos; no reescribas funciones ni borres código que usen otros ejercicios.
+
+PROBLEMA: un video de `dominadas-comando` grabado de lado (shoulderYawDeg 80–90°, estimatedView "side", recommendedView "back", estado "bad", blockingReasons ['vista incorrecta','pose inestable','ejercicio no iniciado'], measurementBlocked true) nunca arranca: segundosVálidos queda en 0.00/5.00 y total=0. El modelo sí detecta el cuerpo (poseDetected true).
+
+TAREA 1: para `dominadas-comando`, la vista NO debe bloquear la búsqueda de 5 s, la prevalidación del video ni el conteo. Debe aceptar cualquier vista (trasera, 3/4, lateral o frontal). Localiza dónde se decide ese bloqueo (evaluador de vista, 'vista incorrecta', effectiveViewBlocksFrame, y el estado "bad" que bloquea) y exceptúa solo a comando. Haz que la guía de cámara de comando no exija vista trasera. La vista del resto de ejercicios no cambia.
+
+TAREA 2: si tras eso la medición de comando sigue bloqueada por otra causa (por ejemplo 'pose inestable' o puntos no frescos), NO cambies esas reglas: solo regístralas en el log.
+
+TAREA 3 (solo registro): activa un log `[pullup-trace]` para `dominadas-comando` (el anterior quedó apagado) y emítelo como UNA sola cadena con JSON.stringify, para que se copie completo desde la consola. Campos: tiempo del video; estimatedView, status y blockingReasons de la vista; poseDetected, frameStable y hasFreshPose; cameraReady crudo y efectivo; measurementBlocked y su motivo; para hombro, codo y muñeca izquierdos y derechos y para los puntos de cabeza usados: frescura (booleano) y confianza; ángulos de codo izquierdo, derecho y promedio; Y de la nariz y de ambas muñecas; fase; barDetached y detachmentFrames. Emítelo cuando cambie la fase o el motivo de bloqueo, y como mucho cada 500 ms el resto del tiempo.
+
+VERIFICACIÓN FINAL (sin esconder nada):
+a) Lista cada línea modificada con archivo y línea.
+b) Confirma, citando líneas, que ningún otro ejercicio cambia y que no tocaste umbrales ni conteo.
+c) Dime qué otros bloqueos siguen activos en comando después del cambio.
