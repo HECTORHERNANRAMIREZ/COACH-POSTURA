@@ -5973,16 +5973,18 @@ function calculateMuscleUpPullupElbowAngles(keypoints: PosePoint[] | undefined) 
   };
 }
 
-function getMuscleUpPullupHeadOverBothWrists(
+function getMuscleUpPullupHeadOverWrists(
   keypoints: PosePoint[] | undefined,
+  measurementSides: PoseSide[],
 ): boolean | null {
   const headPoints = HEAD_LANDMARK_INDICES
     .map((index) => keypoints?.[index])
     .filter((point): point is PosePoint => (point?.score ?? 0) >= 0.2);
-  const wrists = (['left', 'right'] as PoseSide[])
+  const wrists = measurementSides
     .map((side) => keypoints?.[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].wrist]);
   if (
     headPoints.length < 2
+    || measurementSides.length === 0
     || wrists.some((wrist) => (wrist?.score ?? 0) < 0.2)
   ) return null;
   const headCenterY = headPoints.reduce((sum, point) => sum + point.y, 0) / headPoints.length;
@@ -17741,13 +17743,16 @@ function Home() {
           pullupHeadOverWrists === true
           || pullupExtremityValidation.atTop
         );
-      const muscleUpPullupHeadOverWrists = isMuscleUpExercise
-        && !muscleUpPullupMeasurementBlocked
-        ? getMuscleUpPullupHeadOverBothWrists(pose?.keypoints)
-        : null;
       const muscleUpPullupMeasurementSides = isMuscleUpExercise
         ? getMuscleUpPullupMeasurementSides(pose?.keypoints)
         : [];
+      const muscleUpPullupHeadOverWrists = isMuscleUpExercise
+        && !muscleUpPullupMeasurementBlocked
+        ? getMuscleUpPullupHeadOverWrists(
+            pose?.keypoints,
+            muscleUpPullupMeasurementSides,
+          )
+        : null;
       const muscleUpPullupExtremityReadings = isMuscleUpExercise
         ? getMuscleUpPullupExtremityReadings(pose?.keypoints)
         : {
