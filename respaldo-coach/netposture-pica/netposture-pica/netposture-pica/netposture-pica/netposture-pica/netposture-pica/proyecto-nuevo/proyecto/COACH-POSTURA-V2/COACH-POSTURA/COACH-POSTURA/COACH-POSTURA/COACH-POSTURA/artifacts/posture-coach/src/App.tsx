@@ -17230,6 +17230,12 @@ function Home() {
       setPushupElbowTorsoAngle(displayPushupElbowTorsoAngle);
       setPushupBodyLineAngle(displayPushupBodyLineAngle);
       setMuscleUpAngles(displayMuscleUpAngles);
+      let muscleUpAngleAndGateTraceForLog: {
+        trackerCallAllowed: boolean;
+        trackerGateBlockers: string[];
+        [key: string]: unknown;
+      } | null = null;
+      let muscleUpTracePayloadForLog: unknown = null;
       if (
         selectedExerciseForFrame === 'muscle-up'
         && inputModeRef.current === 'video'
@@ -17291,29 +17297,72 @@ function Home() {
             return hipY === null || wristY === null ? null : Math.abs(hipY - wristY);
           };
           const muscleUpAngleKeypoints = pose?.keypoints;
-          const muscleUpAnglePoints = muscleUpAngleKeypoints
-            ? (['left', 'right'] as PoseSide[]).flatMap((side) => {
-                const indexes = sideKeypoints[side];
-                const sideLabel = side === 'left' ? 'izquierdo' : 'derecho';
-                return [
-                  { label: `hombro ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.shoulder] },
-                  { label: `codo ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.elbow] },
-                  { label: `muñeca ${sideLabel}`, point: muscleUpAngleKeypoints[indexes.wrist] },
-                ];
-              })
-            : [];
+          const muscleUpMeasurementSidesForTrace = getMuscleUpPullupMeasurementSides(
+            muscleUpAngleKeypoints,
+          );
+          const muscleUpAngleResultsForTrace = calculateMuscleUpPullupElbowAngles(
+            muscleUpAngleKeypoints,
+          );
+          const muscleUpMeanConfidenceBySide = (
+            ['left', 'right'] as PoseSide[]
+          ).reduce<Record<PoseSide, number>>((confidenceBySide, side) => {
+            const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+            const points = [
+              muscleUpAngleKeypoints?.[indexes.shoulder],
+              muscleUpAngleKeypoints?.[indexes.elbow],
+              muscleUpAngleKeypoints?.[indexes.wrist],
+              muscleUpAngleKeypoints?.[indexes.hip],
+            ];
+            confidenceBySide[side] = points.reduce(
+              (sum, point) => sum + (point?.score ?? 0),
+              0,
+            ) / points.length;
+            return confidenceBySide;
+          }, { left: 0, right: 0 });
           const muscleUpAngleNullReasons = repetitionAngle === null
             ? [
                 !repetitionConfig ? 'configuración de repetición ausente' : null,
-                !pose?.keypoints ? 'pose sin puntos clave' : null,
-                ...muscleUpAnglePoints.flatMap(({ label, point }) => (
-                  !point
-                    ? [`falta el punto ${label}`]
-                    : (point.score ?? 0) < 0.2
-                      ? [`confianza insuficiente en ${label}`]
-                      : []
-                )),
-              ].filter((reason): reason is string => Boolean(reason))
+                !muscleUpAngleKeypoints ? 'pose sin puntos clave' : null,
+                muscleUpMeasurementSidesForTrace.length === 0
+                  ? 'sin lado de medición seleccionado'
+                  : null,
+                ...muscleUpMeasurementSidesForTrace.flatMap((side) => {
+                  const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+                  const sideLabel = side === 'left' ? 'izquierdo' : 'derecho';
+                  const anglePoints = [
+                    {
+                      label: `hombro ${sideLabel}`,
+                      point: muscleUpAngleKeypoints?.[indexes.shoulder],
+                    },
+                    {
+                      label: `codo ${sideLabel}`,
+                      point: muscleUpAngleKeypoints?.[indexes.elbow],
+                    },
+                    {
+                      label: `muñeca ${sideLabel}`,
+                      point: muscleUpAngleKeypoints?.[indexes.wrist],
+                    },
+                  ];
+                  const sideReasons = anglePoints.flatMap(({ label, point }) => {
+                    if (!point) return [`falta el punto ${label}`];
+                    return [
+                      (point.score ?? 0) < 0.2
+                        ? `confianza insuficiente en ${label}`
+                        : null,
+                      !hasWorldCoordinates(point)
+                        ? `coordenadas 3D no válidas en ${label}`
+                        : null,
+                    ].filter((reason): reason is string => reason !== null);
+                  });
+                  if (
+                    muscleUpAngleResultsForTrace[side] === null
+                    && sideReasons.length === 0
+                  ) {
+                    sideReasons.push(`geometría hombro-codo-muñeca nula en lado ${sideLabel}`);
+                  }
+                  return sideReasons;
+                }),
+              ].filter((reason): reason is string => reason !== null)
             : [];
           if (repetitionAngle === null && muscleUpAngleNullReasons.length === 0) {
             muscleUpAngleNullReasons.push(
@@ -17322,22 +17371,51 @@ function Home() {
           }
           const muscleUpTrackerGateBlockers = [
             !muscleUpCalibrationSuccessfulRef.current ? 'calibración pendiente' : null,
-            !frameCameraReady && !muscleUpPullupTrackingIsAnchored
-              ? 'cámara no lista'
-              : null,
             !exerciseStartedRef.current ? 'ejercicio no iniciado' : null,
             !hasFreshPose ? 'pose no fresca' : null,
             !effectiveFrameDetectionStable ? 'cuadros no estables' : null,
             !effectiveFrameCameraReady ? 'cámara no lista para conteo' : null,
+            !repetitionConfig ? 'configuración de repetición ausente' : null,
             muscleUpPullupMeasurementBlocked ? 'medición de extremidades bloqueada' : null,
             frameMeasurementBlocked ? 'medición del cuadro bloqueada' : null,
+            frameLowConfidence ? 'frameLowConfidence' : null,
+            effectiveViewBlocksFrame ? 'effectiveViewBlocksFrame' : null,
             repetitionAngle === null ? 'ángulo de repetición nulo' : null,
             muscleUpPullupSessionFinishedRef.current ? 'sesión finalizada' : null,
           ].filter((reason): reason is string => Boolean(reason));
-          console.log(`[muscleup-trace] ${JSON.stringify({
+          const muscleUpSelectedSideMeanConfidence = muscleUpMeasurementSidesForTrace.map(
+            (side) => ({
+              side,
+              meanConfidence: muscleUpMeanConfidenceBySide[side],
+            }),
+          );
+          const muscleUpAngleAndGateTrace = {
+            videoTimeSeconds: muscleUpTraceVideoTime,
+            angleSentToTracker: repetitionAngle,
+            angleNullReason: repetitionAngle === null ? muscleUpAngleNullReasons : null,
+            angleBySide: {
+              left: muscleUpAngleResultsForTrace.left,
+              right: muscleUpAngleResultsForTrace.right,
+            },
+            measurementSideSelection: {
+              selectedSide: muscleUpMeasurementSidesForTrace.length === 1
+                ? muscleUpMeasurementSidesForTrace[0]
+                : muscleUpMeasurementSidesForTrace.length === 2
+                  ? 'both'
+                  : null,
+              selectedSides: muscleUpMeasurementSidesForTrace,
+              meanConfidenceBySide: muscleUpMeanConfidenceBySide,
+              selectedMeanConfidenceBySide: muscleUpSelectedSideMeanConfidence,
+            },
+            trackerCallAllowed: muscleUpTrackerGateBlockers.length === 0,
+            trackerGateBlockers: muscleUpTrackerGateBlockers,
+          };
+          muscleUpAngleAndGateTraceForLog = muscleUpAngleAndGateTrace;
+          muscleUpTracePayloadForLog = {
             videoTimeSeconds: muscleUpTraceVideoTime,
             poseDetected: visiblePoints >= 5,
             hasFreshPose,
+            angleAndTracker: muscleUpAngleAndGateTrace,
             counter: {
               phaseCurrent: muscleUpPullupTrackerRef.current.phase,
               phasePrevious: muscleUpPullupPreviousPhaseRef.current,
@@ -17411,7 +17489,7 @@ function Home() {
               left: verticalHipWristDistance('left'),
               right: verticalHipWristDistance('right'),
             },
-          })}`);
+          };
           const meanY = (indexes: number[]): number | null => {
             const values = indexes
               .map((index) => pose?.keypoints?.[index]?.y)
@@ -17502,7 +17580,6 @@ function Home() {
               })(),
             },
           })}`);
-          muscleUpTraceLastLogAtRef.current = now;
         }
       }
       let nextAngle = frameMeasurementBlocked ? null : rawAngle;
@@ -17681,6 +17758,30 @@ function Home() {
           && muscleUpPullupTracker.phase !== 'abajo'
         )
       );
+      if (muscleUpAngleAndGateTraceForLog) {
+        if (
+          muscleUpPullupSessionFinishedRef.current
+          && !muscleUpAngleAndGateTraceForLog.trackerGateBlockers.includes('sesión finalizada')
+        ) {
+          muscleUpAngleAndGateTraceForLog.trackerGateBlockers.push('sesión finalizada');
+        }
+        if (
+          muscleUpPullupCountingBlockedByDetach
+          && !muscleUpAngleAndGateTraceForLog.trackerGateBlockers.includes(
+            'bloqueo por barra despegada',
+          )
+        ) {
+          muscleUpAngleAndGateTraceForLog.trackerGateBlockers.push(
+            'bloqueo por barra despegada',
+          );
+        }
+        muscleUpAngleAndGateTraceForLog.trackerCallAllowed = (
+          muscleUpAngleAndGateTraceForLog.trackerGateBlockers.length === 0
+        );
+        console.log(`[muscleup-video] ${JSON.stringify(muscleUpAngleAndGateTraceForLog)}`);
+        console.log(`[muscleup-trace] ${JSON.stringify(muscleUpTracePayloadForLog)}`);
+        muscleUpTraceLastLogAtRef.current = now;
+      }
       let pullupDiagnosticUpdate: PullupTrackerUpdate | null = null;
       let squatSmoothedAngleForLog = squatTrackerRef.current.smoothedAngle ?? rawAngle;
       const squatFrameInvalidReasons = selectedExerciseForFrame === 'sentadillas'
