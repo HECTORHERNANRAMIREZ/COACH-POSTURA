@@ -3131,7 +3131,7 @@ const SQUAT_RISE_THRESHOLD = 115;
 const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
-const POSE_MODEL_LOAD_TIMEOUT_MS = 30000;
+const POSE_MODEL_LOAD_TIMEOUT_MS = 60000;
 // Calibración de dominadas basada en las lecturas de la ejecución de referencia:
 // abajo: codo extendido; arriba: codo flexionado.
 // En la vista trasera del video, la extensión real se midió entre 130–180°.
@@ -3190,6 +3190,7 @@ const MUSCLE_UP_PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
 const MUSCLE_UP_PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
 const MUSCLE_UP_PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
 const MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS = 5000;
+const MUSCLE_UP_UPLOADED_SEARCH_DURATION_FRACTION = 0.2;
 const MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const MUSCLE_UP_PULLUP_TRACKER_CONFIG: MuscleUpPullupTrackerConfig = {
   bottomMinAngle: MUSCLE_UP_PULLUP_BOTTOM_MIN_ANGLE,
@@ -5855,19 +5856,51 @@ function getMuscleUpPullupCalibrationPoints(keypoints: PosePoint[] | undefined) 
   if (!keypoints) return [];
   const headPoints = getMuscleUpPullupHeadPointIndexes(keypoints).map((index, pointIndex) => ({
     label: `cabeza ${pointIndex + 1}`,
+    name: index === 0 ? 'nariz' : 'oreja',
+    side: index === 7 ? 'izquierda' : index === 8 ? 'derecha' : 'centro',
     point: keypoints[index],
   }));
   const bodyPoints = getMuscleUpPullupMeasurementSides(keypoints).flatMap((side) => {
     const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
     const sideLabel = side === 'left' ? 'izquierda' : 'derecha';
     return [
-      { label: `hombro ${sideLabel}`, point: keypoints[indexes.shoulder] },
-      { label: `codo ${sideLabel}`, point: keypoints[indexes.elbow] },
-      { label: `muñeca ${sideLabel}`, point: keypoints[indexes.wrist] },
-      { label: `cadera ${sideLabel}`, point: keypoints[indexes.hip] },
+      {
+        label: `hombro ${sideLabel}`,
+        name: 'hombro',
+        side: sideLabel,
+        point: keypoints[indexes.shoulder],
+      },
+      {
+        label: `codo ${sideLabel}`,
+        name: 'codo',
+        side: sideLabel,
+        point: keypoints[indexes.elbow],
+      },
+      {
+        label: `muñeca ${sideLabel}`,
+        name: 'muñeca',
+        side: sideLabel,
+        point: keypoints[indexes.wrist],
+      },
+      {
+        label: `cadera ${sideLabel}`,
+        name: 'cadera',
+        side: sideLabel,
+        point: keypoints[indexes.hip],
+      },
     ];
   });
   return [...headPoints, ...bodyPoints];
+}
+
+function getMuscleUpCalibrationPointInvalidReason(point: PosePoint | undefined) {
+  if (!point) return 'ausente';
+  if (point.heldReason === 'low-score') return 'retenido por low-score';
+  if (point.heldReason === 'bone-length') return 'bone-length';
+  if (isHeldPoint(point)) return `retenido por ${point.heldReason ?? 'filtro'}`;
+  if ((point.score ?? 0) < CAMERA_POINT_MIN_SCORE) return 'low-score';
+  if (!hasWorldCoordinates(point)) return 'sin coordenadas 3D';
+  return 'no fresco';
 }
 
 function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undefined) {
@@ -12748,6 +12781,7 @@ function Home() {
     frameReady: boolean,
     invalidReason: string,
     exercise: 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up',
+    requiredHoldMs = PULLUP_BODY_DETECTION_HOLD_MS,
   ) => {
     let runStartVideoTime = uploadedPullupCalibrationRunStartVideoTimeRef.current;
     const activeSearchGap = uploadedPullupSearchGapRef.current;
@@ -12803,7 +12837,7 @@ function Home() {
           console.log(
             `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s hueco tolerado `
             + `duración=${gapDurationSeconds.toFixed(2)}s `
-            + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
+            + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/${(requiredHoldMs / 1000).toFixed(2)} `
             + `motivo=${closedSearchGap.invalidReason}`,
           );
         }
@@ -12872,7 +12906,7 @@ function Home() {
       // TEMP-DIAGNOSTICO: conserva puntuaciones y bloqueos de la ventana reciente.
       logUploadedDipDiagnostic(
         `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s búsqueda `
-        + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
+        + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/${(requiredHoldMs / 1000).toFixed(2)} `
         + `cuadroVálido=${frameReady} motivo=${frameReady ? '—' : invalidReason}`,
       );
     }
@@ -16493,9 +16527,25 @@ function Home() {
           && muscleUpCalibrationPoints.every(({ point }) => (
             isFreshMuscleUpPullupCalibrationPoint(point)
           ));
+        const muscleUpCalibrationPointsNotFresh = muscleUpCalibrationPoints
+          .filter(({ point }) => !isFreshMuscleUpPullupCalibrationPoint(point))
+          .map(({ name, side, point }) => (
+            `${name} (lado=${side}, motivo=${getMuscleUpCalibrationPointInvalidReason(point)}, `
+            + `confianza=${point ? (point.score ?? 0).toFixed(2) : '—'})`
+          ));
         const muscleUpSearchWindowEnd = Number.isFinite(video.duration)
           ? video.duration
           : null;
+        const pullupPreflightRequiredMs = isMuscleUpPreflight
+          ? Math.min(
+              muscleUpSearchWindowEnd !== null && muscleUpSearchWindowEnd > 0
+                ? muscleUpSearchWindowEnd
+                  * 1000
+                  * MUSCLE_UP_UPLOADED_SEARCH_DURATION_FRACTION
+                : MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS,
+              MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS,
+            )
+          : PULLUP_BODY_DETECTION_HOLD_MS;
         const muscleUpFrameInsideSearchWindow = !isMuscleUpPreflight || (
           muscleUpSearchWindowEnd !== null
           && muscleUpSearchWindowEnd > 0
@@ -16520,7 +16570,10 @@ function Home() {
                 : null,
               !hasFreshPose ? 'pose no fresca' : null,
               !muscleUpCalibrationPointsFresh
-                ? 'puntos de calibración muscle-up de Fase 1 no frescos'
+                ? `puntos de calibración muscle-up no frescos: ${
+                  muscleUpCalibrationPointsNotFresh.join('; ')
+                  || 'puntos ausentes (lado=no disponible, motivo=ausente)'
+                }`
                 : null,
               !muscleUpFrameInsideSearchWindow
                 ? 'fuera de la duración del video'
@@ -16551,10 +16604,11 @@ function Home() {
           pullupPreflightFrameReady,
           invalidReasons.join('; ') || 'condición de búsqueda no satisfecha',
           selectedExerciseForFrame,
+          pullupPreflightRequiredMs,
         );
         if (
           pullupPreflightFrameReady
-          && accumulatedMs >= PULLUP_BODY_DETECTION_HOLD_MS
+          && accumulatedMs >= pullupPreflightRequiredMs
           && (!isMuscleUpPreflight || !uploadedPullupVideoEndedRef.current)
         ) {
           uploadedPullupPreflightRef.current = false;
@@ -16599,7 +16653,7 @@ function Home() {
           setVideoExportStatus('Cuerpo detectado. Preparando conteo desde el inicio del video…');
           console.log(
             `[dominadas-video] ejercicio=${selectedExerciseForFrame} t=${video.currentTime.toFixed(2)}s cuerpo detectado `
-            + `segundosVálidos=${(accumulatedMs / 1000).toFixed(2)}/5.00 `
+            + `segundosVálidos=${(accumulatedMs / 1000).toFixed(2)}/${(pullupPreflightRequiredMs / 1000).toFixed(2)} `
             + 'conteoDesde=0.00s tras pausa y retorno al inicio',
           );
           void uploadedPullupStartPlaybackRef.current?.(accumulatedMs);
@@ -17369,6 +17423,28 @@ function Home() {
               'el cálculo geométrico de hombro-codo-muñeca no produjo un ángulo válido',
             );
           }
+          const muscleUpPointBlockers = (
+            frameLowConfidence || muscleUpPullupMeasurementBlocked
+          )
+            ? getMuscleUpPullupCalibrationPoints(muscleUpAngleKeypoints)
+              .filter(({ point }) => !isFreshMuscleUpPullupMeasurementPoint(point))
+              .map(({ name, side, point }) => ({
+                name,
+                side,
+                confidence: point?.score ?? null,
+                reason: getMuscleUpCalibrationPointInvalidReason(point),
+              }))
+            : [];
+          const muscleUpPointBlockerDetails = (
+            frameLowConfidence || muscleUpPullupMeasurementBlocked
+          ) && muscleUpPointBlockers.length === 0
+            ? [{
+                name: 'pose/keypoints',
+                side: 'ninguno',
+                confidence: null,
+                reason: 'ausente',
+              }]
+            : muscleUpPointBlockers;
           const muscleUpTrackerGateBlockers = [
             !muscleUpCalibrationSuccessfulRef.current ? 'calibración pendiente' : null,
             !exerciseStartedRef.current ? 'ejercicio no iniciado' : null,
@@ -17409,6 +17485,11 @@ function Home() {
             },
             trackerCallAllowed: muscleUpTrackerGateBlockers.length === 0,
             trackerGateBlockers: muscleUpTrackerGateBlockers,
+            pointBlockers: {
+              frameLowConfidence,
+              extremityMeasurementBlocked: muscleUpPullupMeasurementBlocked,
+              points: muscleUpPointBlockerDetails,
+            },
           };
           muscleUpAngleAndGateTraceForLog = muscleUpAngleAndGateTrace;
           muscleUpTracePayloadForLog = {
@@ -24493,7 +24574,9 @@ function Home() {
             }
             return createPoseDetector({ model: 'full', delegate: 'GPU' });
           })
-        : createPoseDetector({ model: 'heavy', delegate: 'GPU' });
+        // El modelo Full reduce la descarga inicial de la cámara en vivo
+        // sin cambiar la interfaz ni el formato de las poses analizadas.
+        : createPoseDetector({ model: 'full', delegate: 'GPU' });
       return await Promise.race([
         detectorPromise,
         new Promise<never>((_, reject) => {
