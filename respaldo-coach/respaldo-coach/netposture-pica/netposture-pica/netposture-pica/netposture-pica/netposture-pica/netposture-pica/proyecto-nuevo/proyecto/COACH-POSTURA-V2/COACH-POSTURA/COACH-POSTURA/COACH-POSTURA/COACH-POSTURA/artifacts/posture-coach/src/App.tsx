@@ -5789,20 +5789,39 @@ function isWithinMuscleUpPullupAngle(
   );
 }
 
-function isFreshMuscleUpPullupCalibrationPoint(point: PosePoint | undefined) {
+function isRetainedLowScoreMuscleUpWristPoint(point: PosePoint | undefined) {
   return Boolean(
     point
-    && !isHeldPoint(point)
-    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+    && point.held
+    && point.heldReason === 'low-score'
+    && Number.isFinite(point.x)
+    && Number.isFinite(point.y),
+  );
+}
+
+function isFreshMuscleUpPullupCalibrationPoint(
+  point: PosePoint | undefined,
+  allowRetainedLowScoreWrist = false,
+) {
+  return Boolean(
+    isFreshMuscleUpPullupMeasurementPoint(point, allowRetainedLowScoreWrist)
     && hasWorldCoordinates(point),
   );
 }
 
-function isFreshMuscleUpPullupMeasurementPoint(point: PosePoint | undefined) {
+function isFreshMuscleUpPullupMeasurementPoint(
+  point: PosePoint | undefined,
+  allowRetainedLowScoreWrist = false,
+) {
   return Boolean(
     point
-    && !isHeldPoint(point)
-    && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE,
+    && (
+      (allowRetainedLowScoreWrist && isRetainedLowScoreMuscleUpWristPoint(point))
+      || (
+        !isHeldPoint(point)
+        && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+      )
+    ),
   );
 }
 
@@ -5819,13 +5838,21 @@ function getMuscleUpPullupMeasurementSides(
       keypoints[indexes.wrist],
       keypoints[indexes.hip],
     ];
+    const nonWristPoints = [
+      keypoints[indexes.shoulder],
+      keypoints[indexes.elbow],
+      keypoints[indexes.hip],
+    ];
     return {
       side,
       averageConfidence: points.reduce(
         (sum, point) => sum + (point?.score ?? 0),
         0,
       ) / points.length,
-      reliable: points.every(isFreshMuscleUpPullupMeasurementPoint),
+      reliable: nonWristPoints.every((point) => (
+        isFreshMuscleUpPullupMeasurementPoint(point)
+      ))
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true),
     };
   });
   const reliableSides = candidates.filter(({ reliable }) => reliable);
@@ -5905,15 +5932,20 @@ function getMuscleUpCalibrationPointInvalidReason(point: PosePoint | undefined) 
 
 function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return false;
-  const measurementPoints = getMuscleUpPullupMeasurementSides(keypoints).flatMap((side) => {
-    const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
-    return [indexes.shoulder, indexes.elbow, indexes.wrist, indexes.hip];
-  });
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
   const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
     isFreshMuscleUpPullupMeasurementPoint(keypoints[index])
   )).length;
-  return measurementPoints.length > 0
-    && measurementPoints.every((index) => isFreshMuscleUpPullupMeasurementPoint(keypoints[index]))
+  return measurementSides.length > 0
+    && measurementSides.every((side) => {
+      const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+      return [
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.hip],
+      ].every((point) => isFreshMuscleUpPullupMeasurementPoint(point))
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true);
+    })
     && freshHeadPoints >= 2;
 }
 
@@ -7199,7 +7231,10 @@ function hasHeldPointForExercise(
 
   if (exercise === 'muscle-up') {
     return getMuscleUpPullupCalibrationPoints(keypoints)
-      .some(({ point }) => isHeldPoint(point));
+      .some(({ name, point }) => (
+        isHeldPoint(point)
+        && !(name === 'muñeca' && isRetainedLowScoreMuscleUpWristPoint(point))
+      ));
   }
 
   if (exercise === 'sentadillas') {
@@ -7319,6 +7354,13 @@ function getCameraGuidance(
     : getTrackedPointsForExercise(exercise, keypoints, side);
   const missingLabels = requiredPoints
     .filter(({ label, point }) => {
+      if (
+        exercise === 'muscle-up'
+        && label.startsWith('muñeca')
+        && isRetainedLowScoreMuscleUpWristPoint(point)
+      ) {
+        return false;
+      }
       if (exercise === 'flexiones-declinadas') {
         return !point || (point.score ?? 0) < CAMERA_POINT_MIN_SCORE;
       }
@@ -15319,7 +15361,9 @@ function Home() {
         const calibrationPoints = getMuscleUpPullupCalibrationPoints(pose?.keypoints);
         const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
           && calibrationPoints.length > 0
-          && calibrationPoints.every(({ point }) => isFreshMuscleUpPullupCalibrationPoint(point));
+          && calibrationPoints.every(({ point }) => (
+            isFreshMuscleUpPullupCalibrationPoint(point)
+          ));
 
         if (calibrationFrameReady) {
           muscleUpCalibrationReadySinceRef.current ??= now;
@@ -16524,11 +16568,13 @@ function Home() {
           ? getMuscleUpPullupCalibrationPoints(pose?.keypoints)
           : [];
         const muscleUpCalibrationPointsFresh = muscleUpCalibrationPoints.length > 0
-          && muscleUpCalibrationPoints.every(({ point }) => (
-            isFreshMuscleUpPullupCalibrationPoint(point)
+          && muscleUpCalibrationPoints.every(({ name, point }) => (
+            isFreshMuscleUpPullupCalibrationPoint(point, name === 'muñeca')
           ));
         const muscleUpCalibrationPointsNotFresh = muscleUpCalibrationPoints
-          .filter(({ point }) => !isFreshMuscleUpPullupCalibrationPoint(point))
+          .filter(({ name, point }) => (
+            !isFreshMuscleUpPullupCalibrationPoint(point, name === 'muñeca')
+          ))
           .map(({ name, side, point }) => (
             `${name} (lado=${side}, motivo=${getMuscleUpCalibrationPointInvalidReason(point)}, `
             + `confianza=${point ? (point.score ?? 0).toFixed(2) : '—'})`
@@ -17427,7 +17473,9 @@ function Home() {
             frameLowConfidence || muscleUpPullupMeasurementBlocked
           )
             ? getMuscleUpPullupCalibrationPoints(muscleUpAngleKeypoints)
-              .filter(({ point }) => !isFreshMuscleUpPullupMeasurementPoint(point))
+              .filter(({ name, point }) => (
+                !isFreshMuscleUpPullupMeasurementPoint(point, name === 'muñeca')
+              ))
               .map(({ name, side, point }) => ({
                 name,
                 side,
