@@ -5893,15 +5893,14 @@ function calculateMuscleUpPullupElbowAngles(keypoints: PosePoint[] | undefined) 
   );
   const left = getSideAngle('left');
   const right = getSideAngle('right');
-  const evaluatedAngles = getMuscleUpPullupMeasurementSides(keypoints).map((side) => (
-    side === 'left' ? left : right
-  ));
-  const averagedRawAngle = evaluatedAngles.length > 0
-    && evaluatedAngles.every((angle): angle is number => angle !== null)
-    ? Math.round(
-        evaluatedAngles.reduce((sum, angle) => sum + angle, 0) / evaluatedAngles.length,
-      )
-    : null;
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
+  const averagedRawAngle = measurementSides.length === 2
+    ? left !== null && right !== null
+      ? Math.round((left + right) / 2)
+      : null
+    : measurementSides.length === 1
+      ? measurementSides[0] === 'left' ? left : right
+      : null;
   return {
     left,
     right,
