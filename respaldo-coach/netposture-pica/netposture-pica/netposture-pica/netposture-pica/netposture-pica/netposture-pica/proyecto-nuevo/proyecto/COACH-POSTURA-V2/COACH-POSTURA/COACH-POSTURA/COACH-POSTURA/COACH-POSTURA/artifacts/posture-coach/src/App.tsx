@@ -12747,7 +12747,7 @@ function Home() {
     videoTime: number,
     frameReady: boolean,
     invalidReason: string,
-    exercise: 'dominadas' | 'dominadas-supinas' | 'dominadas-comando',
+    exercise: 'dominadas' | 'dominadas-supinas' | 'dominadas-comando' | 'muscle-up',
   ) => {
     let runStartVideoTime = uploadedPullupCalibrationRunStartVideoTimeRef.current;
     const activeSearchGap = uploadedPullupSearchGapRef.current;
@@ -16458,17 +16458,21 @@ function Home() {
         && (
           isStandardOrSupinePullup(selectedExerciseForFrame)
           || isCommandPullup(selectedExerciseForFrame)
+          || selectedExerciseForFrame === 'muscle-up'
         )
         && uploadedPullupPreflightRef.current
       ) {
+        const isMuscleUpPreflight = selectedExerciseForFrame === 'muscle-up';
         const preflightSide = usesCommandPullupSideMeasurement
           ? commandPullupMeasurementSideForFrame
           : null;
-        const preflightSides = preflightSide
-          ? [preflightSide]
-          : usesCommandPullupSideMeasurement
-            ? []
-            : ['left', 'right'] as PoseSide[];
+        const preflightSides = isMuscleUpPreflight
+          ? []
+          : preflightSide
+            ? [preflightSide]
+            : usesCommandPullupSideMeasurement
+              ? []
+              : ['left', 'right'] as PoseSide[];
         const pullupArmPoints = preflightSides.flatMap((pointSide) => {
           const indexes = sideKeypoints[pointSide];
           return [indexes.shoulder, indexes.elbow, indexes.wrist]
@@ -16482,28 +16486,66 @@ function Home() {
         const freshHeadPointCount = HEAD_LANDMARK_INDICES.filter((index) => (
           isFreshPullupMeasurementPoint(pose?.keypoints?.[index])
         )).length;
-        const pullupPreflightFrameReady = frameCameraReady
-          && hasFreshPose
-          && pullupArmPointsFresh
-          && freshHeadPointCount >= 2
-          && !frameMeasurementBlocked;
-        const invalidReasons = [
-          !frameCameraReady
-            ? `cameraReady=false: ${rawCameraGuidance.message}${rawCameraGuidance.detail ? `; ${rawCameraGuidance.detail}` : ''}`
-            : null,
-          !hasFreshPose ? 'pose no fresca' : null,
-          !pullupArmPointsFresh
-            ? usesCommandPullupSideMeasurement
-              ? `hombro, codo y muñeca del lado ${preflightSide ?? 'sin elegir'} no frescos o sin coordenadas 3D`
-              : 'hombros, codos y muñecas de ambos lados no frescos o sin coordenadas 3D'
-            : null,
-          freshHeadPointCount < 2
-            ? `puntos de cabeza frescos=${freshHeadPointCount}/3 (se requieren 2)`
-            : null,
-          frameMeasurementBlocked && frameCameraReady
-            ? 'medición bloqueada por vista o puntos retenidos'
-            : null,
-        ].filter((reason): reason is string => reason !== null);
+        const muscleUpCalibrationPoints = isMuscleUpPreflight
+          ? getMuscleUpPullupCalibrationPoints(pose?.keypoints)
+          : [];
+        const muscleUpCalibrationPointsFresh = muscleUpCalibrationPoints.length > 0
+          && muscleUpCalibrationPoints.every(({ point }) => (
+            isFreshMuscleUpPullupCalibrationPoint(point)
+          ));
+        const muscleUpSearchWindowEnd = Number.isFinite(video.duration)
+          ? video.duration
+          : null;
+        const muscleUpFrameInsideSearchWindow = !isMuscleUpPreflight || (
+          muscleUpSearchWindowEnd !== null
+          && muscleUpSearchWindowEnd > 0
+          && video.currentTime >= 0
+          && video.currentTime <= muscleUpSearchWindowEnd
+        );
+        const pullupPreflightFrameReady = isMuscleUpPreflight
+          ? frameCameraReady
+            && hasFreshPose
+            && muscleUpCalibrationPointsFresh
+            && muscleUpFrameInsideSearchWindow
+            && !frameMeasurementBlocked
+          : frameCameraReady
+            && hasFreshPose
+            && pullupArmPointsFresh
+            && freshHeadPointCount >= 2
+            && !frameMeasurementBlocked;
+        const invalidReasons = isMuscleUpPreflight
+          ? [
+              !frameCameraReady
+                ? `cameraReady=false: ${rawCameraGuidance.message}${rawCameraGuidance.detail ? `; ${rawCameraGuidance.detail}` : ''}`
+                : null,
+              !hasFreshPose ? 'pose no fresca' : null,
+              !muscleUpCalibrationPointsFresh
+                ? 'puntos de calibración muscle-up de Fase 1 no frescos'
+                : null,
+              !muscleUpFrameInsideSearchWindow
+                ? 'fuera de la duración del video'
+                : null,
+              frameMeasurementBlocked && frameCameraReady
+                ? 'medición bloqueada por vista o puntos retenidos'
+                : null,
+            ].filter((reason): reason is string => reason !== null)
+          : [
+              !frameCameraReady
+                ? `cameraReady=false: ${rawCameraGuidance.message}${rawCameraGuidance.detail ? `; ${rawCameraGuidance.detail}` : ''}`
+                : null,
+              !hasFreshPose ? 'pose no fresca' : null,
+              !pullupArmPointsFresh
+                ? usesCommandPullupSideMeasurement
+                  ? `hombro, codo y muñeca del lado ${preflightSide ?? 'sin elegir'} no frescos o sin coordenadas 3D`
+                  : 'hombros, codos y muñecas de ambos lados no frescos o sin coordenadas 3D'
+                : null,
+              freshHeadPointCount < 2
+                ? `puntos de cabeza frescos=${freshHeadPointCount}/3 (se requieren 2)`
+                : null,
+              frameMeasurementBlocked && frameCameraReady
+                ? 'medición bloqueada por vista o puntos retenidos'
+                : null,
+            ].filter((reason): reason is string => reason !== null);
         const accumulatedMs = recordUploadedPullupSearchFrame(
           video.currentTime,
           pullupPreflightFrameReady,
@@ -16513,6 +16555,7 @@ function Home() {
         if (
           pullupPreflightFrameReady
           && accumulatedMs >= PULLUP_BODY_DETECTION_HOLD_MS
+          && (!isMuscleUpPreflight || !uploadedPullupVideoEndedRef.current)
         ) {
           uploadedPullupPreflightRef.current = false;
           uploadedPullupSearchPausedRef.current = false;
@@ -16522,19 +16565,37 @@ function Home() {
           uploadedPullupCalibrationRunBaseMsRef.current = 0;
           uploadedPullupCalibrationRunStartVideoTimeRef.current = null;
           uploadedPullupSearchGapRef.current = null;
-          pullupCalibrationSuccessfulRef.current = true;
-          pullupCalibrationReadySinceRef.current = null;
-          updatePullupCalibrationStatus('ready');
-          pullupTrackerRef.current = createPullupTracker();
-          pullupSessionFinishedRef.current = false;
-          pullupDetachFramesRef.current = 0;
-          setPullupSessionFinished(false);
-          setPullupRepetitions(0);
-          setPullupGoodRepetitions(0);
-          setPullupPendingRepetitions(0);
-          setPullupPhase('esperando abajo');
-          setPullupMinimumAngle(null);
-          setPullupFeedback(defaultTechniqueFeedback);
+          if (isMuscleUpPreflight) {
+            muscleUpCalibrationSuccessfulRef.current = true;
+            muscleUpCalibrationReadySinceRef.current = null;
+            updateMuscleUpCalibrationStatus('ready');
+            muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+            muscleUpPullupSessionFinishedRef.current = false;
+            muscleUpPullupDetachFramesRef.current = 0;
+            muscleUpPullupFinLoggedRef.current = false;
+            muscleUpPullupPreviousPhaseRef.current = null;
+            setMuscleUpPullupSessionFinished(false);
+            setMuscleUpPullupRepetitions(0);
+            setMuscleUpPullupGoodRepetitions(0);
+            setMuscleUpPullupPendingRepetitions(0);
+            setMuscleUpPullupPhase('esperando abajo');
+            setMuscleUpPullupMinimumAngle(null);
+            setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
+          } else {
+            pullupCalibrationSuccessfulRef.current = true;
+            pullupCalibrationReadySinceRef.current = null;
+            updatePullupCalibrationStatus('ready');
+            pullupTrackerRef.current = createPullupTracker();
+            pullupSessionFinishedRef.current = false;
+            pullupDetachFramesRef.current = 0;
+            setPullupSessionFinished(false);
+            setPullupRepetitions(0);
+            setPullupGoodRepetitions(0);
+            setPullupPendingRepetitions(0);
+            setPullupPhase('esperando abajo');
+            setPullupMinimumAngle(null);
+            setPullupFeedback(defaultTechniqueFeedback);
+          }
           setVideoExportStatus('Cuerpo detectado. Preparando conteo desde el inicio del video…');
           console.log(
             `[dominadas-video] ejercicio=${selectedExerciseForFrame} t=${video.currentTime.toFixed(2)}s cuerpo detectado `
@@ -22435,6 +22496,7 @@ function Home() {
           && (
             isStandardOrSupinePullup(selectedExerciseRef.current)
             || isCommandPullup(selectedExerciseRef.current)
+            || selectedExerciseRef.current === 'muscle-up'
           )
           && uploadedPullupPreflightRef.current
         ) {
@@ -23035,6 +23097,7 @@ function Home() {
       || (
         !isStandardOrSupinePullup(selectedExerciseRef.current)
         && !isCommandPullup(selectedExerciseRef.current)
+        && selectedExerciseRef.current !== 'muscle-up'
       )
       || uploadedPullupTransitionStartingRef.current
     ) return;
@@ -23059,6 +23122,7 @@ function Home() {
         || (
           !isStandardOrSupinePullup(selectedExerciseRef.current)
           && !isCommandPullup(selectedExerciseRef.current)
+          && selectedExerciseRef.current !== 'muscle-up'
         )
       ) return;
       await new Promise<void>((resolve) => {
@@ -23069,6 +23133,7 @@ function Home() {
         || (
           !isStandardOrSupinePullup(selectedExerciseRef.current)
           && !isCommandPullup(selectedExerciseRef.current)
+          && selectedExerciseRef.current !== 'muscle-up'
         )
       ) return;
       if (Math.abs(video.currentTime) > 0.01) {
@@ -23103,9 +23168,12 @@ function Home() {
         || (
           !isStandardOrSupinePullup(selectedExerciseRef.current)
           && !isCommandPullup(selectedExerciseRef.current)
+          && selectedExerciseRef.current !== 'muscle-up'
         )
         || Math.abs(video.currentTime) > 0.01
-      ) throw new Error('No se pudo confirmar el salto al inicio del video.');
+      ) {
+        throw new Error('No se pudo confirmar el salto al inicio del video.');
+      }
       poseFilterRef.current.reset();
       poseFilterRef.current.setPersistentHold(false);
       poseFilterRef.current.setTemporalJumpGuard(false);
@@ -23115,8 +23183,13 @@ function Home() {
       diagnosticBufferRef.current = [];
       lastVideoAnalysisSourceTimeRef.current = Number.NEGATIVE_INFINITY;
       setVideoTimeSeconds(video.currentTime);
-      updatePullupPreparationStage('active');
-      updatePullupPreparationCountdown(null);
+      if (selectedExerciseRef.current === 'muscle-up') {
+        updateMuscleUpPreparationStage('active');
+        updateMuscleUpPreparationCountdown(null);
+      } else {
+        updatePullupPreparationStage('active');
+        updatePullupPreparationCountdown(null);
+      }
       setUploadedPullupPreflightActive(false);
       setUploadedPullupSearchPaused(false);
       hideUploadedPushupSearchOverlay(accumulatedMs);
@@ -23128,6 +23201,7 @@ function Home() {
         && (
           isStandardOrSupinePullup(selectedExerciseRef.current)
           || isCommandPullup(selectedExerciseRef.current)
+          || selectedExerciseRef.current === 'muscle-up'
         )
       ) {
         uploadedPullupTransitionStartingRef.current = false;
@@ -23142,6 +23216,7 @@ function Home() {
         && (
           isStandardOrSupinePullup(selectedExerciseRef.current)
           || isCommandPullup(selectedExerciseRef.current)
+          || selectedExerciseRef.current === 'muscle-up'
         )
       ) {
         activeRef.current = false;
@@ -23163,6 +23238,8 @@ function Home() {
     scheduleNextFrame,
     updatePullupPreparationCountdown,
     updatePullupPreparationStage,
+    updateMuscleUpPreparationCountdown,
+    updateMuscleUpPreparationStage,
   ]);
   uploadedPullupStartPlaybackRef.current = startUploadedPullupPlayback;
 
@@ -24141,6 +24218,7 @@ function Home() {
       (
         isStandardOrSupinePullup(selectedExerciseRef.current)
         || isCommandPullup(selectedExerciseRef.current)
+        || selectedExerciseRef.current === 'muscle-up'
       )
       && uploadedPullupPreflightRef.current
     ) {
@@ -24236,6 +24314,7 @@ function Home() {
       || (
         !isStandardOrSupinePullup(selectedExerciseRef.current)
         && !isCommandPullup(selectedExerciseRef.current)
+        && selectedExerciseRef.current !== 'muscle-up'
       )
       || !uploadedPullupPreflightRef.current
       || uploadedPushupTransitionPauseRef.current
@@ -24352,6 +24431,8 @@ function Home() {
         || isCommandPullup(activeExercise)
       ),
     );
+    const isUploadedMuscleUpVideo = Boolean(videoFile && activeExercise === 'muscle-up');
+    const isUploadedPullupSearchVideo = isUploadedPullupVideo || isUploadedMuscleUpVideo;
     const isUploadedDipVideo = Boolean(videoFile && activeExercise === 'fondos');
     const isUploadedSquatVideo = Boolean(videoFile && activeExercise === 'sentadillas');
     const isUploadedCrossoverVideo = Boolean(
@@ -24505,6 +24586,7 @@ function Home() {
       && activeExercise !== 'flexiones'
       && !isStandardOrSupinePullup(activeExercise)
       && !isCommandPullup(activeExercise)
+      && activeExercise !== 'muscle-up'
       && activeExercise !== 'sentadillas';
     const shouldStartExercise = videoFile
       ? shouldStartUploadedExercise
@@ -24556,7 +24638,8 @@ function Home() {
       && preserveExerciseStarted
       && muscleUpCalibrationSuccessfulRef.current;
     const muscleUpCalibrationReady = activeExercise === 'muscle-up'
-      && (Boolean(videoFile) || preserveMuscleUpCalibration);
+      && !isUploadedMuscleUpVideo
+      && preserveMuscleUpCalibration;
     muscleUpCalibrationSuccessfulRef.current = muscleUpCalibrationReady;
     muscleUpCalibrationStatusRef.current = muscleUpCalibrationReady ? 'ready' : 'pending';
     muscleUpCalibrationReadySinceRef.current = null;
@@ -24660,9 +24743,9 @@ function Home() {
       uploadedPikePushupSearchGapRef.current = null;
       setUploadedPikePushupPreflightReady(false);
     }
-    uploadedPullupPreflightRef.current = isUploadedPullupVideo;
+    uploadedPullupPreflightRef.current = isUploadedPullupSearchVideo;
     uploadedPullupSearchPausedRef.current = false;
-    setUploadedPullupPreflightActive(isUploadedPullupVideo);
+    setUploadedPullupPreflightActive(isUploadedPullupSearchVideo);
     setUploadedPullupSearchPaused(false);
     if (isUploadedSquatVideo) {
       resetUploadedSquatDiagnosticLog();
@@ -24676,7 +24759,7 @@ function Home() {
       uploadedSquatMeasurementSideRef.current = null;
       setVideoExportStatus('Buscando cuerpo…');
     }
-    if (isUploadedPushupVideo || isUploadedPullupVideo) {
+    if (isUploadedPushupVideo || isUploadedPullupSearchVideo) {
       showUploadedPushupSearchOverlay();
     }
     if (isUploadedPressBenchVideo && isPressBenchExercise(activeExercise)) {
@@ -24842,7 +24925,7 @@ function Home() {
         }
         video.pause();
         video.srcObject = null;
-        video.controls = !isUploadedPushupVideo && !isUploadedPullupVideo
+        video.controls = !isUploadedPushupVideo && !isUploadedPullupSearchVideo
           && selectedExerciseRef.current !== 'flexiones';
         if (
           isUploadedPikePushupVideo
@@ -24995,12 +25078,12 @@ function Home() {
       }
       if (videoFile) {
         video.muted = true;
-        if (isUploadedPushupVideo || isUploadedPullupVideo) {
+        if (isUploadedPushupVideo || isUploadedPullupSearchVideo) {
           setVideoExportStatus('Buscando cuerpo…');
           try {
             await video.play();
           } catch {
-            if (isUploadedPullupVideo) {
+            if (isUploadedPullupSearchVideo) {
               uploadedPullupSearchPausedRef.current = true;
               setUploadedPullupSearchPaused(true);
               setVideoExportStatus('No se pudo reproducir automáticamente. Pulsa Reanudar búsqueda.');
@@ -25375,6 +25458,7 @@ function Home() {
         (
           isStandardOrSupinePullup(selectedExerciseRef.current)
           || isCommandPullup(selectedExerciseRef.current)
+          || selectedExerciseRef.current === 'muscle-up'
         )
         && uploadedPullupPreflightRef.current
       ) {
@@ -25676,6 +25760,51 @@ function Home() {
         || isCommandPullup(selectedExerciseRef.current)
       )
     );
+    const isUploadedMuscleUpVideo = (
+      inputModeRef.current === 'video'
+      && selectedExerciseRef.current === 'muscle-up'
+    );
+    if (isUploadedMuscleUpVideo && uploadedPullupPreflightRef.current) {
+      const video = videoRef.current;
+      uploadedPullupPreflightRef.current = false;
+      uploadedPullupVideoEndedRef.current = true;
+      activeRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (videoFrameCallbackRef.current !== null && video?.cancelVideoFrameCallback) {
+        video.cancelVideoFrameCallback(videoFrameCallbackRef.current);
+        videoFrameCallbackRef.current = null;
+      }
+      if (processingFrameRef.current) {
+        await new Promise<void>((resolve) => {
+          let pollingTimer: number | null = null;
+          const deadlineTimer = window.setTimeout(() => {
+            if (pollingTimer !== null) window.clearTimeout(pollingTimer);
+            resolve();
+          }, 2_000);
+          const checkForFrameCompletion = () => {
+            if (!processingFrameRef.current) {
+              window.clearTimeout(deadlineTimer);
+              resolve();
+              return;
+            }
+            pollingTimer = window.setTimeout(checkForFrameCompletion, 10);
+          };
+          checkForFrameCompletion();
+        });
+      }
+      resetUploadedPullupSearch('fin de video', {
+        videoTime: video?.currentTime ?? 0,
+      });
+      uploadedPullupVideoEndedRef.current = true;
+      exerciseStartedRef.current = false;
+      setExerciseStarted(false);
+      if (video) video.controls = true;
+      setVideoExportStatus('No se detectó el cuerpo en el video.');
+      return;
+    }
     // TEMP-DIAGNOSTICO: finaliza la búsqueda o el conteo solo en sentadillas subidas.
     const isUploadedSquatVideo = (
       inputModeRef.current === 'video'
@@ -26476,6 +26605,8 @@ function Home() {
   const isCommandPullupSideMeasurementActive = isCommandPullupSelected
     && activeExercise?.trackBothSides === false;
   const isPullupExerciseSelected = isStandardPullupSelected || isCommandPullupSelected;
+  const isUploadedPullupPreflightExerciseSelected = isPullupExerciseSelected
+    || selectedExercise === 'muscle-up';
   const canExportDiagnostics = PULLUP_DIAGNOSTIC_EXPORT_ENABLED && phase === 'tracking';
   const canExportPullupDiagnostics = canExportDiagnostics && isPullupExerciseSelected;
   const isStandardPushupSelected = selectedExercise === 'flexiones';
@@ -26496,7 +26627,7 @@ function Home() {
           ? squatLivePreparationCountdown !== null
             ? `Acomódate para empezar · ${squatLivePreparationCountdown}`
             : 'Cuerpo registrado ✓ · acomódate para empezar'
-      : isPullupExerciseSelected
+      : isUploadedPullupPreflightExerciseSelected
         && inputMode === 'video'
         && uploadedPullupPreflightActive
         ? uploadedPullupSearchPaused
@@ -27814,7 +27945,7 @@ function Home() {
                   controls={
                     inputMode === 'video'
                     && !(
-                      isPullupExerciseSelected
+                      isUploadedPullupPreflightExerciseSelected
                       && uploadedPullupPreflightActive
                     )
                     && (
@@ -28171,7 +28302,7 @@ function Home() {
                       )
                       || (
                         inputMode === 'video'
-                        && isPullupExerciseSelected
+                        && isUploadedPullupPreflightExerciseSelected
                         && uploadedPullupPreflightActive
                         && !uploadedPullupSearchPaused
                       )
@@ -28194,7 +28325,7 @@ function Home() {
                             ? crossoverPreparationCountdown !== null
                               ? `Acomódate para empezar · ${crossoverPreparationCountdown}`
                               : 'Acomódate para empezar'
-                          : isPullupExerciseSelected
+                          : isUploadedPullupPreflightExerciseSelected
                             && uploadedPullupPreflightActive
                             ? uploadedPullupSearchPaused
                               ? 'Reanudar búsqueda'
