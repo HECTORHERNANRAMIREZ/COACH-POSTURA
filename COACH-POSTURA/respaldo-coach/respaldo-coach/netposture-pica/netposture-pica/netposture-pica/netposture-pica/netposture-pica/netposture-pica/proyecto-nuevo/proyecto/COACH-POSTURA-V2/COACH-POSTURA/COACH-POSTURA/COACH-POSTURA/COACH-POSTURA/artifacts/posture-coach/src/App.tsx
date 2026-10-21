@@ -17753,6 +17753,142 @@ function Home() {
             muscleUpPullupMeasurementSides,
           )
         : null;
+      const muscleUpPullupAboveWristBySide: Partial<Record<PoseSide, {
+        noseY: number | null;
+        shoulderY: number | null;
+        elbowY: number | null;
+        wristY: number | null;
+        noseScore: number | null;
+        shoulderScore: number | null;
+        elbowScore: number | null;
+        wristScore: number | null;
+        held: {
+          nose: boolean | null;
+          shoulder: boolean | null;
+          elbow: boolean | null;
+          wrist: boolean | null;
+        };
+        heldReason: {
+          nose: string | null;
+          shoulder: string | null;
+          elbow: string | null;
+          wrist: string | null;
+        };
+        noseAboveWrist: boolean;
+        shoulderAboveWrist: boolean;
+        elbowAboveWrist: boolean;
+        reasons: string[];
+      }>> = {};
+      const muscleUpPullupAboveWristReasons: string[] = [];
+      const muscleUpNosePoint = pose?.keypoints?.[0];
+      const readMuscleUpPointY = (point: PosePoint | undefined) => (
+        point && Number.isFinite(point.y) ? point.y : null
+      );
+      const isUsableMuscleUpAboveWristPoint = (
+        point: PosePoint | undefined,
+        label: string,
+        reasons: string[],
+      ) => {
+        if (!point || !Number.isFinite(point.y)) {
+          reasons.push(`${label}-missing`);
+          return false;
+        }
+        if ((point.score ?? 0) < CAMERA_POINT_MIN_SCORE) {
+          reasons.push(`${label}-low-confidence`);
+        }
+        if (isHeldPoint(point)) reasons.push(`${label}-held`);
+        return (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+          && !isHeldPoint(point);
+      };
+      for (const side of muscleUpPullupMeasurementSides) {
+        const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+        const shoulder = pose?.keypoints?.[indexes.shoulder];
+        const elbow = pose?.keypoints?.[indexes.elbow];
+        const wrist = pose?.keypoints?.[indexes.wrist];
+        const sideReasons: string[] = [];
+        const noseUsable = isUsableMuscleUpAboveWristPoint(
+          muscleUpNosePoint,
+          'nose',
+          sideReasons,
+        );
+        const shoulderUsable = isUsableMuscleUpAboveWristPoint(
+          shoulder,
+          'shoulder',
+          sideReasons,
+        );
+        const elbowUsable = isUsableMuscleUpAboveWristPoint(
+          elbow,
+          'elbow',
+          sideReasons,
+        );
+        const wristUsable = isUsableMuscleUpAboveWristPoint(
+          wrist,
+          'wrist',
+          sideReasons,
+        );
+        const noseAboveWrist = noseUsable && wristUsable
+          && muscleUpNosePoint!.y < wrist!.y;
+        const shoulderAboveWrist = shoulderUsable && wristUsable
+          && shoulder!.y < wrist!.y;
+        const elbowAboveWrist = elbowUsable && wristUsable
+          && elbow!.y < wrist!.y;
+        if (noseUsable && wristUsable && !noseAboveWrist) {
+          sideReasons.push('nose-not-above-wrist');
+        }
+        if (shoulderUsable && wristUsable && !shoulderAboveWrist) {
+          sideReasons.push('shoulder-not-above-wrist');
+        }
+        if (elbowUsable && wristUsable && !elbowAboveWrist) {
+          sideReasons.push('elbow-not-above-wrist');
+        }
+        muscleUpPullupAboveWristBySide[side] = {
+          noseY: readMuscleUpPointY(muscleUpNosePoint),
+          shoulderY: readMuscleUpPointY(shoulder),
+          elbowY: readMuscleUpPointY(elbow),
+          wristY: readMuscleUpPointY(wrist),
+          noseScore: muscleUpNosePoint?.score ?? null,
+          shoulderScore: shoulder?.score ?? null,
+          elbowScore: elbow?.score ?? null,
+          wristScore: wrist?.score ?? null,
+          held: {
+            nose: muscleUpNosePoint ? isHeldPoint(muscleUpNosePoint) : null,
+            shoulder: shoulder ? isHeldPoint(shoulder) : null,
+            elbow: elbow ? isHeldPoint(elbow) : null,
+            wrist: wrist ? isHeldPoint(wrist) : null,
+          },
+          heldReason: {
+            nose: muscleUpNosePoint?.heldReason ?? null,
+            shoulder: shoulder?.heldReason ?? null,
+            elbow: elbow?.heldReason ?? null,
+            wrist: wrist?.heldReason ?? null,
+          },
+          noseAboveWrist,
+          shoulderAboveWrist,
+          elbowAboveWrist,
+          reasons: sideReasons,
+        };
+        muscleUpPullupAboveWristReasons.push(
+          ...sideReasons.map((reason) => `${side}:${reason}`),
+        );
+      }
+      if (muscleUpPullupMeasurementSides.length === 0) {
+        muscleUpPullupAboveWristReasons.push('no-side-selected');
+      }
+      const muscleUpPullupNoseAboveWrist = muscleUpPullupMeasurementSides.length > 0
+        && muscleUpPullupMeasurementSides.every((side) => (
+          muscleUpPullupAboveWristBySide[side]?.noseAboveWrist === true
+        ));
+      const muscleUpPullupShoulderAboveWrist = muscleUpPullupMeasurementSides.length > 0
+        && muscleUpPullupMeasurementSides.every((side) => (
+          muscleUpPullupAboveWristBySide[side]?.shoulderAboveWrist === true
+        ));
+      const muscleUpPullupElbowAboveWrist = muscleUpPullupMeasurementSides.length > 0
+        && muscleUpPullupMeasurementSides.every((side) => (
+          muscleUpPullupAboveWristBySide[side]?.elbowAboveWrist === true
+        ));
+      const muscleUpPullupAllAboveWrist = muscleUpPullupNoseAboveWrist
+        && muscleUpPullupShoulderAboveWrist
+        && muscleUpPullupElbowAboveWrist;
       const muscleUpPullupExtremityReadings = isMuscleUpExercise
         ? getMuscleUpPullupExtremityReadings(pose?.keypoints)
         : {
@@ -18289,6 +18425,12 @@ function Home() {
           );
         }
       }
+      let muscleUpPullupCountLog: {
+        camino: 'top' | 'no-top' | 'no-lockout';
+        repetitionsAntes: number;
+        repetitionsDespues: number;
+      } | null = null;
+      let muscleUpPullupPhaseBeforeUpdate = muscleUpPullupTrackerRef.current.phase;
       if (
         isMuscleUpExercise
         && muscleUpCalibrationSuccessfulRef.current
@@ -18304,6 +18446,7 @@ function Home() {
       ) {
         const trackerBeforeUpdate = muscleUpPullupTrackerRef.current;
         const phaseBeforeUpdate = trackerBeforeUpdate.phase;
+        muscleUpPullupPhaseBeforeUpdate = phaseBeforeUpdate;
         const update = advanceMuscleUpPullupTracker(
           trackerBeforeUpdate,
           repetitionAngle,
@@ -18314,6 +18457,18 @@ function Home() {
           MUSCLE_UP_PULLUP_TRACKER_CONFIG,
         );
         muscleUpPullupTrackerRef.current = update.tracker;
+        if (update.tracker.repetitions > trackerBeforeUpdate.repetitions) {
+          const camino = update.tracker.event === 'no-top'
+            ? 'no-top'
+            : update.tracker.event === 'no-lockout'
+              ? 'no-lockout'
+              : 'top';
+          muscleUpPullupCountLog = {
+            camino,
+            repetitionsAntes: trackerBeforeUpdate.repetitions,
+            repetitionsDespues: update.tracker.repetitions,
+          };
+        }
         if (update.tracker.phase !== phaseBeforeUpdate) {
           muscleUpPullupPreviousPhaseRef.current = phaseBeforeUpdate;
         }
@@ -18372,7 +18527,13 @@ function Home() {
       }
       if (
         isMuscleUpExercise
-        && muscleUpPullupTrackerRef.current.phase === 'arriba'
+        && (
+          muscleUpPullupPhaseBeforeUpdate === 'subiendo'
+          || muscleUpPullupPhaseBeforeUpdate === 'arriba'
+          || muscleUpPullupTrackerRef.current.phase === 'subiendo'
+          || muscleUpPullupTrackerRef.current.phase === 'arriba'
+          || muscleUpPullupCountLog !== null
+        )
       ) {
         const muscleUpHeadPointsForTrace = HEAD_LANDMARK_INDICES.flatMap((index) => {
           const point = pose?.keypoints?.[index];
@@ -18408,7 +18569,30 @@ function Home() {
           },
           headOverWrists: muscleUpPullupHeadOverWrists,
           nullReason: muscleUpHeadNullReason,
+          bySide: muscleUpPullupAboveWristBySide,
+          noseAboveWrist: muscleUpPullupNoseAboveWrist,
+          shoulderAboveWrist: muscleUpPullupShoulderAboveWrist,
+          elbowAboveWrist: muscleUpPullupElbowAboveWrist,
+          allAboveWrist: muscleUpPullupAllAboveWrist,
+          reasons: muscleUpPullupAboveWristReasons,
+          phaseCurrent: muscleUpPullupTrackerRef.current.phase,
+          repetitions: muscleUpPullupTrackerRef.current.repetitions,
         })}`);
+        if (muscleUpPullupCountLog) {
+          console.log(`[muscleup-conteo] ${JSON.stringify({
+            videoTimeSeconds: inputModeRef.current === 'video'
+              && Number.isFinite(video.currentTime)
+              ? video.currentTime
+              : null,
+            camino: muscleUpPullupCountLog.camino,
+            repetitionsAntes: muscleUpPullupCountLog.repetitionsAntes,
+            repetitionsDespues: muscleUpPullupCountLog.repetitionsDespues,
+            allAboveWrist: muscleUpPullupAllAboveWrist,
+            headOverWrists: muscleUpPullupHeadOverWrists,
+            atTopPorCodo: muscleUpPullupExtremityValidation.atTop,
+            muscleUpPullupTopReached,
+          })}`);
+        }
       }
       if (COMMAND_PULLUP_TRACE_ENABLED && isCommandPullup(selectedExerciseForFrame)) {
         const measuredSide = commandPullupMeasurementSideForFrame;
