@@ -6167,12 +6167,7 @@ function advanceMuscleUpPullupTracker(
     }
   } else if (nextTracker.phase === 'abajo') {
     if (isAtBottom) nextTracker.currentRepCorrect = true;
-    if (
-      hasStartedPull
-      && isRising
-      && nextTracker.currentRepCorrect
-      && headOverWrists !== true
-    ) {
+    if (hasStartedPull && isRising) {
       nextTracker.phase = 'subiendo';
       nextTracker.minimumAngle = smoothedAngle;
     }
