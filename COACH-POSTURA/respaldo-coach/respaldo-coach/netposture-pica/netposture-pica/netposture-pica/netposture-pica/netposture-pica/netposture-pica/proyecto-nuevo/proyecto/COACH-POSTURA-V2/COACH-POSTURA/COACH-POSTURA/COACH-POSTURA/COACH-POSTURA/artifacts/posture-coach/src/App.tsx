@@ -3184,7 +3184,7 @@ const MUSCLE_UP_PULLUP_TOP_ELBOW_MAX_ANGLE = 145;
 const MUSCLE_UP_PULLUP_TOLERANCE_DEG = 5;
 const MUSCLE_UP_PULLUP_SMOOTHING_SAMPLES = 5;
 const MUSCLE_UP_PULLUP_BOTTOM_STABLE_FRAMES = 3;
-const MUSCLE_UP_PULLUP_TOP_CONFIRMATION_FRAMES = 2;
+const MUSCLE_UP_PULLUP_MIN_TOP_FRAMES = 5;
 const MUSCLE_UP_PULLUP_RISING_DELTA_DEG = 3;
 const MUSCLE_UP_PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
 const MUSCLE_UP_PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
@@ -3201,7 +3201,7 @@ const MUSCLE_UP_PULLUP_TRACKER_CONFIG: MuscleUpPullupTrackerConfig = {
   topElbowMaxAngle: MUSCLE_UP_PULLUP_TOP_ELBOW_MAX_ANGLE,
   smoothingSamples: MUSCLE_UP_PULLUP_SMOOTHING_SAMPLES,
   bottomStableFrames: MUSCLE_UP_PULLUP_BOTTOM_STABLE_FRAMES,
-  topConfirmationFrames: MUSCLE_UP_PULLUP_TOP_CONFIRMATION_FRAMES,
+  topConfirmationFrames: MUSCLE_UP_PULLUP_MIN_TOP_FRAMES,
   risingDeltaDeg: MUSCLE_UP_PULLUP_RISING_DELTA_DEG,
   angleToleranceDeg: MUSCLE_UP_PULLUP_TOLERANCE_DEG,
 };
@@ -6167,7 +6167,12 @@ function advanceMuscleUpPullupTracker(
     }
   } else if (nextTracker.phase === 'abajo') {
     if (isAtBottom) nextTracker.currentRepCorrect = true;
-    if (hasStartedPull && isRising) {
+    if (
+      hasStartedPull
+      && isRising
+      && nextTracker.currentRepCorrect
+      && headOverWrists !== true
+    ) {
       nextTracker.phase = 'subiendo';
       nextTracker.minimumAngle = smoothedAngle;
     }
@@ -6177,17 +6182,14 @@ function advanceMuscleUpPullupTracker(
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
     nextTracker.topFrames = hasReachedTop ? nextTracker.topFrames + 1 : 0;
     if (hasReachedTop) {
-      if (headOverWrists !== null) {
-        nextTracker.topConfirmationHeadFramesEvaluated += 1;
-        if (headOverWrists) nextTracker.topConfirmationHeadFramesYes += 1;
-      }
+      nextTracker.topConfirmationHeadFramesEvaluated += 1;
+      nextTracker.topConfirmationHeadFramesYes += 1;
     } else {
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
     }
     if (nextTracker.topFrames >= config.topConfirmationFrames) {
       nextTracker.phase = 'arriba';
-      nextTracker.topFrames = 0;
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
         && topReached;
@@ -6212,27 +6214,17 @@ function advanceMuscleUpPullupTracker(
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
-      nextTracker.repetitions += 1;
       nextTracker.currentRepCorrect = isAtBottom;
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
       completedMinimumAngle = nextTracker.minimumAngle;
-      verdict = {
-        repetition: nextTracker.repetitions,
-        headOverWrists: false,
-        headFramesEvaluated: 0,
-        headFramesYes: 0,
-        bottomReached: isAtBottom,
-        correct: false,
-        reason: 'no-top-cabeza',
-      };
     }
   } else if (nextTracker.phase === 'arriba') {
     nextTracker.topFrames = 0;
     if (nextTracker.pendingRepHeadOverWrists !== null) {
-      if (headOverWrists !== null) {
+      if (topReached) {
         nextTracker.pendingRepHeadFramesEvaluated += 1;
-        if (headOverWrists) nextTracker.pendingRepHeadFramesYes += 1;
+        nextTracker.pendingRepHeadFramesYes += 1;
       }
       nextTracker.pendingRepHeadOverWrists =
         nextTracker.pendingRepHeadFramesYes > 0;
@@ -6258,8 +6250,6 @@ function advanceMuscleUpPullupTracker(
       nextTracker.event = 'no-lockout';
       if (nextTracker.pendingRepHeadOverWrists !== null) {
         nextTracker.suppressNextRepCountUntilBottom = true;
-      } else if (!nextTracker.suppressNextRepCountUntilBottom) {
-        nextTracker.repetitions += 1;
       }
       nextTracker.currentRepCorrect = false;
       completedMinimumAngle = nextTracker.minimumAngle;
@@ -17903,10 +17893,7 @@ function Home() {
         : { atBottom: false, atTop: false };
       const muscleUpPullupTopReached = isMuscleUpExercise
         && !muscleUpPullupMeasurementBlocked
-        && (
-          muscleUpPullupHeadOverWrists === true
-          || muscleUpPullupExtremityValidation.atTop
-        );
+        && muscleUpPullupAllAboveWrist;
       const muscleUpPullupBarDetached = isMuscleUpExercise
         && isMuscleUpPullupBarDetached(pose?.keypoints);
       const pullupBarDetached = isPullupBarDetached(
@@ -18517,6 +18504,7 @@ function Home() {
           console.log(
             `[pullup-event] ${eventTime} ejercicio=muscle-up `
             + `faseAnterior=${phaseBeforeUpdate} faseNueva=${update.tracker.phase} `
+            + `cuadrosConsecutivosAllAbove=${update.tracker.topFrames} `
             + `ángulo=${update.smoothedAngle}° `
             + `cabezaSobreMuñecas=${muscleUpPullupHeadOverWrists} `
             + `total=${update.tracker.repetitions} `
