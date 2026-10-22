@@ -640,6 +640,10 @@ type MuscleUpPullupTracker = {
   pendingRepHeadFramesEvaluated: number;
   pendingRepHeadFramesYes: number;
   suppressNextRepCountUntilBottom: boolean;
+  repetitionCountLockedUntilBottom: boolean;
+  confirmedHangingPosition: boolean;
+  positionalTopFrames: number;
+  lastHangingTorsoLengthPx: number | null;
 };
 type MuscleUpPullupTrackerConfig = {
   bottomMinAngle: number;
@@ -3186,6 +3190,8 @@ const MUSCLE_UP_PULLUP_SMOOTHING_SAMPLES = 5;
 const MUSCLE_UP_PULLUP_BOTTOM_STABLE_FRAMES = 3;
 const MUSCLE_UP_PULLUP_MIN_TOP_FRAMES = 5;
 const MUSCLE_UP_PULLUP_RISING_DELTA_DEG = 3;
+const MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_RATIO = 0.12;
+const MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_MIN_PX = 12;
 const MUSCLE_UP_PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
 const MUSCLE_UP_PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
 const MUSCLE_UP_PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
@@ -5773,6 +5779,10 @@ function createMuscleUpPullupTracker(): MuscleUpPullupTracker {
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     suppressNextRepCountUntilBottom: false,
+    repetitionCountLockedUntilBottom: false,
+    confirmedHangingPosition: false,
+    positionalTopFrames: 0,
+    lastHangingTorsoLengthPx: null,
   };
 }
 
@@ -5949,6 +5959,81 @@ function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undefined) {
     && freshHeadPoints >= 2;
 }
 
+function getFreshMuscleUpPullupTorsoLengthPx(
+  keypoints: PosePoint[] | undefined,
+  measurementSides: PoseSide[],
+) {
+  if (!keypoints || measurementSides.length === 0) return null;
+  const torsoLengths = measurementSides.flatMap((side) => {
+    const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+    const shoulder = keypoints[indexes.shoulder];
+    const hip = keypoints[indexes.hip];
+    if (
+      !isFreshMuscleUpPullupMeasurementPoint(shoulder)
+      || !isFreshMuscleUpPullupMeasurementPoint(hip)
+      || !Number.isFinite(shoulder.x)
+      || !Number.isFinite(shoulder.y)
+      || !Number.isFinite(hip.x)
+      || !Number.isFinite(hip.y)
+    ) {
+      return [];
+    }
+    const torsoLengthPx = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+    return Number.isFinite(torsoLengthPx) && torsoLengthPx > 0
+      ? [torsoLengthPx]
+      : [];
+  });
+  return torsoLengths.length > 0
+    ? torsoLengths.reduce((sum, length) => sum + length, 0) / torsoLengths.length
+    : null;
+}
+
+function hasOnlyUnavailableMuscleUpPullupElbow(
+  keypoints: PosePoint[] | undefined,
+  tracker: MuscleUpPullupTracker,
+) {
+  if (!keypoints) return false;
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
+  const nose = keypoints[0];
+  const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
+    isFreshMuscleUpPullupMeasurementPoint(keypoints[index])
+  )).length;
+  const hasUsableNose = isFreshMuscleUpPullupMeasurementPoint(nose)
+    && Number.isFinite(nose.x)
+    && Number.isFinite(nose.y);
+
+  return measurementSides.length > 0
+    && hasUsableNose
+    && freshHeadPoints >= 2
+    && measurementSides.every((side) => {
+      const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+      const shoulder = keypoints[indexes.shoulder];
+      const elbow = keypoints[indexes.elbow];
+      const wrist = keypoints[indexes.wrist];
+      const hip = keypoints[indexes.hip];
+      const hasUsableTorso = isFreshMuscleUpPullupMeasurementPoint(shoulder)
+        && isFreshMuscleUpPullupMeasurementPoint(hip)
+        && Number.isFinite(shoulder.x)
+        && Number.isFinite(shoulder.y)
+        && Number.isFinite(hip.x)
+        && Number.isFinite(hip.y)
+        && Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y) > 0;
+      const hasCachedTorso = tracker.lastHangingTorsoLengthPx !== null
+        && Number.isFinite(tracker.lastHangingTorsoLengthPx)
+        && tracker.lastHangingTorsoLengthPx > 0;
+      return isFreshMuscleUpPullupMeasurementPoint(shoulder)
+        && Number.isFinite(shoulder.x)
+        && Number.isFinite(shoulder.y)
+        && isFreshMuscleUpPullupMeasurementPoint(wrist)
+        && Number.isFinite(wrist.x)
+        && Number.isFinite(wrist.y)
+        && !isFreshMuscleUpPullupMeasurementPoint(elbow)
+        // La cadera solo aporta la escala del margen; si falta, se usa la
+        // última longitud válida tomada al confirmar el colgado.
+        && (hasUsableTorso || hasCachedTorso);
+    });
+}
+
 function calculateMuscleUpPullupElbowAngles(keypoints: PosePoint[] | undefined) {
   if (!keypoints) return { left: null, right: null, averagedRawAngle: null };
   const getSideAngle = (side: PoseSide) => calculateAngle(
@@ -6103,6 +6188,7 @@ function advanceMuscleUpPullupTracker(
   extremities: MuscleUpPullupExtremityValidation,
   gripped: boolean,
   config: MuscleUpPullupTrackerConfig,
+  torsoLengthPx: number | null = null,
 ): MuscleUpPullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
   const smoothedAngle = median(samples);
@@ -6121,6 +6207,7 @@ function advanceMuscleUpPullupTracker(
     samples,
     event: null,
     lastAngle: smoothedAngle,
+    positionalTopFrames: 0,
   };
   const isAtBottom = extremities.atBottom
     && isWithinMuscleUpPullupAngle(smoothedAngle, config.bottomMinAngle, config.bottomMaxAngle);
@@ -6135,6 +6222,12 @@ function advanceMuscleUpPullupTracker(
     && smoothedAngle < tracker.lastAngle - config.risingDeltaDeg;
   let completedMinimumAngle: number | null = null;
   let verdict: MuscleUpPullupRepVerdict | null = null;
+  if (isAtBottom) {
+    if (torsoLengthPx !== null && Number.isFinite(torsoLengthPx) && torsoLengthPx > 0) {
+      nextTracker.lastHangingTorsoLengthPx = torsoLengthPx;
+    }
+    nextTracker.confirmedHangingPosition = headOverWrists === false;
+  }
   if (isAtBottom) nextTracker.suppressNextRepCountUntilBottom = false;
   if (tracker.phase !== 'subiendo') {
     nextTracker.topConfirmationHeadFramesEvaluated = 0;
@@ -6188,8 +6281,13 @@ function advanceMuscleUpPullupTracker(
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
         && topReached;
-      if (!nextTracker.suppressNextRepCountUntilBottom) {
+      if (
+        !nextTracker.suppressNextRepCountUntilBottom
+        && !nextTracker.repetitionCountLockedUntilBottom
+      ) {
         nextTracker.repetitions += 1;
+        nextTracker.repetitionCountLockedUntilBottom = true;
+        nextTracker.confirmedHangingPosition = false;
         nextTracker.pendingRepHeadFramesEvaluated =
           nextTracker.topConfirmationHeadFramesEvaluated;
         nextTracker.pendingRepHeadFramesYes =
@@ -6283,6 +6381,11 @@ function advanceMuscleUpPullupTracker(
     nextTracker = settled.tracker;
     verdict = settled.verdict;
     nextTracker.suppressNextRepCountUntilBottom = true;
+  }
+  if (tracker.phase !== 'abajo' && nextTracker.phase === 'abajo') {
+    nextTracker.repetitionCountLockedUntilBottom = false;
+    nextTracker.positionalTopFrames = 0;
+    nextTracker.confirmedHangingPosition = headOverWrists === false && isAtBottom;
   }
   return {
     tracker: nextTracker,
@@ -15019,6 +15122,11 @@ function Home() {
         );
       const muscleUpPullupMeasurementBlocked = isMuscleUpExercise
         && !hasFreshMuscleUpPullupMeasurement(pose?.keypoints);
+      const muscleUpPullupOnlyElbowUnavailable = isMuscleUpExercise
+        && hasOnlyUnavailableMuscleUpPullupElbow(
+          pose?.keypoints,
+          muscleUpPullupTrackerRef.current,
+        );
       const frameMeasurementBlocked = frameLowConfidence
         || effectiveViewBlocksFrame
         || pullupMeasurementBlocked
@@ -17743,6 +17851,8 @@ function Home() {
         shoulderY: number | null;
         elbowY: number | null;
         wristY: number | null;
+        torsoLengthPx: number | null;
+        positionMarginPx: number | null;
         noseScore: number | null;
         shoulderScore: number | null;
         elbowScore: number | null;
@@ -17762,6 +17872,8 @@ function Home() {
         noseAboveWrist: boolean;
         shoulderAboveWrist: boolean;
         elbowAboveWrist: boolean;
+        noseAboveWristWithMargin: boolean;
+        shoulderAboveWristWithMargin: boolean;
         reasons: string[];
       }>> = {};
       const muscleUpPullupAboveWristReasons: string[] = [];
@@ -17790,6 +17902,7 @@ function Home() {
         const shoulder = pose?.keypoints?.[indexes.shoulder];
         const elbow = pose?.keypoints?.[indexes.elbow];
         const wrist = pose?.keypoints?.[indexes.wrist];
+        const hip = pose?.keypoints?.[indexes.hip];
         const sideReasons: string[] = [];
         const noseUsable = isUsableMuscleUpAboveWristPoint(
           muscleUpNosePoint,
@@ -17817,6 +17930,37 @@ function Home() {
           && shoulder!.y < wrist!.y;
         const elbowAboveWrist = elbowUsable && wristUsable
           && elbow!.y < wrist!.y;
+        const currentTorsoLengthPx = (
+          isFreshMuscleUpPullupMeasurementPoint(shoulder)
+          && isFreshMuscleUpPullupMeasurementPoint(hip)
+          && Number.isFinite(shoulder!.x)
+          && Number.isFinite(shoulder!.y)
+          && Number.isFinite(hip!.x)
+          && Number.isFinite(hip!.y)
+        )
+          ? Math.hypot(shoulder!.x - hip!.x, shoulder!.y - hip!.y)
+          : null;
+        const torsoLengthPx = currentTorsoLengthPx !== null
+          && Number.isFinite(currentTorsoLengthPx)
+          && currentTorsoLengthPx > 0
+          ? currentTorsoLengthPx
+          : muscleUpPullupTrackerRef.current.lastHangingTorsoLengthPx;
+        const positionMarginPx = torsoLengthPx !== null
+          && Number.isFinite(torsoLengthPx)
+          && torsoLengthPx > 0
+          ? Math.max(
+              MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_MIN_PX,
+              torsoLengthPx * MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_RATIO,
+            )
+          : null;
+        const noseAboveWristWithMargin = noseUsable
+          && wristUsable
+          && positionMarginPx !== null
+          && muscleUpNosePoint!.y <= wrist!.y - positionMarginPx;
+        const shoulderAboveWristWithMargin = shoulderUsable
+          && wristUsable
+          && positionMarginPx !== null
+          && shoulder!.y <= wrist!.y - positionMarginPx;
         if (noseUsable && wristUsable && !noseAboveWrist) {
           sideReasons.push('nose-not-above-wrist');
         }
@@ -17831,6 +17975,8 @@ function Home() {
           shoulderY: readMuscleUpPointY(shoulder),
           elbowY: readMuscleUpPointY(elbow),
           wristY: readMuscleUpPointY(wrist),
+          torsoLengthPx,
+          positionMarginPx,
           noseScore: muscleUpNosePoint?.score ?? null,
           shoulderScore: shoulder?.score ?? null,
           elbowScore: elbow?.score ?? null,
@@ -17850,6 +17996,8 @@ function Home() {
           noseAboveWrist,
           shoulderAboveWrist,
           elbowAboveWrist,
+          noseAboveWristWithMargin,
+          shoulderAboveWristWithMargin,
           reasons: sideReasons,
         };
         muscleUpPullupAboveWristReasons.push(
@@ -17874,6 +18022,12 @@ function Home() {
       const muscleUpPullupAllAboveWrist = muscleUpPullupNoseAboveWrist
         && muscleUpPullupShoulderAboveWrist
         && muscleUpPullupElbowAboveWrist;
+      const muscleUpPullupPositionallyAboveWrist =
+        muscleUpPullupMeasurementSides.length > 0
+        && muscleUpPullupMeasurementSides.every((side) => (
+          muscleUpPullupAboveWristBySide[side]?.noseAboveWristWithMargin === true
+          && muscleUpPullupAboveWristBySide[side]?.shoulderAboveWristWithMargin === true
+        ));
       const muscleUpPullupExtremityReadings = isMuscleUpExercise
         ? getMuscleUpPullupExtremityReadings(pose?.keypoints)
         : {
@@ -17889,6 +18043,9 @@ function Home() {
       const muscleUpPullupTopReached = isMuscleUpExercise
         && !muscleUpPullupMeasurementBlocked
         && muscleUpPullupAllAboveWrist;
+      const muscleUpPullupPositionalTopReached = isMuscleUpExercise
+        && muscleUpPullupOnlyElbowUnavailable
+        && muscleUpPullupPositionallyAboveWrist;
       const muscleUpPullupBarDetached = isMuscleUpExercise
         && isMuscleUpPullupBarDetached(pose?.keypoints);
       const pullupBarDetached = isPullupBarDetached(
@@ -18409,11 +18566,15 @@ function Home() {
       }
       let muscleUpPullupCountLog: {
         camino: 'top' | 'no-top' | 'no-lockout';
+        countedVia: 'normal' | 'positional';
         repetitionsAntes: number;
         repetitionsDespues: number;
       } | null = null;
       let muscleUpPullupPhaseBeforeUpdate = muscleUpPullupTrackerRef.current.phase;
-      if (
+      let muscleUpPullupTrackerBeforeUpdate: MuscleUpPullupTracker | null = null;
+      let muscleUpPullupUpdate: MuscleUpPullupTrackerUpdate | null = null;
+      let muscleUpPullupCountedVia: 'normal' | 'positional' | null = null;
+      const muscleUpPullupCanTrackFrame = (
         isMuscleUpExercise
         && muscleUpCalibrationSuccessfulRef.current
         && exerciseStartedRef.current
@@ -18421,23 +18582,102 @@ function Home() {
         && effectiveFrameCameraReady
         && effectiveFrameDetectionStable
         && repetitionConfig
-        && repetitionAngle !== null
-        && !frameMeasurementBlocked
         && !muscleUpPullupSessionFinishedRef.current
         && !muscleUpPullupCountingBlockedByDetach
+      );
+      if (
+        muscleUpPullupCanTrackFrame
+        && repetitionAngle !== null
+        && !frameMeasurementBlocked
       ) {
-        const trackerBeforeUpdate = muscleUpPullupTrackerRef.current;
-        const phaseBeforeUpdate = trackerBeforeUpdate.phase;
-        muscleUpPullupPhaseBeforeUpdate = phaseBeforeUpdate;
-        const update = advanceMuscleUpPullupTracker(
-          trackerBeforeUpdate,
+        const trackerForNormalUpdate = muscleUpPullupTrackerRef.current;
+        muscleUpPullupCountedVia = 'normal';
+        muscleUpPullupTrackerBeforeUpdate = {
+          ...trackerForNormalUpdate,
+          positionalTopFrames: 0,
+        };
+        const trackerForUpdate = muscleUpPullupTrackerBeforeUpdate;
+        muscleUpPullupPhaseBeforeUpdate = trackerForUpdate.phase;
+        muscleUpPullupUpdate = advanceMuscleUpPullupTracker(
+          trackerForUpdate,
           repetitionAngle,
           muscleUpPullupTopReached,
           muscleUpPullupHeadOverWrists,
           muscleUpPullupExtremityValidation,
           inputModeRef.current === 'video' || !muscleUpPullupBarDetached,
           MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+          getFreshMuscleUpPullupTorsoLengthPx(
+            pose?.keypoints,
+            muscleUpPullupMeasurementSides,
+          ),
         );
+      } else if (
+        muscleUpPullupCanTrackFrame
+        && frameMeasurementBlocked
+        && muscleUpPullupOnlyElbowUnavailable
+      ) {
+        muscleUpPullupTrackerBeforeUpdate = muscleUpPullupTrackerRef.current;
+        muscleUpPullupCountedVia = 'positional';
+        const trackerBeforePositionUpdate = muscleUpPullupTrackerBeforeUpdate;
+        const isConsecutivePositionalTopFrame = (
+          trackerBeforePositionUpdate.phase === 'abajo'
+          && trackerBeforePositionUpdate.confirmedHangingPosition
+          && !trackerBeforePositionUpdate.repetitionCountLockedUntilBottom
+          && !trackerBeforePositionUpdate.suppressNextRepCountUntilBottom
+          && muscleUpPullupPositionalTopReached
+        );
+        const positionalTopFrames = isConsecutivePositionalTopFrame
+          ? trackerBeforePositionUpdate.positionalTopFrames + 1
+          : 0;
+        let trackerAfterPositionUpdate: MuscleUpPullupTracker = {
+          ...trackerBeforePositionUpdate,
+          positionalTopFrames,
+          event: null,
+        };
+        if (
+          positionalTopFrames >= MUSCLE_UP_PULLUP_MIN_TOP_FRAMES
+          && !trackerAfterPositionUpdate.repetitionCountLockedUntilBottom
+          && !trackerAfterPositionUpdate.suppressNextRepCountUntilBottom
+        ) {
+          trackerAfterPositionUpdate = {
+            ...trackerAfterPositionUpdate,
+            phase: 'arriba',
+            repetitions: trackerAfterPositionUpdate.repetitions + 1,
+            event: trackerAfterPositionUpdate.currentRepCorrect ? 'valid' : 'invalid',
+            repetitionCountLockedUntilBottom: true,
+            confirmedHangingPosition: false,
+            positionalTopFrames: 0,
+            topFrames: 0,
+            topConfirmationHeadFramesEvaluated: 0,
+            topConfirmationHeadFramesYes: 0,
+            pendingRepHeadOverWrists: true,
+            pendingRepHeadFramesEvaluated: positionalTopFrames,
+            pendingRepHeadFramesYes: positionalTopFrames,
+          };
+          muscleUpPullupUpdate = {
+            tracker: trackerAfterPositionUpdate,
+            smoothedAngle: trackerAfterPositionUpdate.lastAngle ?? 0,
+            completedMinimumAngle: null,
+            isAtBottom: false,
+            hasReachedTop: true,
+            verdict: null,
+          };
+        }
+        muscleUpPullupTrackerRef.current = trackerAfterPositionUpdate;
+      } else if (
+        isMuscleUpExercise
+        && muscleUpPullupTrackerRef.current.positionalTopFrames > 0
+      ) {
+        muscleUpPullupTrackerRef.current = {
+          ...muscleUpPullupTrackerRef.current,
+          positionalTopFrames: 0,
+        };
+      }
+      if (muscleUpPullupUpdate && muscleUpPullupTrackerBeforeUpdate) {
+        const trackerBeforeUpdate = muscleUpPullupTrackerBeforeUpdate;
+        const update = muscleUpPullupUpdate;
+        const phaseBeforeUpdate = trackerBeforeUpdate.phase;
+        muscleUpPullupPhaseBeforeUpdate = phaseBeforeUpdate;
         muscleUpPullupTrackerRef.current = update.tracker;
         if (update.tracker.repetitions > trackerBeforeUpdate.repetitions) {
           const camino = update.tracker.event === 'no-top'
@@ -18447,6 +18687,7 @@ function Home() {
               : 'top';
           muscleUpPullupCountLog = {
             camino,
+            countedVia: muscleUpPullupCountedVia ?? 'normal',
             repetitionsAntes: trackerBeforeUpdate.repetitions,
             repetitionsDespues: update.tracker.repetitions,
           };
@@ -18454,7 +18695,9 @@ function Home() {
         if (update.tracker.phase !== phaseBeforeUpdate) {
           muscleUpPullupPreviousPhaseRef.current = phaseBeforeUpdate;
         }
-        nextAngle = update.smoothedAngle;
+        if (muscleUpPullupCountedVia === 'normal') {
+          nextAngle = update.smoothedAngle;
+        }
         setMuscleUpPullupRepetitions(update.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(update.tracker.goodRepetitions);
         setMuscleUpPullupPendingRepetitions(
@@ -18500,7 +18743,10 @@ function Home() {
             `[pullup-event] ${eventTime} ejercicio=muscle-up `
             + `faseAnterior=${phaseBeforeUpdate} faseNueva=${update.tracker.phase} `
             + `cuadrosConsecutivosAllAbove=${update.tracker.topFrames} `
-            + `ángulo=${update.smoothedAngle}° `
+            + `countedVia=${muscleUpPullupCountLog?.countedVia ?? '—'} `
+            + `ángulo=${muscleUpPullupCountedVia === 'positional'
+              ? 'no-disponible'
+              : `${update.smoothedAngle}°`} `
             + `cabezaSobreMuñecas=${muscleUpPullupHeadOverWrists} `
             + `total=${update.tracker.repetitions} `
             + `correctas=${update.tracker.goodRepetitions} `
@@ -18557,6 +18803,8 @@ function Home() {
           shoulderAboveWrist: muscleUpPullupShoulderAboveWrist,
           elbowAboveWrist: muscleUpPullupElbowAboveWrist,
           allAboveWrist: muscleUpPullupAllAboveWrist,
+          positionalTopReached: muscleUpPullupPositionalTopReached,
+          onlyElbowUnavailable: muscleUpPullupOnlyElbowUnavailable,
           reasons: muscleUpPullupAboveWristReasons,
           phaseCurrent: muscleUpPullupTrackerRef.current.phase,
           repetitions: muscleUpPullupTrackerRef.current.repetitions,
@@ -18568,6 +18816,7 @@ function Home() {
               ? video.currentTime
               : null,
             camino: muscleUpPullupCountLog.camino,
+            countedVia: muscleUpPullupCountLog.countedVia,
             repetitionsAntes: muscleUpPullupCountLog.repetitionsAntes,
             repetitionsDespues: muscleUpPullupCountLog.repetitionsDespues,
             allAboveWrist: muscleUpPullupAllAboveWrist,
