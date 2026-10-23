@@ -679,6 +679,44 @@ type MuscleUpPullupTrackerUpdate = {
   hasReachedTop: boolean;
   verdict: MuscleUpPullupRepVerdict | null;
 };
+type MuscleUpCycleAngleReading = {
+  value: number | null;
+  nullReason: string | null;
+};
+type MuscleUpCycleFrameAngles = {
+  elbows: Record<PoseSide, MuscleUpCycleAngleReading>;
+  hips: Record<PoseSide, MuscleUpCycleAngleReading>;
+  knees: Record<PoseSide, MuscleUpCycleAngleReading>;
+  ankles: Record<PoseSide, MuscleUpCycleAngleReading>;
+};
+type MuscleUpCycleFrameMeasurement = {
+  videoSeconds: number;
+  noseRatio: number | null;
+  noseRatioNullReason: string | null;
+  shoulderRatio: number | null;
+  shoulderRatioNullReason: string | null;
+  elbowAngle: number | null;
+  elbowAngleNullReason: string | null;
+  angles: MuscleUpCycleFrameAngles;
+};
+type MuscleUpCycleTelemetry = {
+  startSeconds: number | null;
+  startNullReason: string | null;
+  peakNoseRatio: number | null;
+  peakShoulderRatio: number | null;
+  minimumElbowAngle: number | null;
+  tPeakNoseSeconds: number | null;
+  peakAngles: MuscleUpCycleFrameAngles | null;
+  nullReasons: {
+    peakNoseRatio: string | null;
+    peakShoulderRatio: string | null;
+    minimumElbowAngle: string | null;
+  };
+};
+type MuscleUpCycleTelemetryState = {
+  previousElbowAngle: number | null;
+  cycle: MuscleUpCycleTelemetry | null;
+};
 type PullupTrackerConfig = {
   bottomMinAngle: number;
   bottomMaxAngle: number;
@@ -3598,6 +3636,400 @@ function calculateMuscleUpAngles(keypoints: PosePoint[] | undefined): MuscleUpAn
     leftAnkle: calculateAngle(keypoints[left.knee], keypoints[left.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.left]),
     rightAnkle: calculateAngle(keypoints[right.knee], keypoints[right.ankle], keypoints[MUSCLE_UP_FOOT_INDEX.right]),
   };
+}
+
+function createMuscleUpCycleTelemetry(
+  startSeconds: number | null,
+  startNullReason: string | null = null,
+): MuscleUpCycleTelemetry {
+  return {
+    startSeconds,
+    startNullReason,
+    peakNoseRatio: null,
+    peakShoulderRatio: null,
+    minimumElbowAngle: null,
+    tPeakNoseSeconds: null,
+    peakAngles: null,
+    nullReasons: {
+      peakNoseRatio: null,
+      peakShoulderRatio: null,
+      minimumElbowAngle: null,
+    },
+  };
+}
+
+function getMuscleUpCyclePointNullReason(
+  point: PosePoint | undefined,
+  label: string,
+  requireAngleCoordinates = false,
+  minimumScore = CAMERA_POINT_MIN_SCORE,
+): string | null {
+  if (!point) return `falta el punto ${label}`;
+  if (point.held || isHeldPoint(point)) {
+    return point.heldReason || 'retenido por filtro';
+  }
+  const score = point.score ?? 0;
+  if (!Number.isFinite(score) || score < minimumScore) {
+    return `confianza insuficiente en ${label}`;
+  }
+  if (typeof point.y !== 'number' || !Number.isFinite(point.y)) {
+    return `coordenada Y no válida en ${label}`;
+  }
+  if (requireAngleCoordinates && !getAngleMeasurementCoordinates(point)) {
+    return `coordenadas no válidas para medir ${label}`;
+  }
+  return null;
+}
+
+function getMuscleUpCycleYReading(
+  keypoints: PosePoint[] | undefined,
+  index: number,
+  label: string,
+): { value: number | null; nullReason: string | null } {
+  const point = keypoints?.[index];
+  const nullReason = getMuscleUpCyclePointNullReason(point, label);
+  return nullReason
+    ? { value: null, nullReason }
+    : { value: point!.y, nullReason: null };
+}
+
+function getMuscleUpCycleAngleReading(
+  keypoints: PosePoint[] | undefined,
+  indexes: number[],
+  labels: string[],
+): MuscleUpCycleAngleReading {
+  const points = indexes.map((index) => keypoints?.[index]);
+  for (let index = 0; index < points.length; index += 1) {
+    const nullReason = getMuscleUpCyclePointNullReason(
+      points[index],
+      labels[index] ?? `punto ${index + 1}`,
+      true,
+      0.2,
+    );
+    if (nullReason) return { value: null, nullReason };
+  }
+  const value = calculateAngle(points[0], points[1], points[2]);
+  return value === null
+    ? { value: null, nullReason: 'geometría degenerada; ángulo no calculable' }
+    : { value, nullReason: null };
+}
+
+function buildMuscleUpCycleFrameMeasurement(
+  keypoints: PosePoint[] | undefined,
+  measurementSides: PoseSide[],
+  videoSeconds: number,
+  elbowAngle: number | null,
+): MuscleUpCycleFrameMeasurement {
+  const left = sideKeypoints.left;
+  const right = sideKeypoints.right;
+  const nose = getMuscleUpCycleYReading(keypoints, 0, 'nariz');
+  const wristReadings = measurementSides.map((side) => ({
+    side,
+    ...getMuscleUpCycleYReading(
+      keypoints,
+      MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].wrist,
+      `muñeca ${side === 'left' ? 'izquierda' : 'derecha'}`,
+    ),
+  }));
+  const wristFailure = wristReadings.find((reading) => reading.value === null);
+  const wristMinimumY = measurementSides.length === 0
+    ? { value: null, nullReason: 'sin lado de muñeca seleccionado' }
+    : wristFailure
+      ? { value: null, nullReason: wristFailure.nullReason }
+      : {
+          value: Math.min(
+            ...wristReadings.map((reading) => reading.value as number),
+          ),
+          nullReason: null,
+        };
+  const averageY = (indexes: number[], label: string) => {
+    const readings = indexes.map((index, sideIndex) => getMuscleUpCycleYReading(
+      keypoints,
+      index,
+      `${label} ${sideIndex === 0 ? 'izquierda' : 'derecha'}`,
+    ));
+    const failure = readings.find((reading) => reading.value === null);
+    return failure
+      ? { value: null, nullReason: failure.nullReason }
+      : {
+          value: readings.reduce((sum, reading) => sum + (reading.value ?? 0), 0)
+            / readings.length,
+          nullReason: null,
+        };
+  };
+  const averageShoulderY = averageY(
+    [left.shoulder, right.shoulder],
+    'hombro',
+  );
+  const averageHipY = averageY([left.hip, right.hip], 'cadera');
+  const torsoLength = averageHipY.value === null
+    ? { value: null, nullReason: `promedio de caderas no disponible: ${averageHipY.nullReason}` }
+    : averageShoulderY.value === null
+      ? { value: null, nullReason: `promedio de hombros no disponible: ${averageShoulderY.nullReason}` }
+      : {
+          value: averageHipY.value - averageShoulderY.value,
+          nullReason: null,
+        };
+  const validTorsoLength = torsoLength.value !== null
+    && Number.isFinite(torsoLength.value)
+    && torsoLength.value > 0
+    ? torsoLength.value
+    : null;
+  const torsoLengthNullReason = validTorsoLength === null
+    ? torsoLength.nullReason ?? 'largoTorso no positivo o no finito'
+    : null;
+  const ratioFor = (
+    numeratorY: number | null,
+    numeratorNullReason: string | null,
+  ) => {
+    if (numeratorY === null) {
+      return { value: null, nullReason: numeratorNullReason };
+    }
+    if (wristMinimumY.value === null) {
+      return { value: null, nullReason: wristMinimumY.nullReason };
+    }
+    if (validTorsoLength === null) {
+      return { value: null, nullReason: torsoLengthNullReason };
+    }
+    const value = (wristMinimumY.value - numeratorY) / validTorsoLength;
+    return Number.isFinite(value)
+      ? { value, nullReason: null }
+      : { value: null, nullReason: 'proporción no finita' };
+  };
+  const noseRatio = ratioFor(nose.value, nose.nullReason);
+  const shoulderRatio = ratioFor(
+    averageShoulderY.value,
+    averageShoulderY.nullReason,
+  );
+  const angleForSide = (
+    side: PoseSide,
+    type: 'elbow' | 'hip' | 'knee' | 'ankle',
+  ) => {
+    const indexes = sideKeypoints[side];
+    const sideLabel = side === 'left' ? 'izquierdo' : 'derecho';
+    if (type === 'elbow') {
+      return getMuscleUpCycleAngleReading(
+        keypoints,
+        [indexes.shoulder, indexes.elbow, indexes.wrist],
+        [`hombro ${sideLabel}`, `codo ${sideLabel}`, `muñeca ${sideLabel}`],
+      );
+    }
+    if (type === 'hip') {
+      return getMuscleUpCycleAngleReading(
+        keypoints,
+        [indexes.shoulder, indexes.hip, indexes.knee],
+        [`hombro ${sideLabel}`, `cadera ${sideLabel}`, `rodilla ${sideLabel}`],
+      );
+    }
+    if (type === 'knee') {
+      return getMuscleUpCycleAngleReading(
+        keypoints,
+        [indexes.hip, indexes.knee, indexes.ankle],
+        [`cadera ${sideLabel}`, `rodilla ${sideLabel}`, `tobillo ${sideLabel}`],
+      );
+    }
+    return getMuscleUpCycleAngleReading(
+      keypoints,
+      [indexes.knee, indexes.ankle, MUSCLE_UP_FOOT_INDEX[side]],
+      [`rodilla ${sideLabel}`, `tobillo ${sideLabel}`, `pie ${sideLabel}`],
+    );
+  };
+  const angles: MuscleUpCycleFrameAngles = {
+    elbows: {
+      left: angleForSide('left', 'elbow'),
+      right: angleForSide('right', 'elbow'),
+    },
+    hips: {
+      left: angleForSide('left', 'hip'),
+      right: angleForSide('right', 'hip'),
+    },
+    knees: {
+      left: angleForSide('left', 'knee'),
+      right: angleForSide('right', 'knee'),
+    },
+    ankles: {
+      left: angleForSide('left', 'ankle'),
+      right: angleForSide('right', 'ankle'),
+    },
+  };
+  const selectedElbowFailure = measurementSides
+    .map((side) => angles.elbows[side])
+    .find((reading) => reading.value === null);
+  const elbowAngleNullReason = elbowAngle === null
+    ? selectedElbowFailure?.nullReason ?? 'ángulo de codo del tracker no disponible'
+    : null;
+
+  return {
+    videoSeconds,
+    noseRatio: noseRatio.value,
+    noseRatioNullReason: noseRatio.nullReason,
+    shoulderRatio: shoulderRatio.value,
+    shoulderRatioNullReason: shoulderRatio.nullReason,
+    elbowAngle,
+    elbowAngleNullReason,
+    angles,
+  };
+}
+
+function accumulateMuscleUpCycleFrame(
+  cycle: MuscleUpCycleTelemetry,
+  frame: MuscleUpCycleFrameMeasurement,
+) {
+  if (
+    frame.noseRatio !== null
+    && (cycle.peakNoseRatio === null || frame.noseRatio > cycle.peakNoseRatio)
+  ) {
+    cycle.peakNoseRatio = frame.noseRatio;
+    cycle.tPeakNoseSeconds = frame.videoSeconds;
+    cycle.peakAngles = frame.angles;
+  } else if (
+    frame.noseRatio === null
+    && cycle.nullReasons.peakNoseRatio === null
+  ) {
+    cycle.nullReasons.peakNoseRatio = frame.noseRatioNullReason;
+  }
+  if (
+    frame.shoulderRatio !== null
+    && (
+      cycle.peakShoulderRatio === null
+      || frame.shoulderRatio > cycle.peakShoulderRatio
+    )
+  ) {
+    cycle.peakShoulderRatio = frame.shoulderRatio;
+  } else if (
+    frame.shoulderRatio === null
+    && cycle.nullReasons.peakShoulderRatio === null
+  ) {
+    cycle.nullReasons.peakShoulderRatio = frame.shoulderRatioNullReason;
+  }
+  if (
+    frame.elbowAngle !== null
+    && (
+      cycle.minimumElbowAngle === null
+      || frame.elbowAngle < cycle.minimumElbowAngle
+    )
+  ) {
+    cycle.minimumElbowAngle = frame.elbowAngle;
+  } else if (
+    frame.elbowAngle === null
+    && cycle.nullReasons.minimumElbowAngle === null
+  ) {
+    cycle.nullReasons.minimumElbowAngle = frame.elbowAngleNullReason;
+  }
+}
+
+function logMuscleUpCycleTelemetry(
+  telemetry: MuscleUpCycleTelemetry | null,
+  result: 'no-top' | 'top-contado',
+  endSeconds: number | null,
+  fallbackStartReason: string,
+) {
+  const cycle = telemetry ?? createMuscleUpCycleTelemetry(
+    null,
+    fallbackStartReason,
+  );
+  const missingPeakReason = (
+    'No hubo un cuadro con pico de nariz sobre muñeca medible; '
+    + 'no se puede identificar el cuadro más alto.'
+  );
+  const peakAngles: MuscleUpCycleFrameAngles = cycle.peakAngles ?? {
+    elbows: {
+      left: { value: null, nullReason: missingPeakReason },
+      right: { value: null, nullReason: missingPeakReason },
+    },
+    hips: {
+      left: { value: null, nullReason: missingPeakReason },
+      right: { value: null, nullReason: missingPeakReason },
+    },
+    knees: {
+      left: { value: null, nullReason: missingPeakReason },
+      right: { value: null, nullReason: missingPeakReason },
+    },
+    ankles: {
+      left: { value: null, nullReason: missingPeakReason },
+      right: { value: null, nullReason: missingPeakReason },
+    },
+  };
+  const round = (value: number | null, decimals = 3) => (
+    value === null || !Number.isFinite(value)
+      ? null
+      : Number(value.toFixed(decimals))
+  );
+  const valuesForLog = {
+    codo: {
+      izquierda: round(peakAngles.elbows.left.value, 2),
+      derecha: round(peakAngles.elbows.right.value, 2),
+    },
+    cadera: {
+      izquierda: round(peakAngles.hips.left.value, 2),
+      derecha: round(peakAngles.hips.right.value, 2),
+    },
+    rodilla: {
+      izquierda: round(peakAngles.knees.left.value, 2),
+      derecha: round(peakAngles.knees.right.value, 2),
+    },
+    tobillo: {
+      izquierda: round(peakAngles.ankles.left.value, 2),
+      derecha: round(peakAngles.ankles.right.value, 2),
+    },
+  };
+  const angleReasonsForLog = {
+    codo: {
+      izquierda: peakAngles.elbows.left.nullReason,
+      derecha: peakAngles.elbows.right.nullReason,
+    },
+    cadera: {
+      izquierda: peakAngles.hips.left.nullReason,
+      derecha: peakAngles.hips.right.nullReason,
+    },
+    rodilla: {
+      izquierda: peakAngles.knees.left.nullReason,
+      derecha: peakAngles.knees.right.nullReason,
+    },
+    tobillo: {
+      izquierda: peakAngles.ankles.left.nullReason,
+      derecha: peakAngles.ankles.right.nullReason,
+    },
+  };
+  const overallNullReasons = [
+    cycle.startSeconds === null
+      ? cycle.startNullReason ?? fallbackStartReason
+      : null,
+    endSeconds === null ? 'tiempo de video no disponible al cerrar el ciclo' : null,
+    cycle.peakNoseRatio === null
+      ? cycle.nullReasons.peakNoseRatio ?? missingPeakReason
+      : null,
+  ].filter((reason): reason is string => reason !== null);
+  const payload: Record<string, unknown> = {
+    inicio: round(cycle.startSeconds),
+    fin: round(endSeconds),
+    resultado: result,
+    picoNarizSobreMuneca: round(cycle.peakNoseRatio, 5),
+    picoHombroSobreMuneca: round(cycle.peakShoulderRatio, 5),
+    anguloCodoMin: round(cycle.minimumElbowAngle, 2),
+    tPicoNariz: round(cycle.tPeakNoseSeconds),
+    angulosEnPico: valuesForLog,
+    motivosNulos: {
+      inicio: cycle.startSeconds === null
+        ? cycle.startNullReason ?? fallbackStartReason
+        : null,
+      fin: endSeconds === null ? 'tiempo de video no disponible al cerrar el ciclo' : null,
+      picoNarizSobreMuneca: cycle.peakNoseRatio === null
+        ? cycle.nullReasons.peakNoseRatio ?? missingPeakReason
+        : null,
+      picoHombroSobreMuneca: cycle.peakShoulderRatio === null
+        ? cycle.nullReasons.peakShoulderRatio ?? 'sin lectura válida del ratio de hombro'
+        : null,
+      anguloCodoMin: cycle.minimumElbowAngle === null
+        ? cycle.nullReasons.minimumElbowAngle ?? 'sin lectura válida del ángulo de codo'
+        : null,
+      angulosEnPico: angleReasonsForLog,
+    },
+  };
+  if (overallNullReasons.length > 0) {
+    payload.motivoNulo = overallNullReasons.join('; ');
+  }
+  console.log(`[muscleup-ciclo] ${JSON.stringify(payload)}`);
 }
 
 const repetitionConfigs: Partial<Record<ExerciseId, ExerciseRepConfig>> = {
@@ -13253,6 +13685,10 @@ function Home() {
   const muscleUpPullupTrackerRef = useRef<MuscleUpPullupTracker>(
     createMuscleUpPullupTracker(),
   );
+  const muscleUpCycleTelemetryRef = useRef<MuscleUpCycleTelemetryState>({
+    previousElbowAngle: null,
+    cycle: null,
+  });
   const pullupSessionFinishedRef = useRef(false);
   const pullupDetachFramesRef = useRef(0);
   const muscleUpPullupSessionFinishedRef = useRef(false);
@@ -16776,6 +17212,10 @@ function Home() {
             muscleUpCalibrationReadySinceRef.current = null;
             updateMuscleUpCalibrationStatus('ready');
             muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+            muscleUpCycleTelemetryRef.current = {
+              previousElbowAngle: null,
+              cycle: null,
+            };
             muscleUpPullupSessionFinishedRef.current = false;
             muscleUpPullupDetachFramesRef.current = 0;
             muscleUpPullupFinLoggedRef.current = false;
@@ -16930,6 +17370,10 @@ function Home() {
         const preparationElapsed = now - preparationStartedAt;
         if (preparationElapsed >= MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
           muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+          muscleUpCycleTelemetryRef.current = {
+            previousElbowAngle: null,
+            cycle: null,
+          };
           muscleUpPullupSessionFinishedRef.current = false;
           muscleUpPullupDetachFramesRef.current = 0;
           muscleUpPullupFinLoggedRef.current = false;
@@ -18609,6 +19053,59 @@ function Home() {
         )
       );
       const trackerBeforePositionUpdate = muscleUpPullupTrackerRef.current;
+      const muscleUpCycleVideoSecondsCandidate = inputModeRef.current === 'video'
+        ? diagnosticVideoTime ?? video.currentTime
+        : null;
+      const muscleUpCycleVideoSeconds = (
+        typeof muscleUpCycleVideoSecondsCandidate === 'number'
+        && Number.isFinite(muscleUpCycleVideoSecondsCandidate)
+      )
+        ? muscleUpCycleVideoSecondsCandidate
+        : null;
+      const muscleUpCycleState = muscleUpCycleTelemetryRef.current;
+      const previousMuscleUpCycleElbowAngle = muscleUpCycleState.previousElbowAngle;
+      const muscleUpCycleCanObserveElbow = Boolean(
+        isMuscleUpExercise
+        && inputModeRef.current === 'video'
+        && muscleUpPullupCanTrackFrame
+        && repetitionAngle !== null
+        && !frameMeasurementBlocked
+      );
+      const muscleUpCycleStartsFromHang = Boolean(
+        muscleUpCycleCanObserveElbow
+        && muscleUpCycleVideoSeconds !== null
+        && muscleUpCycleState.cycle === null
+        && trackerBeforePositionUpdate.phase === 'abajo'
+        && trackerBeforePositionUpdate.confirmedHangingPosition
+        && !trackerBeforePositionUpdate.repetitionCountLockedUntilBottom
+        && !trackerBeforePositionUpdate.suppressNextRepCountUntilBottom
+        && previousMuscleUpCycleElbowAngle !== null
+        && previousMuscleUpCycleElbowAngle >= 130
+        && repetitionAngle !== null
+        && repetitionAngle < 130
+      );
+      if (muscleUpCycleStartsFromHang && muscleUpCycleVideoSeconds !== null) {
+        muscleUpCycleState.cycle = createMuscleUpCycleTelemetry(
+          muscleUpCycleVideoSeconds,
+        );
+      }
+      if (muscleUpCycleCanObserveElbow && repetitionAngle !== null) {
+        muscleUpCycleState.previousElbowAngle = repetitionAngle;
+      }
+      if (
+        isMuscleUpExercise
+        && inputModeRef.current === 'video'
+        && muscleUpCycleState.cycle !== null
+        && muscleUpCycleVideoSeconds !== null
+      ) {
+        const cycleFrame = buildMuscleUpCycleFrameMeasurement(
+          pose?.keypoints,
+          muscleUpPullupMeasurementSides,
+          muscleUpCycleVideoSeconds,
+          repetitionAngle,
+        );
+        accumulateMuscleUpCycleFrame(muscleUpCycleState.cycle, cycleFrame);
+      }
       const isConsecutivePositionalTopFrame = (
         muscleUpPullupPositionalFrameAllowed
         && trackerBeforePositionUpdate.phase === 'abajo'
@@ -18684,6 +19181,29 @@ function Home() {
         const phaseBeforeUpdate = trackerBeforeUpdate.phase;
         muscleUpPullupPhaseBeforeUpdate = phaseBeforeUpdate;
         muscleUpPullupTrackerRef.current = update.tracker;
+        const muscleUpCycleResult = update.tracker.event === 'no-top'
+          ? 'no-top'
+          : update.tracker.repetitions > trackerBeforeUpdate.repetitions
+            ? 'top-contado'
+            : null;
+        if (
+          isMuscleUpExercise
+          && inputModeRef.current === 'video'
+          && muscleUpCycleResult !== null
+        ) {
+          const fallbackStartReason = (
+            previousMuscleUpCycleElbowAngle === null
+              ? 'No había un ángulo previo válido para confirmar el inicio desde colgado.'
+              : 'No se observó un cruce válido de >=130° a <130° con el colgado confirmado.'
+          );
+          logMuscleUpCycleTelemetry(
+            muscleUpCycleState.cycle,
+            muscleUpCycleResult,
+            muscleUpCycleVideoSeconds,
+            fallbackStartReason,
+          );
+          muscleUpCycleState.cycle = null;
+        }
         if (update.tracker.repetitions > trackerBeforeUpdate.repetitions) {
           const camino = update.tracker.event === 'no-top'
             ? 'no-top'
@@ -25427,6 +25947,10 @@ function Home() {
     setMuscleUpPreparationStage(muscleUpCalibrationReady ? 'active' : 'body-detection');
     setMuscleUpPreparationCountdown(null);
     muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpCycleTelemetryRef.current = {
+      previousElbowAngle: null,
+      cycle: null,
+    };
     muscleUpPullupSessionFinishedRef.current = false;
     muscleUpPullupDetachFramesRef.current = 0;
     muscleUpPullupFinLoggedRef.current = false;
@@ -27298,6 +27822,10 @@ function Home() {
     setMuscleUpPreparationStage('body-detection');
     setMuscleUpPreparationCountdown(null);
     muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpCycleTelemetryRef.current = {
+      previousElbowAngle: null,
+      cycle: null,
+    };
     muscleUpPullupSessionFinishedRef.current = false;
     muscleUpPullupDetachFramesRef.current = 0;
     muscleUpPullupFinLoggedRef.current = false;
