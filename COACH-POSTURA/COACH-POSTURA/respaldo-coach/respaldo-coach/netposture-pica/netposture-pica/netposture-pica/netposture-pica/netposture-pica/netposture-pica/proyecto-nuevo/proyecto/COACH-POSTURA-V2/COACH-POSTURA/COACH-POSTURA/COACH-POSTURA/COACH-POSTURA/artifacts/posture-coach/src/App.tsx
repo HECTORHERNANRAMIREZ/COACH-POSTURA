@@ -716,6 +716,8 @@ type MuscleUpCycleTelemetry = {
 type MuscleUpCycleTelemetryState = {
   previousElbowAngle: number | null;
   cycle: MuscleUpCycleTelemetry | null;
+  framesAtOrAbove130AfterBelow?: number;
+  loggerClosedCycleAwaitingNoTop?: boolean;
 };
 type PullupTrackerConfig = {
   bottomMinAngle: number;
@@ -3920,9 +3922,10 @@ function accumulateMuscleUpCycleFrame(
 
 function logMuscleUpCycleTelemetry(
   telemetry: MuscleUpCycleTelemetry | null,
-  result: 'no-top' | 'top-contado',
+  result: 'no-top' | 'top-contado' | 'cerrado-por-logger',
   endSeconds: number | null,
   fallbackStartReason: string,
+  tracker?: 'sin-evento',
 ) {
   const cycle = telemetry ?? createMuscleUpCycleTelemetry(
     null,
@@ -4026,6 +4029,9 @@ function logMuscleUpCycleTelemetry(
       angulosEnPico: angleReasonsForLog,
     },
   };
+  if (tracker !== undefined) {
+    payload.tracker = tracker;
+  }
   if (overallNullReasons.length > 0) {
     payload.motivoNulo = overallNullReasons.join('; ');
   }
@@ -19064,6 +19070,12 @@ function Home() {
         : null;
       const muscleUpCycleState = muscleUpCycleTelemetryRef.current;
       const previousMuscleUpCycleElbowAngle = muscleUpCycleState.previousElbowAngle;
+      const muscleUpCycleHasMeasuredElbow = Boolean(
+        isMuscleUpExercise
+        && inputModeRef.current === 'video'
+        && repetitionAngle !== null
+        && !frameMeasurementBlocked
+      );
       const muscleUpCycleCanObserveElbow = Boolean(
         isMuscleUpExercise
         && inputModeRef.current === 'video'
@@ -19085,13 +19097,30 @@ function Home() {
         && repetitionAngle < 130
       );
       if (muscleUpCycleStartsFromHang && muscleUpCycleVideoSeconds !== null) {
+        muscleUpCycleState.loggerClosedCycleAwaitingNoTop = false;
+        muscleUpCycleState.framesAtOrAbove130AfterBelow = 0;
         muscleUpCycleState.cycle = createMuscleUpCycleTelemetry(
           muscleUpCycleVideoSeconds,
         );
       }
-      if (muscleUpCycleCanObserveElbow && repetitionAngle !== null) {
+      if (muscleUpCycleHasMeasuredElbow && repetitionAngle !== null) {
         muscleUpCycleState.previousElbowAngle = repetitionAngle;
       }
+      if (muscleUpCycleState.cycle !== null) {
+        muscleUpCycleState.framesAtOrAbove130AfterBelow = (
+          muscleUpCycleHasMeasuredElbow
+          && repetitionAngle !== null
+          && repetitionAngle >= 130
+        )
+          ? (muscleUpCycleState.framesAtOrAbove130AfterBelow ?? 0) + 1
+          : 0;
+      } else {
+        muscleUpCycleState.framesAtOrAbove130AfterBelow = 0;
+      }
+      const muscleUpCycleLoggerClosePending = Boolean(
+        muscleUpCycleState.cycle !== null
+        && (muscleUpCycleState.framesAtOrAbove130AfterBelow ?? 0) >= 3
+      );
       if (
         isMuscleUpExercise
         && inputModeRef.current === 'video'
@@ -19181,11 +19210,25 @@ function Home() {
         const phaseBeforeUpdate = trackerBeforeUpdate.phase;
         muscleUpPullupPhaseBeforeUpdate = phaseBeforeUpdate;
         muscleUpPullupTrackerRef.current = update.tracker;
-        const muscleUpCycleResult = update.tracker.event === 'no-top'
-          ? 'no-top'
-          : update.tracker.repetitions > trackerBeforeUpdate.repetitions
-            ? 'top-contado'
-            : null;
+        const suppressNoTopForLoggerClosedCycle = (
+          update.tracker.event === 'no-top'
+          && muscleUpCycleState.loggerClosedCycleAwaitingNoTop === true
+        );
+        if (suppressNoTopForLoggerClosedCycle) {
+          muscleUpCycleState.loggerClosedCycleAwaitingNoTop = false;
+        } else if (
+          muscleUpCycleState.loggerClosedCycleAwaitingNoTop === true
+          && update.tracker.phase === 'abajo'
+        ) {
+          muscleUpCycleState.loggerClosedCycleAwaitingNoTop = false;
+        }
+        const muscleUpCycleResult = suppressNoTopForLoggerClosedCycle
+          ? null
+          : update.tracker.event === 'no-top'
+            ? 'no-top'
+            : update.tracker.repetitions > trackerBeforeUpdate.repetitions
+              ? 'top-contado'
+              : null;
         if (
           isMuscleUpExercise
           && inputModeRef.current === 'video'
@@ -19203,6 +19246,7 @@ function Home() {
             fallbackStartReason,
           );
           muscleUpCycleState.cycle = null;
+          muscleUpCycleState.framesAtOrAbove130AfterBelow = 0;
         }
         if (update.tracker.repetitions > trackerBeforeUpdate.repetitions) {
           const camino = update.tracker.event === 'no-top'
@@ -19278,6 +19322,30 @@ function Home() {
             + `evento=${update.tracker.event ?? 'ninguno'}`,
           );
         }
+      }
+      if (
+        muscleUpCycleLoggerClosePending
+        && muscleUpCycleState.cycle !== null
+        && (
+          muscleUpPullupUpdate === null
+          || muscleUpPullupUpdate.tracker.event === null
+        )
+      ) {
+        const fallbackStartReason = (
+          previousMuscleUpCycleElbowAngle === null
+            ? 'No había un ángulo previo válido para confirmar el inicio desde colgado.'
+            : 'No se observó un cruce válido de >=130° a <130° con el colgado confirmado.'
+        );
+        logMuscleUpCycleTelemetry(
+          muscleUpCycleState.cycle,
+          'cerrado-por-logger',
+          muscleUpCycleVideoSeconds,
+          fallbackStartReason,
+          'sin-evento',
+        );
+        muscleUpCycleState.cycle = null;
+        muscleUpCycleState.framesAtOrAbove130AfterBelow = 0;
+        muscleUpCycleState.loggerClosedCycleAwaitingNoTop = true;
       }
       if (
         isMuscleUpExercise
