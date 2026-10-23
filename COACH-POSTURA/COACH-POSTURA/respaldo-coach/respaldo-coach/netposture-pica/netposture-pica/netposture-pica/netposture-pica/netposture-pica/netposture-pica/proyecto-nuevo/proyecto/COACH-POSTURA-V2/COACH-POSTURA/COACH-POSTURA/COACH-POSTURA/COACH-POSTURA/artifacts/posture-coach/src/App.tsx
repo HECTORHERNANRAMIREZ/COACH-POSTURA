@@ -627,6 +627,7 @@ type MuscleUpPullupTracker = {
   repetitions: number;
   goodRepetitions: number;
   incorrectRepetitions: number;
+  lastIncorrectReason: 'no-top' | 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | null;
   minimumAngle: number | null;
   samples: number[];
   event: MuscleUpPullupRepEvent;
@@ -5959,12 +5960,33 @@ function logMuscleUpPullupVerdict(verdict: MuscleUpPullupRepVerdict) {
   );
 }
 
+function getMuscleUpPullupVerdictFeedback(
+  verdict: MuscleUpPullupRepVerdict,
+): TechniqueFeedback {
+  return {
+    tone: verdict.correct ? 'success' : 'warning',
+    message: `Repetición ${verdict.repetition}: ${
+      verdict.correct ? 'BIEN ✓' : 'EVALUADA'
+    }`,
+    detail: verdict.reason === 'no-top-cabeza'
+      ? 'La repetición no alcanzó la posición alta con la cabeza sobre las muñecas.'
+      : verdict.reason === 'no-fondo'
+        ? 'La repetición terminó sin regresar al fondo antes de soltar la barra.'
+        : verdict.reason === 'no-lockout'
+          ? 'La repetición no alcanzó el rango alto de los codos.'
+          : verdict.correct
+            ? 'Recorrido completo: posición alta validada y regreso al fondo.'
+            : 'El recorrido se evaluó como incorrecto.',
+  };
+}
+
 function logMuscleUpPullupFinish(tracker: MuscleUpPullupTracker) {
   console.log(
     `[fin] ejercicio=muscle-up fase=${tracker.phase}`
     + ` | total=${tracker.repetitions}`
     + ` | correctas=${tracker.goodRepetitions}`
-    + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
+    + ` | incorrectas=${tracker.incorrectRepetitions}`
+    + ` | motivo=${tracker.lastIncorrectReason ?? '—'}`
     + ` | pendientes=${tracker.pendingRepHeadOverWrists === null ? 0 : 1}`,
   );
 }
@@ -6207,6 +6229,7 @@ function createMuscleUpPullupTracker(): MuscleUpPullupTracker {
     repetitions: 0,
     goodRepetitions: 0,
     incorrectRepetitions: 0,
+    lastIncorrectReason: null,
     minimumAngle: null,
     samples: [],
     event: null,
@@ -6591,12 +6614,12 @@ function settlePendingMuscleUpPullupRep(
   const headOverWrists = headFramesYes > 0;
   const correct = !options.noLockout
     && headOverWrists
-    && (options.bottomReached || options.sessionEnded === true);
+    && options.bottomReached;
   const reason = options.noLockout
     ? 'no-lockout'
     : !headOverWrists
       ? 'no-top-cabeza'
-      : options.bottomReached || options.sessionEnded === true
+      : options.bottomReached
         ? 'ok'
         : 'no-fondo';
   const nextTracker: MuscleUpPullupTracker = {
@@ -6606,8 +6629,12 @@ function settlePendingMuscleUpPullupRep(
     pendingRepHeadFramesYes: 0,
     currentRepCorrect: correct,
     goodRepetitions: tracker.goodRepetitions + (correct ? 1 : 0),
+    incorrectRepetitions: tracker.incorrectRepetitions + (correct ? 0 : 1),
     event: options.noLockout ? 'no-lockout' : correct ? 'valid' : 'invalid',
   };
+  if (!correct && reason !== 'ok') {
+    nextTracker.lastIncorrectReason = reason;
+  }
   return {
     tracker: nextTracker,
     verdict: {
@@ -6753,6 +6780,11 @@ function advanceMuscleUpPullupTracker(
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
+      if (nextTracker.pendingRepHeadOverWrists === null) {
+        nextTracker.repetitions += 1;
+        nextTracker.incorrectRepetitions += 1;
+        nextTracker.lastIncorrectReason = 'no-top';
+      }
       nextTracker.currentRepCorrect = isAtBottom;
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
@@ -13605,6 +13637,7 @@ function Home() {
   const [muscleUpPullupSessionFinished, setMuscleUpPullupSessionFinished] = useState(false);
   const [muscleUpPullupRepetitions, setMuscleUpPullupRepetitions] = useState(0);
   const [muscleUpPullupGoodRepetitions, setMuscleUpPullupGoodRepetitions] = useState(0);
+  const [muscleUpPullupIncorrectRepetitions, setMuscleUpPullupIncorrectRepetitions] = useState(0);
   const [muscleUpPullupPendingRepetitions, setMuscleUpPullupPendingRepetitions] = useState(0);
   const [muscleUpPullupPhase, setMuscleUpPullupPhase] =
     useState<MuscleUpPullupPhase>('esperando abajo');
@@ -17233,6 +17266,7 @@ function Home() {
             setMuscleUpPullupSessionFinished(false);
             setMuscleUpPullupRepetitions(0);
             setMuscleUpPullupGoodRepetitions(0);
+            setMuscleUpPullupIncorrectRepetitions(0);
             setMuscleUpPullupPendingRepetitions(0);
             setMuscleUpPullupPhase('esperando abajo');
             setMuscleUpPullupMinimumAngle(null);
@@ -17389,6 +17423,7 @@ function Home() {
           muscleUpPullupFinLoggedRef.current = false;
           setMuscleUpPullupRepetitions(0);
           setMuscleUpPullupGoodRepetitions(0);
+          setMuscleUpPullupIncorrectRepetitions(0);
           setMuscleUpPullupPendingRepetitions(0);
           setMuscleUpPullupPhase('esperando abajo');
           setMuscleUpPullupMinimumAngle(null);
@@ -18619,9 +18654,16 @@ function Home() {
           { bottomReached: false, sessionEnded: true },
         );
         muscleUpPullupTrackerRef.current = settled.tracker;
+        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
-        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (settled.verdict) {
+          logMuscleUpPullupVerdict(settled.verdict);
+          setMuscleUpPullupFeedback(
+            getMuscleUpPullupVerdictFeedback(settled.verdict),
+          );
+        }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
           logMuscleUpPullupFinish(settled.tracker);
@@ -19273,6 +19315,7 @@ function Home() {
         }
         setMuscleUpPullupRepetitions(update.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(update.tracker.goodRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(update.tracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(
           update.tracker.pendingRepHeadOverWrists === null ? 0 : 1,
         );
@@ -19282,20 +19325,17 @@ function Home() {
         );
         if (update.verdict) {
           logMuscleUpPullupVerdict(update.verdict);
+          setMuscleUpPullupFeedback(
+            getMuscleUpPullupVerdictFeedback(update.verdict),
+          );
+        } else if (
+          update.tracker.event === 'no-top'
+          && update.tracker.repetitions > trackerBeforeUpdate.repetitions
+        ) {
           setMuscleUpPullupFeedback({
-            tone: update.verdict.correct ? 'success' : 'warning',
-            message: `Repetición ${update.verdict.repetition}: ${
-              update.verdict.correct ? 'BIEN ✓' : 'EVALUADA'
-            }`,
-            detail: update.verdict.reason === 'no-top-cabeza'
-              ? 'La repetición no alcanzó la posición alta con la cabeza sobre las muñecas.'
-              : update.verdict.reason === 'no-fondo'
-                ? 'La repetición terminó sin regresar al fondo antes de soltar la barra.'
-                : update.verdict.reason === 'no-lockout'
-                  ? 'La repetición no alcanzó el rango alto de los codos.'
-                  : update.verdict.correct
-                    ? 'Recorrido completo: posición alta validada y regreso al fondo.'
-                    : 'El recorrido se evaluó como incorrecto.',
+            tone: 'warning',
+            message: `Repetición ${update.tracker.repetitions}: INCORRECTA · no-top`,
+            detail: 'La subida fue confirmada, pero no alcanzaste la posición alta antes de volver abajo.',
           });
         } else if (update.tracker.event === 'valid' || update.tracker.event === 'invalid') {
           setMuscleUpPullupFeedback({
@@ -26030,6 +26070,7 @@ function Home() {
     setMuscleUpPullupSessionFinished(false);
     setMuscleUpPullupRepetitions(0);
     setMuscleUpPullupGoodRepetitions(0);
+    setMuscleUpPullupIncorrectRepetitions(0);
     setMuscleUpPullupPendingRepetitions(0);
     setMuscleUpPullupPhase('esperando abajo');
     setMuscleUpPullupMinimumAngle(null);
@@ -26670,9 +26711,16 @@ function Home() {
         muscleUpPullupTrackerRef.current = settled.tracker;
         muscleUpPullupSessionFinishedRef.current = true;
         setMuscleUpPullupSessionFinished(true);
+        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
-        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (settled.verdict) {
+          logMuscleUpPullupVerdict(settled.verdict);
+          setMuscleUpPullupFeedback(
+            getMuscleUpPullupVerdictFeedback(settled.verdict),
+          );
+        }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
           logMuscleUpPullupFinish(settled.tracker);
@@ -27775,8 +27823,14 @@ function Home() {
         setMuscleUpPullupSessionFinished(true);
         setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
-        if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+        if (settled.verdict) {
+          logMuscleUpPullupVerdict(settled.verdict);
+          setMuscleUpPullupFeedback(
+            getMuscleUpPullupVerdictFeedback(settled.verdict),
+          );
+        }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
           logMuscleUpPullupFinish(settled.tracker);
@@ -27856,9 +27910,16 @@ function Home() {
         { bottomReached: false, sessionEnded: true },
       );
       muscleUpPullupTrackerRef.current = settled.tracker;
+      setMuscleUpPullupRepetitions(settled.tracker.repetitions);
       setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
+      setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
       setMuscleUpPullupPendingRepetitions(0);
-      if (settled.verdict) logMuscleUpPullupVerdict(settled.verdict);
+      if (settled.verdict) {
+        logMuscleUpPullupVerdict(settled.verdict);
+        setMuscleUpPullupFeedback(
+          getMuscleUpPullupVerdictFeedback(settled.verdict),
+        );
+      }
       if (!muscleUpPullupFinLoggedRef.current) {
         muscleUpPullupFinLoggedRef.current = true;
         logMuscleUpPullupFinish(settled.tracker);
@@ -27905,6 +27966,7 @@ function Home() {
     setMuscleUpPullupSessionFinished(false);
     setMuscleUpPullupRepetitions(0);
     setMuscleUpPullupGoodRepetitions(0);
+    setMuscleUpPullupIncorrectRepetitions(0);
     setMuscleUpPullupPendingRepetitions(0);
     setMuscleUpPullupPhase('esperando abajo');
     setMuscleUpPullupMinimumAngle(null);
@@ -28020,6 +28082,10 @@ function Home() {
     ? 'Preparando el análisis...'
     : pullupSessionFinished
       ? 'Ejercicio finalizado · conteo congelado'
+    : selectedExercise === 'muscle-up' && muscleUpPullupSessionFinished
+      ? 'Ejercicio finalizado · conteo congelado'
+    : selectedExercise === 'muscle-up' && !poseDetected
+      ? 'Cuerpo no detectado'
     : !exerciseStarted
       ? isLiveSquatSelected && squatLivePreparationStage === 'body-detection'
         ? squatLivePreparationCountdown !== null
@@ -28225,6 +28291,8 @@ function Home() {
         ? 'AJUSTAR VISTA'
       : selectedExercise === 'muscle-up' && muscleUpPullupSessionFinished
         ? 'FINALIZADO'
+        : selectedExercise === 'muscle-up' && !poseDetected
+          ? 'CUERPO NO DETECTADO'
         : selectedExercise === 'muscle-up'
           && !exerciseStarted
           && muscleUpPreparationStage === 'bar-preparation'
@@ -28306,10 +28374,7 @@ function Home() {
         evaluatedRepetitions - correctRepetitions - pullupPendingRepetitions,
       )
     : selectedExercise === 'muscle-up'
-      ? Math.max(
-          0,
-          evaluatedRepetitions - correctRepetitions - muscleUpPullupPendingRepetitions,
-        )
+      ? muscleUpPullupIncorrectRepetitions
       : Math.max(0, evaluatedRepetitions - correctRepetitions);
   const evaluationPhase = selectedExercise === 'sentadillas'
     ? squatPhaseLabel
