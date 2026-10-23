@@ -626,6 +626,7 @@ type MuscleUpPullupTracker = {
   phase: MuscleUpPullupPhase;
   repetitions: number;
   goodRepetitions: number;
+  incorrectRepetitions: number;
   minimumAngle: number | null;
   samples: number[];
   event: MuscleUpPullupRepEvent;
@@ -3238,6 +3239,8 @@ const MUSCLE_UP_PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
 const MUSCLE_UP_PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 const MUSCLE_UP_UPLOADED_SEARCH_DURATION_FRACTION = 0.2;
 const MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
+const MUSCLEUP_INCORRECT_ELBOW_MAX_DEG = 100;
+const MUSCLEUP_INCORRECT_NOSE_OVER_WRIST_MIN = -0.10;
 const MUSCLE_UP_PULLUP_TRACKER_CONFIG: MuscleUpPullupTrackerConfig = {
   bottomMinAngle: MUSCLE_UP_PULLUP_BOTTOM_MIN_ANGLE,
   bottomMaxAngle: MUSCLE_UP_PULLUP_BOTTOM_MAX_ANGLE,
@@ -6203,6 +6206,7 @@ function createMuscleUpPullupTracker(): MuscleUpPullupTracker {
     phase: 'esperando abajo',
     repetitions: 0,
     goodRepetitions: 0,
+    incorrectRepetitions: 0,
     minimumAngle: null,
     samples: [],
     event: null,
