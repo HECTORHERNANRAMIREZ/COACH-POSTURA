@@ -1,0 +1,17 @@
+PROTECCIÓN (lo más importante): todos los demás ejercicios, incluidos `dominadas`, `dominadas-comando` y `dominadas-supinas`, deben dar EXACTAMENTE el mismo resultado que hoy (con el video de prueba en dominadas: total=10 | correctas=10). No borres ni modifiques el camino de dominadas: solo añade. No modifiques `isPullupExercise` ni ninguna lista compartida de ejercicios; usa una guarda propia (por ejemplo `isMuscleUpExercise`). No ajustes nada a un video concreto: debe valer para cualquier video y cualquier número de repeticiones.
+
+CONTEXTO: muscle-up ya tiene definidos MuscleUpPullupTracker y sus tipos (622–675), MUSCLE_UP_PULLUP_TRACKER_CONFIG (3163–3175), createMuscleUpPullupTracker() (5693–5713) y advanceMuscleUpPullupTracker() (5915–6127), pero nada los crea ni los llama. Decisión tomada: copia independiente del camino de dominadas, sin añadir entrada a `repetitionConfigs`. Los valores iniciales de la configuración se mantienen idénticos a los de dominadas.
+
+TAREA (etapa A): conecta el tracker propio de muscle-up para que cuente en un video, copiando el patrón de dominadas:
+1. Crea una ref propia del tracker (por ejemplo `muscleUpTrackerRef`) y su estado de conteo, sin compartir refs, acumuladores ni estado mutable con dominadas ni con `exerciseRepTrackerRef`.
+2. Reinicia ese estado al iniciar un video de muscle-up, al cambiar de ejercicio y al cargar otro video, siguiendo cómo dominadas reinicia el suyo (aprox. 23885–24100).
+3. En el bucle de cuadros, llama a `advanceMuscleUpPullupTracker()` solo cuando el ejercicio sea muscle-up, con las mismas guardas de cuadro válido y frescura de puntos que usa dominadas (aprox. 17315–17345, guardia 17321–17327), y sincroniza su resultado con el estado visible.
+4. Si el tracker de dominadas necesita calibración o "anclaje" de sesión para empezar a contar, replica solo el mínimo necesario para muscle-up y dime qué replicaste; la calibración y la prevalidación completas quedan para la etapa B.
+5. Emite para muscle-up los logs `[pullup-event]` y `[pullup-veredicto]` y el cierre `[fin]` (referencia: 17361–17368, 5439–5458 y 25144–25170), con una etiqueta de ejercicio `muscle-up` para distinguirlos de los de dominadas.
+6. Mantén `[muscleup-trace]` como está y añade al JSON la fase actual y anterior, las repeticiones y el ángulo que recibe el tracker de muscle-up (no el de `exerciseRepTrackerRef`).
+
+NO HAGAS en esta etapa: pantalla de resumen, calibración/preparación de 5 s completas, prevalidación, cambios de umbrales.
+
+SI TE QUEDAS SIN PRESUPUESTO: termina en un punto coherente (que compile y que dominadas siga igual) y dime hasta qué número de la lista llegaste.
+
+VERIFICACIÓN FINAL: lista cada línea modificada o añadida con archivo y línea. Confirma, citando líneas, que ningún otro ejercicio cambia, que no tocaste `isPullupExercise` y que el estado de muscle-up no se comparte con dominadas.
