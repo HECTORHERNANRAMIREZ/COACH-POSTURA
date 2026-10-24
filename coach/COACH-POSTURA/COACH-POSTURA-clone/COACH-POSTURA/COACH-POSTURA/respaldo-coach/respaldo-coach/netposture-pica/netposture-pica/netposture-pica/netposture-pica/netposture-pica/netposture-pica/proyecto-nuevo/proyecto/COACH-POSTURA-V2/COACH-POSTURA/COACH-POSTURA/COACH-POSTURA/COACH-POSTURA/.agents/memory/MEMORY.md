@@ -4,3 +4,4 @@
 - [Paused push-up video calibration](paused-pushup-video-calibration.md) — calibrate uploaded clips before playback, then analyze from the beginning.
 - [Uploaded video playback](uploaded-video-playback.md) — separate push-up analysis from 1× rendering; keep other uploaded-video inference off the playback thread.
 - [Muscle-up tracking isolation](muscle-up-tracking-isolation.md) — keep muscle-up-only telemetry out of tracker inputs, readiness, blocking, and other exercise paths.
+- [Git checkout continuity](git-checkout-continuity.md) — after a turn boundary, recheck the required branch and baseline tag before editing; artifact metadata can reinitialize checkout history.
