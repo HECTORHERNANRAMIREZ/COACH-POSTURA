@@ -234,6 +234,27 @@ import {
   UPLOADED_VIDEO_ANALYSIS_FPS,
   UPLOADED_VIDEO_ANALYSIS_INTERVAL_SECONDS,
 } from '@/constants/base';
+import {
+  PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX,
+  PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO,
+  PULLUP_BAR_DETACH_STABLE_FRAMES,
+  PULLUP_BAR_PREPARATION_COUNTDOWN_MS,
+  PULLUP_BOTTOM_MAX_ANGLE,
+  PULLUP_BOTTOM_MIN_ANGLE,
+  PULLUP_BOTTOM_SHOULDER_MIN_ANGLE,
+  PULLUP_BOTTOM_STABLE_FRAMES,
+  PULLUP_BODY_DETECTION_HOLD_MS,
+  PULLUP_NO_LOCKOUT_ANGLE,
+  PULLUP_PULL_ACTIVATION_ANGLE,
+  PULLUP_RISING_DELTA_DEG,
+  PULLUP_SMOOTHING_SAMPLES,
+  PULLUP_TOLERANCE_DEG,
+  PULLUP_TOP_CONFIRMATION_FRAMES,
+  PULLUP_TOP_ELBOW_MAX_ANGLE,
+  PULLUP_TOP_ELBOW_MIN_ANGLE,
+  PULLUP_TOP_SHOULDER_MAX_ANGLE,
+  PULLUP_TOP_SHOULDER_MIN_ANGLE,
+} from '@/constants/pullup';
 
 const queryClient = new QueryClient();
 
@@ -2381,32 +2402,6 @@ const ANGLE_DISPLAY_SAMPLES = 7;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const POSE_MODEL_LOAD_TIMEOUT_MS = 60000;
 // Calibración de dominadas basada en las lecturas de la ejecución de referencia:
-// abajo: codo extendido; arriba: codo flexionado.
-// En la vista trasera del video, la extensión real se midió entre 130–180°.
-// Se amplía el inicio válido para no convertir una lectura 3D comprimida en
-// un falso "sin bloqueo".
-const PULLUP_BOTTOM_MIN_ANGLE = 125;
-const PULLUP_BOTTOM_MAX_ANGLE = 180;
-const PULLUP_PULL_ACTIVATION_ANGLE = 120;
-const PULLUP_NO_LOCKOUT_ANGLE = 155;
-// La cabeza sobre las muñecas es la señal principal; el rango bilateral de
-// codos aporta una confirmación secundaria cuando la cabeza pierde confianza.
-const PULLUP_BOTTOM_SHOULDER_MIN_ANGLE = 125;
-const PULLUP_TOP_SHOULDER_MIN_ANGLE = 70;
-const PULLUP_TOP_SHOULDER_MAX_ANGLE = 125;
-// En la ejecución de referencia, la parte alta llegó aproximadamente a
-// 57–135° por lado. El rango acepta esa variación 3D sin exigir una postura
-// idéntica en ambos brazos.
-const PULLUP_TOP_ELBOW_MIN_ANGLE = 45;
-const PULLUP_TOP_ELBOW_MAX_ANGLE = 145;
-const PULLUP_TOLERANCE_DEG = 5;
-const PULLUP_SMOOTHING_SAMPLES = 5;
-const PULLUP_BOTTOM_STABLE_FRAMES = 3;
-const PULLUP_TOP_CONFIRMATION_FRAMES = 2;
-const PULLUP_RISING_DELTA_DEG = 3;
-const PULLUP_BAR_DETACH_STABLE_FRAMES = 3;
-const PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
-const PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
 const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   bottomMinAngle: PULLUP_BOTTOM_MIN_ANGLE,
   bottomMaxAngle: PULLUP_BOTTOM_MAX_ANGLE,
@@ -2466,8 +2461,6 @@ const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   ...STANDARD_PULLUP_TRACKER_CONFIG,
 };
 const COMMAND_PULLUP_TRACE_ENABLED = true;
-const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
-const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
