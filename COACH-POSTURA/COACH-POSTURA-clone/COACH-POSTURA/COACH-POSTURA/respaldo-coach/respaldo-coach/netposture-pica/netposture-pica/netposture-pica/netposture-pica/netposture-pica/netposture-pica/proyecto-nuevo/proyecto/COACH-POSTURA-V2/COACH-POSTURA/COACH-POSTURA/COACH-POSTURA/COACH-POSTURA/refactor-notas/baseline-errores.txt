@@ -1,0 +1,24 @@
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx: error TS18047: 'trackerConfig' is possibly 'null'.
+src/App.tsx: error TS2322: Type 'ExerciseRepConfig | null' is not assignable to type 'ExerciseRepConfig'.
+src/App.tsx: error TS2322: Type 'number | undefined' is not assignable to type 'number | null'.
+src/App.tsx: error TS2339: Property 'ladosEvaluados' does not exist on type 'never'.
+src/App.tsx: error TS2345: Argument of type 'ExerciseRepConfig | { startMinAngle: number; endMinAngle: number; endMaxAngle: number; endLabel: string; smoothingSamples: number; countOnReturn: boolean; direction?: ExerciseRepDirection | undefined; ... 10 more ...; techniqueMustHoldThroughout?: boolean | undefined; } | { ...; } | null' is not assignable to parameter of type 'ExerciseRepConfig'.
+src/App.tsx: error TS2345: Argument of type 'string' is not assignable to parameter of type '"video" | "vivo"'.
+src/App.tsx: error TS6305: Output file '/home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/lib/api-client-react/dist/index.d.ts' has not been built from source file '/home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/lib/api-client-react/src/index.ts'.
