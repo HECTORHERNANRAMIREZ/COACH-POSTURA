@@ -285,6 +285,7 @@ import {
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MAX_ANGLE,
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MIN_ANGLE,
 } from '@/constants/muscle-up-pullup';
+import { sideKeypoints } from '@/constants/side-keypoints';
 import {
   isCommandPullup,
   isStandardOrSupinePullup,
@@ -6267,10 +6268,6 @@ function selectMostConfident(
   return { label, score: left?.score ?? null, side: 'izq.' };
 }
 
-const sideKeypoints: Record<PoseSide, Record<'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle', number>> = {
-  left: { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 },
-  right: { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 },
-};
 const MUSCLE_UP_EXTREMITY_LOG_POINT_INDEXES: Record<MuscleUpExtremityLogPointKey, number> = {
   leftHip: sideKeypoints.left.hip,
   rightHip: sideKeypoints.right.hip,
