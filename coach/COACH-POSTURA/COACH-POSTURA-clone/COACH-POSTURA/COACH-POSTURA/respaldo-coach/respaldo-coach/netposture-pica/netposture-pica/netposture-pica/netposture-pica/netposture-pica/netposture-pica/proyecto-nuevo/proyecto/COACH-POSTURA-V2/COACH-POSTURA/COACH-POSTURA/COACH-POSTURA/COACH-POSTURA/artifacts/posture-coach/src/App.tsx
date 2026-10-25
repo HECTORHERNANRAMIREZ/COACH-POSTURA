@@ -285,6 +285,10 @@ import {
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MAX_ANGLE,
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MIN_ANGLE,
 } from '@/constants/muscle-up-pullup';
+import {
+  isCommandPullup,
+  isStandardOrSupinePullup,
+} from '@/exercises/guards';
 
 const queryClient = new QueryClient();
 
@@ -373,14 +377,6 @@ const clerkAppearance = {
     main: 'bg-transparent',
   },
 };
-const isStandardOrSupinePullup = (
-  exercise: ExerciseId | null | undefined,
-): exercise is 'dominadas' | 'dominadas-supinas' => (
-  exercise === 'dominadas' || exercise === 'dominadas-supinas'
-);
-const isCommandPullup = (
-  exercise: ExerciseId | null | undefined,
-): exercise is 'dominadas-comando' => exercise === 'dominadas-comando';
 function isPressBenchExercise(
   exercise: ExerciseId | null,
 ): exercise is 'press-banca' | 'press-banca-inclinado' {
