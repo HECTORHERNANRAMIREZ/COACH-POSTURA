@@ -289,6 +289,10 @@ import {
   isCommandPullup,
   isStandardOrSupinePullup,
 } from '@/exercises/guards';
+import {
+  isWithinAngle,
+  isWithinPullupAngle,
+} from '@/exercises/angle-checks';
 
 const queryClient = new QueryClient();
 
@@ -3612,10 +3616,6 @@ function createExerciseRepTracker(): ExerciseRepTracker {
   };
 }
 
-function isWithinAngle(angle: number, min: number, max: number) {
-  return angle >= min && angle <= max;
-}
-
 const DECLINED_PUSHUP_DIAGNOSTIC_JOINTS = [
   { key: 'shoulder', label: 'hombro' },
   { key: 'elbow', label: 'codo' },
@@ -4337,19 +4337,6 @@ function finishDeclinedPushupVideoDiagnostics(
       crudoPresenteEnUnLadoYAusenteEnElOtro:
         diagnostics.pointsSummary.oneSidedRawPresence,
     })}`,
-  );
-}
-
-function isWithinPullupAngle(
-  angle: number,
-  min: number,
-  max: number,
-  tolerance = PULLUP_TOLERANCE_DEG,
-) {
-  return isWithinAngle(
-    angle,
-    Math.max(0, min - tolerance),
-    Math.min(180, max + tolerance),
   );
 }
 
