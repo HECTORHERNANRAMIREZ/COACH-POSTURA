@@ -1,3 +1,5 @@
+import type { PullupTrackerConfig } from '@/types/tracking';
+
 // abajo: codo extendido; arriba: codo flexionado.
 // En la vista trasera del video, la extensión real se midió entre 130–180°.
 // Se amplía el inicio válido para no convertir una lectura 3D comprimida en
@@ -26,3 +28,18 @@ export const PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO = 0.18;
 export const PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX = 24;
 export const PULLUP_BODY_DETECTION_HOLD_MS = 5000;
 export const PULLUP_BAR_PREPARATION_COUNTDOWN_MS = 5000;
+
+// Calibración de dominadas basada en las lecturas de la ejecución de referencia:
+export const STANDARD_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
+  bottomMinAngle: PULLUP_BOTTOM_MIN_ANGLE,
+  bottomMaxAngle: PULLUP_BOTTOM_MAX_ANGLE,
+  pullActivationAngle: PULLUP_PULL_ACTIVATION_ANGLE,
+  noLockoutAngle: PULLUP_NO_LOCKOUT_ANGLE,
+  topElbowMinAngle: PULLUP_TOP_ELBOW_MIN_ANGLE,
+  topElbowMaxAngle: PULLUP_TOP_ELBOW_MAX_ANGLE,
+  smoothingSamples: PULLUP_SMOOTHING_SAMPLES,
+  bottomStableFrames: PULLUP_BOTTOM_STABLE_FRAMES,
+  topConfirmationFrames: PULLUP_TOP_CONFIRMATION_FRAMES,
+  risingDeltaDeg: PULLUP_RISING_DELTA_DEG,
+  angleToleranceDeg: PULLUP_TOLERANCE_DEG,
+};

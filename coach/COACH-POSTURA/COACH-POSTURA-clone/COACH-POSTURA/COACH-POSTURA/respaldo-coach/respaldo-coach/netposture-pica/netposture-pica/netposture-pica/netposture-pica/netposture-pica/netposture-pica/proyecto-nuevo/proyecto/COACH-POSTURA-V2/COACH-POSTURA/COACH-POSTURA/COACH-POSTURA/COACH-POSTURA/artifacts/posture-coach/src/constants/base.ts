@@ -1,4 +1,5 @@
 export const TOTAL_FRAMES = 11;
+export const ANGLE_DISPLAY_SAMPLES = 7;
 export const REPETICIONES = 4;
 export const SCROLL_LERP = 0.15;
 // El detector no debe intentar procesar cada cuadro del video subido: una
