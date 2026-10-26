@@ -58,3 +58,5 @@ export const DIAGNOSTIC_BUFFER_LIMIT = 200;
 export const PULLUP_DIAGNOSTIC_EXPORT_ENABLED = import.meta.env.DEV;
 
 export const GREEN = '#39ff6a';
+export const CAMERA_POINT_MIN_SCORE = 0.38;
+export const HEAD_LANDMARK_INDICES = [0, 7, 8] as const;

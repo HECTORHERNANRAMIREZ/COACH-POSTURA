@@ -200,12 +200,14 @@ import {
 import {
   ANGLE_DISPLAY_SAMPLES,
   AUTH_AND_BILLING_ENABLED,
+  CAMERA_POINT_MIN_SCORE,
   DETECTOR_MAX_FRAME_HEIGHT,
   DETECTOR_MAX_FRAME_WIDTH,
   DIAGNOSTIC_BUFFER_LIMIT,
   FPS_LOW_SECONDS,
   FPS_WINDOW_FRAMES,
   GREEN,
+  HEAD_LANDMARK_INDICES,
   MIN_FPS,
   PULLUP_DIAGNOSTIC_BUFFER_LIMIT,
   PULLUP_DIAGNOSTIC_EXPORT_ENABLED,
@@ -284,8 +286,12 @@ import {
   MUSCLE_UP_PULLUP_TOP_ELBOW_MIN_ANGLE,
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MAX_ANGLE,
   MUSCLE_UP_PULLUP_TOP_SHOULDER_MIN_ANGLE,
+  MUSCLE_UP_PULLUP_TRACKER_CONFIG,
 } from '@/constants/muscle-up-pullup';
-import { sideKeypoints } from '@/constants/side-keypoints';
+import {
+  MUSCLE_UP_PULLUP_SIDE_KEYPOINTS,
+  sideKeypoints,
+} from '@/constants/side-keypoints';
 import {
   isCommandPullup,
   isStandardOrSupinePullup,
@@ -2454,19 +2460,6 @@ const POSE_MODEL_LOAD_TIMEOUT_MS = 60000;
 const MUSCLE_UP_UPLOADED_SEARCH_DURATION_FRACTION = 0.2;
 const MUSCLEUP_INCORRECT_ELBOW_MAX_DEG = 100;
 const MUSCLEUP_INCORRECT_NOSE_OVER_WRIST_MIN = -0.10;
-const MUSCLE_UP_PULLUP_TRACKER_CONFIG: MuscleUpPullupTrackerConfig = {
-  bottomMinAngle: MUSCLE_UP_PULLUP_BOTTOM_MIN_ANGLE,
-  bottomMaxAngle: MUSCLE_UP_PULLUP_BOTTOM_MAX_ANGLE,
-  pullActivationAngle: MUSCLE_UP_PULLUP_PULL_ACTIVATION_ANGLE,
-  noLockoutAngle: MUSCLE_UP_PULLUP_NO_LOCKOUT_ANGLE,
-  topElbowMinAngle: MUSCLE_UP_PULLUP_TOP_ELBOW_MIN_ANGLE,
-  topElbowMaxAngle: MUSCLE_UP_PULLUP_TOP_ELBOW_MAX_ANGLE,
-  smoothingSamples: MUSCLE_UP_PULLUP_SMOOTHING_SAMPLES,
-  bottomStableFrames: MUSCLE_UP_PULLUP_BOTTOM_STABLE_FRAMES,
-  topConfirmationFrames: MUSCLE_UP_PULLUP_MIN_TOP_FRAMES,
-  risingDeltaDeg: MUSCLE_UP_PULLUP_RISING_DELTA_DEG,
-  angleToleranceDeg: MUSCLE_UP_PULLUP_TOLERANCE_DEG,
-};
 const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   ...STANDARD_PULLUP_TRACKER_CONFIG,
 };
@@ -2645,7 +2638,6 @@ const FLOOR_LEG_RAISE_ACTIVATION_ANGLE = 125;
 const FLOOR_LEG_RAISE_END_MIN_ANGLE = 70;
 const FLOOR_LEG_RAISE_END_MAX_ANGLE = 110;
 const FACE_POINT_MIN_SCORE = 0.22;
-const CAMERA_POINT_MIN_SCORE = 0.38;
 // Umbral de confianza para usar talón y punta en lecturas derivadas.
 const FOOT_POINT_MIN_SCORE = CAMERA_POINT_MIN_SCORE;
 // Elevación normalizada talón-punta usada como histéresis de la elevación de talones.
@@ -5854,11 +5846,6 @@ const MUSCLE_UP_EXTREMITY_LOG_POINT_INDEXES: Record<MuscleUpExtremityLogPointKey
   leftToe: MUSCLE_UP_FOOT_INDEX.left,
   rightToe: MUSCLE_UP_FOOT_INDEX.right,
 };
-const MUSCLE_UP_PULLUP_SIDE_KEYPOINTS: typeof sideKeypoints = {
-  left: { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27 },
-  right: { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28 },
-};
-const HEAD_LANDMARK_INDICES = [0, 7, 8] as const;
 const WRIST_TIP_INDEX: Record<PoseSide, number> = {
   left: 19,
   right: 20,
