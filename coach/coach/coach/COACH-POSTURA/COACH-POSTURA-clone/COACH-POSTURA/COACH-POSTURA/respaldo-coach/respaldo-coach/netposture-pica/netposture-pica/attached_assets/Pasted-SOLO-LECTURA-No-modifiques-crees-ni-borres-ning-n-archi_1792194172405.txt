@@ -1,0 +1,21 @@
+SOLO LECTURA. No modifiques, crees ni borres ningún archivo. No ejecutes nada que cambie el proyecto. Responde citando archivo y número de línea en cada punto.
+
+Quiero entender cómo está hoy la Dominada en barra con agarre supino (palmas hacia ti, chin-up) y cómo se relaciona con las demás dominadas.
+
+1. EXISTENCIA. ¿Existe la dominada con agarre supino como ejercicio separado? ¿Cuál es su id y nombre visible, y dónde se define (tipo de ejercicios, catálogo, descripción, articulaciones seguidas, nota de cámara, textos de ayuda, vista recomendada)? ¿Qué otras variantes de dominada existen (agarre prono, neutro, etc.) y cómo se llaman?
+
+2. CONTEO. ¿El supino tiene su propia configuración de repetición (getRepetitionConfig o equivalente) o cae en un caso por defecto o en la de otra dominada? ¿Entra en la rama de conteo, la puerta y la validación adicional, o no llega a contar? Si hay código duplicado entre variantes, dímelo. Dime si usa `advancePullupTracker()` o el tracker genérico `advanceExerciseRepTracker`.
+
+3. VALORES. Dame los valores actuales del supino y compáralos con los de la dominada de agarre prono: ángulo arriba y abajo, tolerancias, smoothingSamples, countOnReturn, countOnlyWhenCorrect, lados evaluados, y qué puntos se exigen visibles (hombro, codo, muñeca, cadera, nariz u otros) con su score mínimo.
+
+4. ÁNGULO Y MOVIMIENTO. ¿Qué ángulo se calcula para contar (por ejemplo hombro–codo–muñeca, o la altura de la barbilla o la nariz respecto a la barra o las muñecas)? ¿Se usan coordenadas world 3D o 2D en pantalla? ¿Hay algo que dependa de la posición de las manos, de la barra o de la orientación del cuerpo? ¿La rotación de la muñeca en el agarre supino afecta algún cálculo?
+
+5. MODO EN VIVO Y VIDEO. ¿Comparten el mismo flujo de conteo? Dime frecuencia de cuadros analizados en cada modo, modelo de pose usado y diferencias de preparación (detección del cuerpo, cuenta regresiva).
+
+6. LOGS Y PREPARACIÓN. ¿Se emiten logs de diagnóstico para el supino y con qué prefijo? ¿Tiene ventanas de detección y preparación propias, y usan la misma tarjeta y los mismos estilos que Flexiones y Press de banca?
+
+7. PRUEBAS. ¿Existen pruebas o videos de referencia de dominadas en el repositorio?
+
+8. Tabla final: diferencias entre el supino y la dominada de agarre prono, marcando cuáles pueden hacer que la misma repetición se cuente distinto y cuáles impiden que el supino cuente.
+
+No propongas cambios todavía.

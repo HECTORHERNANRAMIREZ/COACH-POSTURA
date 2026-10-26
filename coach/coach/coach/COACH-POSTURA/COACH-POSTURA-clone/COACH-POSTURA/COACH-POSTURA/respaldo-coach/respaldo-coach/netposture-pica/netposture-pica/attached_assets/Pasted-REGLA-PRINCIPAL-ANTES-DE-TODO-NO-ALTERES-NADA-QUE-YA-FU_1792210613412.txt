@@ -1,0 +1,30 @@
+REGLA PRINCIPAL, ANTES DE TODO: NO ALTERES NADA QUE YA FUNCIONA.
+
+Dominadas en barra (`dominadas`) ya está validada y su comportamiento debe quedar EXACTAMENTE igual. Lo mismo vale para `dominadas-comando` y todos los demás ejercicios (flexiones, press de banca plano e inclinado, sentadillas, fondos, etc.).
+
+PROHIBIDO:
+- Modificar umbrales, tolerancias, tiempos, textos o resultados de `dominadas` y de cualquier otro ejercicio.
+- Refactorizar, renombrar, mover, reformatear o "limpiar" código existente.
+- Tocar `advancePullupTracker`, el ángulo hombro–codo–muñeca, las funciones de feedback técnico, el detector, los filtros, el muestreo de cuadros o el CSS.
+- Cambiar nada que no sea necesario para `dominadas-supinas`.
+
+Haz el CAMBIO MÍNIMO. Si una condición que hoy comprueba `'dominadas'` o `isStandardPullupSelected` se amplía para incluir `dominadas-supinas`, el resultado para `dominadas` debe ser idéntico al de hoy y `dominadas-comando` no debe verse afectada.
+
+OBJETIVO: Dominadas supinas (`dominadas-supinas`) es el mismo movimiento que `dominadas`, solo cambia el agarre. Hoy comparte el conteo (`advancePullupTracker`) y los umbrales, pero NO comparte lo que es exclusivo de `dominadas`. Quiero que el supino se comporte exactamente igual que `dominadas` en:
+a) Preparación: los 5 s de detección del cuerpo y los 5 s de preparación en la barra, con calibración y seguimiento anclado, si existen.
+b) Ventanas: la tarjeta de detección y cuenta regresiva, con la misma clase `pullup-preparation-overlay`, los mismos estilos y el mismo comportamiento que `dominadas`.
+c) Video subido: el mismo preanálisis y la misma reproducción a 0.35× que hoy solo tiene `dominadas`.
+d) Logs: que emita `[pullup-event]` y `[dominadas-video]` igual que `dominadas`, además de los que ya emite.
+
+PASO 0, antes de editar: lista TODAS las comparaciones con 'dominadas' (incluyendo `isStandardPullupSelected` y sus usos) con archivo y línea. Para cada una di si la vas a ampliar al supino o la dejas igual, y confirma que `dominadas-comando` queda fuera. Después edita.
+
+CAMBIOS PERMITIDOS, solo para el supino:
+1. Ampliar esas condiciones al supino, sin duplicar lógica (por ejemplo con una función auxiliar que reconozca `dominadas` y `dominadas-supinas`, y sin incluir `dominadas-comando`).
+2. En los logs `[pullup-event]` y `[dominadas-video]` agrega un único campo nuevo `ejercicio` con el id. Es el único cambio permitido en la salida observable de `dominadas`; no cambies ningún otro texto ni valor.
+3. Los textos de la tarjeta y de la preparación para el supino son los mismos que los de `dominadas`.
+4. No cambies umbrales, ángulo, tracker ni feedback.
+
+VERIFICACIÓN FINAL, obligatoria:
+a) Archivos y líneas cambiados y el diff completo.
+b) Confirma que ninguna línea modificada altera el comportamiento de `dominadas` ni de `dominadas-comando`, citando las líneas. Dime si algún cambio podía afectarlas, sin esconderlo.
+c) Confirma que no tocaste CSS, tracker, ángulo, detector ni muestreo.

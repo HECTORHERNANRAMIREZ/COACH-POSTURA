@@ -1,0 +1,461 @@
+import { ANGLE_DISPLAY_SAMPLES } from '@/constants/base';
+import { STANDARD_PULLUP_TRACKER_CONFIG } from '@/constants/pullup';
+import { sideKeypoints } from '@/constants/side-keypoints';
+import { isCommandPullup, isStandardOrSupinePullup } from '@/exercises/guards';
+import { isWithinPullupAngle } from '@/exercises/angle-checks';
+import { calculateAngle } from '@/exercises/point-geometry';
+import type { PosePoint } from '@/pose3d';
+import type {
+  ExerciseId,
+  MuscleUpPullupRepVerdict,
+  MuscleUpPullupTracker,
+  PoseSide,
+  PullupTracker,
+  PullupTrackerConfig,
+  TechniqueFeedback,
+} from '@/types/tracking';
+import type {
+  PullupExtremityReadings,
+  PullupExtremityValidation,
+  PullupRepVerdict,
+  PullupTrackerUpdate,
+} from '@/types/pullup';
+
+export function createPullupTracker(): PullupTracker {
+  return {
+    phase: 'esperando abajo',
+    repetitions: 0,
+    goodRepetitions: 0,
+    minimumAngle: null,
+    samples: [],
+    event: null,
+    lastAngle: null,
+    topFrames: 0,
+    currentRepCorrect: false,
+    bottomReadyFrames: 0,
+    isArmed: false,
+    pendingRepHeadOverWrists: null,
+    topConfirmationHeadFramesEvaluated: 0,
+    topConfirmationHeadFramesYes: 0,
+    pendingRepHeadFramesEvaluated: 0,
+    pendingRepHeadFramesYes: 0,
+    suppressNextRepCountUntilBottom: false,
+  };
+}
+
+export function median(values: number[]) {
+  const sorted = [...values].sort((first, second) => first - second);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+export function smoothAngleReading(
+  value: number | null,
+  samplesRef: { current: number[] },
+) {
+  if (value === null) {
+    samplesRef.current = [];
+    return null;
+  }
+
+  samplesRef.current = [
+    ...samplesRef.current,
+    value,
+  ].slice(-ANGLE_DISPLAY_SAMPLES);
+  return median(samplesRef.current) ?? value;
+}
+
+export function getPullupExtremityReadings(
+  keypoints: PosePoint[] | undefined,
+): PullupExtremityReadings {
+  if (!keypoints) {
+    return {
+      left: { shoulder: null, elbow: null },
+      right: { shoulder: null, elbow: null },
+    };
+  }
+
+  const sideReadings = (side: PoseSide) => {
+    const indexes = sideKeypoints[side];
+    return {
+      shoulder: calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+      ),
+      elbow: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+    };
+  };
+
+  const [left, right] = (['left', 'right'] as PoseSide[]).map(sideReadings);
+  return { left, right };
+}
+
+export function getPullupExtremityValidation(
+  keypoints: PosePoint[] | undefined,
+  extremityReadings = getPullupExtremityReadings(keypoints),
+  side: PoseSide | null = null,
+  config: PullupTrackerConfig = STANDARD_PULLUP_TRACKER_CONFIG,
+): PullupExtremityValidation {
+  const allElbowsInRange = (min: number, max: number) => (
+    (side ? [extremityReadings[side]] : [extremityReadings.left, extremityReadings.right]).every((reading) => {
+      const value = reading.elbow;
+      return value !== null && isWithinPullupAngle(value, min, max);
+    })
+  );
+
+  return {
+    atBottom: allElbowsInRange(config.bottomMinAngle, config.bottomMaxAngle),
+    atTop: allElbowsInRange(config.topElbowMinAngle, config.topElbowMaxAngle),
+  };
+}
+
+export function settlePendingPullupRep(
+  tracker: PullupTracker,
+  options: {
+    bottomReached: boolean;
+    sessionEnded?: boolean;
+    noLockout?: boolean;
+  },
+): { tracker: PullupTracker; verdict: PullupRepVerdict | null } {
+  if (tracker.pendingRepHeadOverWrists === null) {
+    return { tracker, verdict: null };
+  }
+
+  const headFramesEvaluated = tracker.pendingRepHeadFramesEvaluated;
+  const headFramesYes = tracker.pendingRepHeadFramesYes;
+  const headOverWrists = headFramesYes > 0;
+  const correct = !options.noLockout
+    && headOverWrists
+    && (options.bottomReached || options.sessionEnded === true);
+  const reason = options.noLockout
+    ? 'no-lockout'
+    : !headOverWrists
+      ? 'no-top-cabeza'
+      : options.bottomReached || options.sessionEnded === true
+        ? 'ok'
+        : 'no-fondo';
+  const nextTracker: PullupTracker = {
+    ...tracker,
+    pendingRepHeadOverWrists: null,
+    pendingRepHeadFramesEvaluated: 0,
+    pendingRepHeadFramesYes: 0,
+    currentRepCorrect: correct,
+    goodRepetitions: tracker.goodRepetitions + (correct ? 1 : 0),
+    event: options.noLockout ? 'no-lockout' : correct ? 'valid' : 'invalid',
+  };
+
+  return {
+    tracker: nextTracker,
+    verdict: {
+      repetition: tracker.repetitions,
+      headOverWrists,
+      headFramesEvaluated,
+      headFramesYes,
+      bottomReached: options.bottomReached,
+      correct,
+      reason,
+    },
+  };
+}
+
+export function logPullupVerdict(
+  exercise: ExerciseId | null | undefined,
+  verdict: PullupRepVerdict,
+  measuredSide: PoseSide | null = null,
+) {
+  if (!isStandardOrSupinePullup(exercise) && !isCommandPullup(exercise)) return;
+
+  console.log(
+    `[pullup-veredicto] ejercicio=${exercise} `
+    + (isCommandPullup(exercise) && measuredSide !== null
+      ? `ladoMedido=${measuredSide === 'left' ? 'izquierdo' : measuredSide === 'right' ? 'derecho' : 'no definido'} `
+      : '')
+    + `repeticion=${verdict.repetition} `
+    + `cabezaSobreMuñecas=${verdict.headOverWrists ? 'sí' : 'no'} `
+    + `cuadrosCabezaEvaluados=${verdict.headFramesEvaluated} `
+    + `cuadrosCabezaSi=${verdict.headFramesYes} `
+    + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
+    + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
+    + `motivo=${verdict.reason}`,
+  );
+}
+
+export function logMuscleUpPullupVerdict(verdict: MuscleUpPullupRepVerdict) {
+  console.log(
+    `[pullup-veredicto] ejercicio=muscle-up `
+    + `repeticion=${verdict.repetition} `
+    + `cabezaSobreMuñecas=${verdict.headOverWrists ? 'sí' : 'no'} `
+    + `cuadrosCabezaEvaluados=${verdict.headFramesEvaluated} `
+    + `cuadrosCabezaSi=${verdict.headFramesYes} `
+    + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
+    + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
+    + `motivo=${verdict.reason}`,
+  );
+}
+
+export function getMuscleUpPullupVerdictFeedback(
+  verdict: MuscleUpPullupRepVerdict,
+): TechniqueFeedback {
+  return {
+    tone: verdict.correct ? 'success' : 'warning',
+    message: `Repetición ${verdict.repetition}: ${
+      verdict.correct ? 'BIEN ✓' : 'EVALUADA'
+    }`,
+    detail: verdict.reason === 'no-top-cabeza'
+      ? 'La repetición no alcanzó la posición alta con la cabeza sobre las muñecas.'
+      : verdict.reason === 'no-fondo'
+        ? 'La repetición terminó sin regresar al fondo antes de soltar la barra.'
+        : verdict.reason === 'no-lockout'
+          ? 'La repetición no alcanzó el rango alto de los codos.'
+          : verdict.correct
+            ? 'Recorrido completo: posición alta validada y regreso al fondo.'
+            : 'El recorrido se evaluó como incorrecto.',
+  };
+}
+
+export function logMuscleUpPullupFinish(tracker: MuscleUpPullupTracker) {
+  console.log(
+    `[fin] ejercicio=muscle-up fase=${tracker.phase}`
+    + ` | total=${tracker.repetitions}`
+    + ` | correctas=${tracker.goodRepetitions}`
+    + ` | incorrectas=${tracker.incorrectRepetitions}`
+    + ` | motivo=${tracker.lastIncorrectReason ?? '—'}`
+    + ` | pendientes=${tracker.pendingRepHeadOverWrists === null ? 0 : 1}`,
+  );
+}
+
+export function advancePullupTracker(
+  tracker: PullupTracker,
+  rawAngle: number,
+  topReached: boolean,
+  headOverWrists: boolean | null,
+  extremities: PullupExtremityValidation,
+  gripped: boolean,
+  config: PullupTrackerConfig,
+): PullupTrackerUpdate {
+  const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
+  const smoothedAngle = median(samples);
+  if (smoothedAngle === null) {
+    return {
+      tracker,
+      smoothedAngle: rawAngle,
+      completedMinimumAngle: null,
+      isAtBottom: false,
+      hasReachedTop: false,
+      verdict: null,
+    };
+  }
+
+  let nextTracker: PullupTracker = {
+    ...tracker,
+    samples,
+    event: null,
+    lastAngle: smoothedAngle,
+  };
+  const isAtBottom = extremities.atBottom
+    && isWithinPullupAngle(smoothedAngle, config.bottomMinAngle, config.bottomMaxAngle);
+  const isAtBottomByAngle = isWithinPullupAngle(
+    smoothedAngle,
+    config.bottomMinAngle,
+    config.bottomMaxAngle,
+  );
+  const hasStartedPull = smoothedAngle <= config.pullActivationAngle;
+  const hasReachedTop = topReached;
+  const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
+  let completedMinimumAngle: number | null = null;
+  let verdict: PullupRepVerdict | null = null;
+  if (isAtBottom) {
+    nextTracker.suppressNextRepCountUntilBottom = false;
+  }
+  if (tracker.phase !== 'subiendo') {
+    nextTracker.topConfirmationHeadFramesEvaluated = 0;
+    nextTracker.topConfirmationHeadFramesYes = 0;
+  }
+
+  if (!nextTracker.isArmed) {
+    nextTracker.bottomReadyFrames = isAtBottom && gripped
+      ? tracker.bottomReadyFrames + 1
+      : 0;
+    if (nextTracker.bottomReadyFrames >= config.bottomStableFrames) {
+      nextTracker.isArmed = true;
+      nextTracker.bottomReadyFrames = 0;
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = true;
+      nextTracker.minimumAngle = null;
+    }
+    return {
+      tracker: nextTracker,
+      smoothedAngle,
+      completedMinimumAngle,
+      isAtBottom,
+      hasReachedTop,
+      verdict,
+    };
+  }
+
+  if (nextTracker.phase === 'esperando abajo') {
+    if (isAtBottom) {
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = true;
+    }
+  } else if (nextTracker.phase === 'abajo') {
+    // Una articulación retenida durante una pérdida breve no debe desarmar
+    // una repetición que ya estaba en la fase inferior. El ángulo promedio
+    // todavía permite identificar el inicio de la subida; si vuelve al fondo
+    // sin completar la parte superior, la rama de `subiendo` emitirá `no-top`.
+    if (isAtBottom) {
+      nextTracker.currentRepCorrect = true;
+    }
+    if (hasStartedPull && isRising) {
+      nextTracker.phase = 'subiendo';
+      nextTracker.minimumAngle = smoothedAngle;
+    }
+  } else if (nextTracker.phase === 'subiendo') {
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+
+    nextTracker.topFrames = hasReachedTop ? nextTracker.topFrames + 1 : 0;
+    if (hasReachedTop) {
+      if (headOverWrists !== null) {
+        nextTracker.topConfirmationHeadFramesEvaluated += 1;
+        if (headOverWrists) {
+          nextTracker.topConfirmationHeadFramesYes += 1;
+        }
+      }
+    } else {
+      nextTracker.topConfirmationHeadFramesEvaluated = 0;
+      nextTracker.topConfirmationHeadFramesYes = 0;
+    }
+    if (nextTracker.topFrames >= 2) {
+      nextTracker.phase = 'arriba';
+      nextTracker.topFrames = 0;
+      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
+        && hasReachedTop
+        && topReached;
+      if (!nextTracker.suppressNextRepCountUntilBottom) {
+        nextTracker.repetitions += 1;
+        nextTracker.pendingRepHeadFramesEvaluated =
+          nextTracker.topConfirmationHeadFramesEvaluated;
+        nextTracker.pendingRepHeadFramesYes =
+          nextTracker.topConfirmationHeadFramesYes;
+        nextTracker.pendingRepHeadOverWrists =
+          nextTracker.pendingRepHeadFramesYes > 0;
+      } else {
+        nextTracker.currentRepCorrect = false;
+        nextTracker.pendingRepHeadOverWrists = null;
+        nextTracker.pendingRepHeadFramesEvaluated = 0;
+        nextTracker.pendingRepHeadFramesYes = 0;
+      }
+      nextTracker.topConfirmationHeadFramesEvaluated = 0;
+      nextTracker.topConfirmationHeadFramesYes = 0;
+      nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
+      completedMinimumAngle = nextTracker.minimumAngle;
+    } else if (isAtBottomByAngle) {
+      nextTracker.phase = 'abajo';
+      nextTracker.event = 'no-top';
+      nextTracker.repetitions += 1;
+      nextTracker.currentRepCorrect = isAtBottom;
+      nextTracker.topConfirmationHeadFramesEvaluated = 0;
+      nextTracker.topConfirmationHeadFramesYes = 0;
+      completedMinimumAngle = nextTracker.minimumAngle;
+      verdict = {
+        repetition: nextTracker.repetitions,
+        headOverWrists: false,
+        headFramesEvaluated: 0,
+        headFramesYes: 0,
+        bottomReached: isAtBottom,
+        correct: false,
+        reason: 'no-top-cabeza',
+      };
+    }
+  } else if (nextTracker.phase === 'arriba') {
+    nextTracker.topFrames = 0;
+    if (nextTracker.pendingRepHeadOverWrists !== null) {
+      if (headOverWrists !== null) {
+        nextTracker.pendingRepHeadFramesEvaluated += 1;
+        if (headOverWrists) {
+          nextTracker.pendingRepHeadFramesYes += 1;
+        }
+      }
+      nextTracker.pendingRepHeadOverWrists =
+        nextTracker.pendingRepHeadFramesYes > 0;
+    }
+    if (isAtBottomByAngle) {
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = isAtBottom;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    } else if (!topReached) {
+      nextTracker.phase = 'bajando';
+    }
+  } else if (nextTracker.phase === 'bajando') {
+    nextTracker.topFrames = 0;
+    nextTracker.minimumAngle = nextTracker.minimumAngle === null
+      ? smoothedAngle
+      : Math.min(nextTracker.minimumAngle, smoothedAngle);
+
+    if (isAtBottomByAngle) {
+      nextTracker.phase = 'abajo';
+      nextTracker.currentRepCorrect = isAtBottom;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    } else if (isRising && smoothedAngle < config.noLockoutAngle) {
+      nextTracker.phase = 'esperando abajo';
+      nextTracker.event = 'no-lockout';
+      if (nextTracker.pendingRepHeadOverWrists !== null) {
+        nextTracker.suppressNextRepCountUntilBottom = true;
+      } else if (!nextTracker.suppressNextRepCountUntilBottom) {
+        nextTracker.repetitions += 1;
+      }
+      nextTracker.currentRepCorrect = false;
+      completedMinimumAngle = nextTracker.minimumAngle;
+    }
+  }
+
+  if (
+    nextTracker.pendingRepHeadOverWrists !== null
+    && nextTracker.event === 'no-lockout'
+  ) {
+    const settled = settlePendingPullupRep(nextTracker, {
+      bottomReached: false,
+      noLockout: true,
+    });
+    nextTracker = settled.tracker;
+    verdict = settled.verdict;
+    nextTracker.suppressNextRepCountUntilBottom = true;
+  } else if (
+    nextTracker.pendingRepHeadOverWrists !== null
+    && isAtBottom
+  ) {
+    const settled = settlePendingPullupRep(nextTracker, {
+      bottomReached: true,
+    });
+    nextTracker = settled.tracker;
+    verdict = settled.verdict;
+  } else if (
+    nextTracker.pendingRepHeadOverWrists !== null
+    && nextTracker.phase === 'subiendo'
+    && isRising
+    && smoothedAngle < config.noLockoutAngle
+  ) {
+    const settled = settlePendingPullupRep(nextTracker, {
+      bottomReached: false,
+      noLockout: true,
+    });
+    nextTracker = settled.tracker;
+    verdict = settled.verdict;
+    nextTracker.suppressNextRepCountUntilBottom = true;
+  }
+
+  return {
+    tracker: nextTracker,
+    smoothedAngle,
+    completedMinimumAngle,
+    isAtBottom,
+    hasReachedTop,
+    verdict,
+  };
+}

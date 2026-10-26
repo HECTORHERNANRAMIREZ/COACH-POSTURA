@@ -1,0 +1,34 @@
+
+> @workspace/posture-coach@0.0.0 typecheck /home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach
+> tsc -p tsconfig.json --noEmit
+
+src/App.tsx(17,8): error TS6305: Output file '/home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/lib/api-client-react/dist/index.d.ts' has not been built from source file '/home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/lib/api-client-react/src/index.ts'.
+src/App.tsx(14030,11): error TS2345: Argument of type 'string' is not assignable to parameter of type '"video" | "vivo"'.
+src/App.tsx(20667,15): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20678,9): error TS2322: Type 'number | undefined' is not assignable to type 'number | null'.
+  Type 'undefined' is not assignable to type 'number | null'.
+src/App.tsx(20678,44): error TS18047: 'trackerConfig' is possibly 'null'.
+src/App.tsx(20720,45): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20723,57): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20725,18): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20733,11): error TS2345: Argument of type 'ExerciseRepConfig | { startMinAngle: number; endMinAngle: number; endMaxAngle: number; endLabel: string; smoothingSamples: number; countOnReturn: boolean; direction?: ExerciseRepDirection | undefined; ... 10 more ...; techniqueMustHoldThroughout?: boolean | undefined; } | { ...; } | null' is not assignable to parameter of type 'ExerciseRepConfig'.
+  Type 'null' is not assignable to type 'ExerciseRepConfig'.
+src/App.tsx(20750,31): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20770,33): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20786,51): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20787,43): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(20797,79): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21112,40): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21284,62): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21342,36): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21416,16): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21417,43): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21519,32): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21583,16): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21585,17): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(21616,13): error TS2322: Type 'ExerciseRepConfig | null' is not assignable to type 'ExerciseRepConfig'.
+  Type 'null' is not assignable to type 'ExerciseRepConfig'.
+src/App.tsx(26293,67): error TS2339: Property 'ladosEvaluados' does not exist on type 'never'.
+/home/runner/workspace/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/artifacts/posture-coach:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/posture-coach@0.0.0 typecheck: `tsc -p tsconfig.json --noEmit`
+Exit status 2

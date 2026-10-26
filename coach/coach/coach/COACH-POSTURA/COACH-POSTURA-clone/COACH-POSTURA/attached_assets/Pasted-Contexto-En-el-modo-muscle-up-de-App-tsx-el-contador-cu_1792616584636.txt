@@ -1,0 +1,27 @@
+Contexto
+En el modo muscle-up de App.tsx, el contador cuenta repeticiones de más. En una grabación de 4 muscle-ups reales la consola reporta total=8, correctas=4, incorrectas=4, alternadas (correcta, incorrecta, correcta, incorrecta...). Pasó igual en dos corridas, así que es sistemático.
+
+Causa
+La fase "arriba" se activa solo por el ángulo del codo (aprox. <= 110°) y `total` sube en ese momento. Recién después se evalúa si cabeza, hombros y codos están por encima de las muñecas (`allAboveWrist` en [muscleup-cabeza]) y se decide correcta/incorrecta. Por eso las subidas falsas ya quedan contadas.
+
+Evidencia del log
+- Reps reales: codo 73°-91° arriba, cabezaSobreMuñecas=true en 7-10 cuadros, permanencia en "arriba" de 0.5-0.9 s.
+- Reps falsas: codo 100°-113°, cabezaSobreMuñecas=false en 0 de 3-5 cuadros, permanencia de 0.1-0.3 s (ej. entra a 11.177s y sale a 11.276s).
+- Última rep (8): wristY=287, noseY=391, shoulderY=438 (y crece hacia abajo), así que cabeza y hombros están debajo de las muñecas y el codo está en 137°. El atleta sigue colgado, no llegó arriba.
+
+Regla de negocio deseada
+Una repetición se cuenta SOLO cuando el atleta está realmente arriba: nariz, hombros y codos por encima de las muñecas (allAboveWrist = true), no cuando el codo se flexiona.
+
+Qué hacer
+1. Busca dónde se actualiza la fase ("subiendo" -> "arriba") y se incrementa `total` (log [pullup-event], aprox. App.tsx:18305-18369), y el cálculo de allAboveWrist (log [muscleup-cabeza]).
+2. Cambia la condición para pasar a "arriba" e incrementar `total`: allAboveWrist debe ser true durante N cuadros consecutivos (empieza con N = 5; déjalo como constante configurable, ej. MIN_TOP_FRAMES). El ángulo del codo deja de ser el disparador y queda solo como apoyo.
+3. Si allAboveWrist es false, la fase NO pasa a "arriba" y `total` no sube. Las subidas falsas (tirón o balanceo) no deben crear ni contar una repetición.
+4. Reinicia el contador de cuadros consecutivos cuando allAboveWrist pase a false o cuando falten puntos con confianza baja.
+5. Para volver a contar otra rep, el atleta debe bajar (fase "abajo": codo extendido, cabeza debajo de las muñecas) y volver a cumplir el punto 2. Mantén la lógica actual de "bajoAlFondo".
+6. Mantén los logs existentes y agrega en [pullup-event] el número de cuadros consecutivos con allAboveWrist.
+7. No toques el modo pull-up ni otros ejercicios, solo muscle-up.
+
+Criterio de aceptación
+Con la misma grabación debe dar total=4 y correctas=4, sin reps en el veredicto con motivo=no-top-cabeza. Verifica en los logs que ya no aparezcan eventos "arriba" de 0.1-0.3 s ni la rep con wristY por encima de noseY.
+
+Antes de editar, muéstrame el diff propuesto.
