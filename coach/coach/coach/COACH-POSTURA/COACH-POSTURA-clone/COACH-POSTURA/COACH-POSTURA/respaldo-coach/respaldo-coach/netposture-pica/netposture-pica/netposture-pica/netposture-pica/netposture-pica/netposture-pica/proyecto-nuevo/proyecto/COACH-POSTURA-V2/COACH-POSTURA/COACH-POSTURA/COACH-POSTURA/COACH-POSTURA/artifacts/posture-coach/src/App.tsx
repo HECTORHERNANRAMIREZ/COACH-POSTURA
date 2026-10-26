@@ -198,6 +198,11 @@ import {
   UPLOADED_PIKE_PUSHUP_START_MIN_ANGLE,
 } from '@/constants/press-and-pike';
 import {
+  PUSHUP_BODY_LINE_MAX_ANGLE,
+  PUSHUP_REP_END_MAX_ANGLE,
+  PUSHUP_REP_END_MIN_ANGLE,
+} from '@/constants/pushup';
+import {
   ANGLE_DISPLAY_SAMPLES,
   AUTH_AND_BILLING_ENABLED,
   CAMERA_POINT_MIN_SCORE,
@@ -2580,7 +2585,6 @@ const PUSHUP_ELBOW_TORSO_MIN_ANGLE = 0;
 const PUSHUP_ELBOW_TORSO_MAX_ANGLE = 70;
 const PUSHUP_ELBOW_TORSO_TOLERANCE = 10;
 const PUSHUP_BODY_LINE_MIN_ANGLE = 162;
-const PUSHUP_BODY_LINE_MAX_ANGLE = 180;
 // Solo declinadas: tolerancia provisional ajustable de 10° sobre el mínimo
 // nominal de 162°, por lo que se acepta una línea hombro–cadera–rodilla desde 152°.
 const DECLINED_PUSHUP_BODY_LINE_TOLERANCE_DEGREES = 10;
@@ -2594,8 +2598,6 @@ const PUSHUP_COUNT_STABLE_FRAMES = 2;
 const PUSHUP_REP_START_MIN_ANGLE = 110;
 const PUSHUP_REP_START_MAX_ANGLE = 180;
 const PUSHUP_REP_ACTIVATION_ANGLE = 120;
-const PUSHUP_REP_END_MIN_ANGLE = 70;
-const PUSHUP_REP_END_MAX_ANGLE = 105;
 // Extremo ampliado solo para flexiones estándar analizadas desde video subido.
 const UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE = 118;
 const ROW_TORSO_MIN_ANGLE = 30;
