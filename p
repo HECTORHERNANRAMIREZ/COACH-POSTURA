@@ -1,0 +1,1 @@
+/home/runner/workspace/coach/coach/COACH-POSTURA/COACH-POSTURA-clone/COACH-POSTURA/COACH-POSTURA/respaldo-coach/respaldo-coach/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/netposture-pica/proyecto-nuevo/proyecto/COACH-POSTURA-V2/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA/COACH-POSTURA

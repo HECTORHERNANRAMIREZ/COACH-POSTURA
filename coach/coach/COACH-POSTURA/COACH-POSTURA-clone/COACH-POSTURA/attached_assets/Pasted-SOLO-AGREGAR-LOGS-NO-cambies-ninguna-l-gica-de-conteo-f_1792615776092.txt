@@ -1,0 +1,59 @@
+SOLO AGREGAR LOGS. NO cambies ninguna lógica de conteo, fases, umbrales,
+veredicto ni el tracker. El comportamiento debe quedar idéntico.
+
+Contexto: ejercicio muscle-up, archivo App.tsx. Quiero ver en consola, por
+cada cuadro, si nariz, hombros y codos están por encima de las muñecas
+(menor Y en píxeles = más arriba), para validar después una regla de conteo.
+
+Cambios:
+
+1. Cerca del cálculo de `muscleUpPullupHeadOverWrists`
+   (App.tsx ~17746-17773) usa `pose?.keypoints` y
+   `muscleUpPullupMeasurementSides` para obtener, por cada lado seleccionado:
+   - noseY (keypoint 0; es único, no depende del lado)
+   - shoulderY (11 izq / 12 der)
+   - elbowY (13 izq / 14 der)
+   - wristY (15 izq / 16 der)
+   - la confianza (score) de cada uno de esos puntos
+   Usa los mismos puntos que ya usa el resto del código (si el punto está
+   retenido/held, indícalo). NO apliques tolerancia ni margen.
+
+2. Calcula (solo para log, sin usarlos en ninguna decisión):
+   - noseAboveWrist: noseY < wristY
+   - shoulderAboveWrist: shoulderY < wristY
+   - elbowAboveWrist: elbowY < wristY
+   - allAboveWrist: los tres anteriores en true
+   Con uno o dos lados seleccionados: calcula cada booleano por lado y
+   deja el booleano global en true solo si TODOS los lados seleccionados
+   cumplen. Para nariz compara contra la Y de cada muñeca seleccionada.
+
+3. Extiende el objeto que imprime [muscleup-cabeza]
+   (App.tsx ~18398-18411) agregando:
+   - bySide: { left?: {...}, right?: {...} } con noseY, shoulderY, elbowY,
+     wristY, sus scores, y los 3 booleanos de ese lado
+   - noseAboveWrist, shoulderAboveWrist, elbowAboveWrist, allAboveWrist
+   - motivo exacto cuando alguno falle o no se pueda evaluar, con valores
+     como: nose-not-above-wrist, shoulder-not-above-wrist,
+     elbow-not-above-wrist, wrist-missing, wrist-low-confidence,
+     shoulder-low-confidence, elbow-low-confidence, nose-low-confidence.
+     Si hay varios, una lista (reasons: string[]).
+   - phaseCurrent (la fase actual del tracker) y repetitions actual, para
+     poder cruzar con [pullup-event].
+
+4. Hoy [muscleup-cabeza] solo se imprime en ciertas fases. Haz que este
+   log nuevo se imprima en TODOS los cuadros mientras la fase sea
+   "subiendo" o "arriba", y también en el cuadro donde ocurre cualquier
+   incremento de `repetitions` (incluidos los caminos no-top y no-lockout,
+   App.tsx ~6194-6201, 6212-6216, 6256-6264). En esos incrementos agrega
+   además un log nuevo:
+   [muscleup-conteo] { videoTimeSeconds, camino: "top" | "no-top" |
+   "no-lockout", repetitionsAntes, repetitionsDespues,
+   allAboveWrist (del último cuadro evaluado), headOverWrists,
+   atTopPorCodo, muscleUpPullupTopReached }
+
+5. Para reducir ruido, no agregues más logs en las demás fases.
+
+Al terminar entrégame:
+- lista de archivos y líneas modificadas
+- confirmación explícita de que no cambió ninguna decisión de conteo
+- un ejemplo de cómo se ve la línea [muscleup-cabeza] y [muscleup-conteo]

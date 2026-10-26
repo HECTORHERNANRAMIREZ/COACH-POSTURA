@@ -1,0 +1,1 @@
+- [Repository path in workspace](repository-path.md) — run commands in `~/workspace/p`; patch paths must use the workspace-visible `p/` symlink.
