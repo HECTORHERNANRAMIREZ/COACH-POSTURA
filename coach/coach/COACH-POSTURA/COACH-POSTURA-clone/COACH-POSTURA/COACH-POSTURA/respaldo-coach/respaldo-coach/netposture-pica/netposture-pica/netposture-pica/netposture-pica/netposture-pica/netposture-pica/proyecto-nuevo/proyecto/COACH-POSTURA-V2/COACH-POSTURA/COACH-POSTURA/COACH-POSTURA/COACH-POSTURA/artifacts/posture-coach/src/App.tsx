@@ -211,11 +211,13 @@ import {
   MIN_FPS,
   PULLUP_DIAGNOSTIC_BUFFER_LIMIT,
   PULLUP_DIAGNOSTIC_EXPORT_ENABLED,
+  PUSHUP_SMOOTHING_SAMPLES,
   REPETICIONES,
   SCROLL_LERP,
   SQUAT_BODY_DETECTION_HOLD_MS,
   SQUAT_LIVE_BODY_DETECTION_HOLD_MS,
   SQUAT_LIVE_PREPARATION_COUNTDOWN_MS,
+  SQUAT_SMOOTHING_SAMPLES,
   TOTAL_FRAMES,
   UPLOADED_DIP_BODY_DETECTION_CONSECUTIVE_FRAMES,
   UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS,
@@ -321,6 +323,7 @@ import {
   settlePendingPullupRep,
   smoothAngleReading,
 } from '@/exercises/pullup-tracker';
+import { createExerciseRepTracker } from '@/exercises/rep-tracker';
 import {
   createMuscleUpPullupTracker,
   calculateMuscleUpPullupElbowAngles,
@@ -2475,7 +2478,6 @@ const exerciseGroups = [
 ].filter((group) => group.exercises.length > 0);
 
 const SQUAT_RISE_THRESHOLD = 115;
-const SQUAT_SMOOTHING_SAMPLES = 5;
 const ANGLE_DISPLAY_INTERVAL_MS = 220;
 const POSE_MODEL_LOAD_TIMEOUT_MS = 60000;
 const MUSCLE_UP_UPLOADED_SEARCH_DURATION_FRACTION = 0.2;
@@ -2593,7 +2595,6 @@ const PUSHUP_REP_END_MIN_ANGLE = 70;
 const PUSHUP_REP_END_MAX_ANGLE = 105;
 // Extremo ampliado solo para flexiones estándar analizadas desde video subido.
 const UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE = 118;
-const PUSHUP_SMOOTHING_SAMPLES = 3;
 const ROW_TORSO_MIN_ANGLE = 30;
 const ROW_TORSO_MAX_ANGLE = 45;
 const ROW_KNEE_MIN_ANGLE = 150;
@@ -3636,19 +3637,6 @@ const UPLOADED_DIP_VIDEO_RELATIVE_RISE_DEGREES = (
 ) / 2;
 // TEMP-DIAGNOSTICO: fracción de la bajada que limita cuánto puede diferir el hombro al volver arriba.
 const UPLOADED_DIP_SHOULDER_RETURN_DROP_FRACTION = 0.5;
-
-function createExerciseRepTracker(): ExerciseRepTracker {
-  return {
-    phase: 'esperando inicio',
-    repetitions: 0,
-    goodRepetitions: 0,
-    endpointAngle: null,
-    samples: [],
-    postBottomRawSamples: [],
-    event: null,
-    currentRepCorrect: false,
-  };
-}
 
 const DECLINED_PUSHUP_DIAGNOSTIC_JOINTS = [
   { key: 'shoulder', label: 'hombro' },

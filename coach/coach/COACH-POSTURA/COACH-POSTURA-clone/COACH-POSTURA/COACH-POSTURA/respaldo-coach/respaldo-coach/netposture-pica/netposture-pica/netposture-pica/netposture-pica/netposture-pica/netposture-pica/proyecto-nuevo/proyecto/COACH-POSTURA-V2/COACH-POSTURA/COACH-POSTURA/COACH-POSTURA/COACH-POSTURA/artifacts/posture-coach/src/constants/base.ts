@@ -14,6 +14,7 @@ export const UPLOADED_DIP_TIMELINE_LOG_INTERVAL_SECONDS = 0.2;
 export const UPLOADED_DIP_DIAGNOSTIC_LOG_MAX_CHARS = 1_500_000;
 export const SQUAT_LIVE_BODY_DETECTION_HOLD_MS = 5000;
 export const SQUAT_LIVE_PREPARATION_COUNTDOWN_MS = 5000;
+export const SQUAT_SMOOTHING_SAMPLES = 5;
 // TEMP-DIAGNOSTICO: tiempo de cuadros válidos necesario para encontrar el cuerpo en sentadilla.
 export const SQUAT_BODY_DETECTION_HOLD_MS = 2000;
 // TEMP-DIAGNOSTICO: hueco máximo tolerado entre cuadros válidos durante la búsqueda de sentadilla.
@@ -36,6 +37,7 @@ export const UPLOADED_PUSHUP_ANALYSIS_FPS = 24;
 export const UPLOADED_PUSHUP_ANALYSIS_INTERVAL_SECONDS = 1 / UPLOADED_PUSHUP_ANALYSIS_FPS;
 export const UPLOADED_PUSHUP_SEARCH_GAP_TOLERANCE_SECONDS = 0.6;
 export const UPLOADED_PUSHUP_PLAYBACK_RATE = 0.35;
+export const PUSHUP_SMOOTHING_SAMPLES = 3;
 export const UPLOADED_PULLUP_PLAYBACK_RATE = 0.35;
 export const UPLOADED_DIP_VIDEO_PLAYBACK_RATE = 0.5;
 export const UPLOADED_DIP_BODY_DETECTION_CONSECUTIVE_FRAMES = 3;
