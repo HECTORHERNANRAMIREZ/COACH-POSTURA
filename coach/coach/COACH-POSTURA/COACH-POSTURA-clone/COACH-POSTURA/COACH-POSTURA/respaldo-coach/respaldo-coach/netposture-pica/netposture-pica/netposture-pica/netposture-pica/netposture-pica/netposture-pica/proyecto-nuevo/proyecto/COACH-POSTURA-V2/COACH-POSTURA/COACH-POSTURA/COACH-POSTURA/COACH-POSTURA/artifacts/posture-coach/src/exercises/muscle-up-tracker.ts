@@ -1,10 +1,23 @@
 import { CAMERA_POINT_MIN_SCORE, HEAD_LANDMARK_INDICES } from '@/constants/base';
-import { MUSCLE_UP_PULLUP_TOLERANCE_DEG } from '@/constants/muscle-up-pullup';
+import {
+  MUSCLE_UP_PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX,
+  MUSCLE_UP_PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO,
+  MUSCLE_UP_PULLUP_TOLERANCE_DEG,
+  MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+} from '@/constants/muscle-up-pullup';
 import { MUSCLE_UP_PULLUP_SIDE_KEYPOINTS } from '@/constants/side-keypoints';
 import { isWithinAngle } from '@/exercises/angle-checks';
-import { hasWorldCoordinates, isHeldPoint } from '@/exercises/point-geometry';
+import {
+  calculateAngle,
+  hasWorldCoordinates,
+  isHeldPoint,
+} from '@/exercises/point-geometry';
 import type { PosePoint } from '@/pose3d';
-import type { MuscleUpPullupTracker, PoseSide } from '@/types/tracking';
+import type {
+  MuscleUpPullupExtremityValidation,
+  MuscleUpPullupTracker,
+  PoseSide,
+} from '@/types/tracking';
 
 export function createMuscleUpPullupTracker(): MuscleUpPullupTracker {
   return {
@@ -186,4 +199,203 @@ export function getMuscleUpCalibrationPointInvalidReason(point: PosePoint | unde
   if ((point.score ?? 0) < CAMERA_POINT_MIN_SCORE) return 'low-score';
   if (!hasWorldCoordinates(point)) return 'sin coordenadas 3D';
   return 'no fresco';
+}
+
+export function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return false;
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
+  const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
+    isFreshMuscleUpPullupMeasurementPoint(keypoints[index])
+  )).length;
+  return measurementSides.length > 0
+    && measurementSides.every((side) => {
+      const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+      return [
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.hip],
+      ].every((point) => isFreshMuscleUpPullupMeasurementPoint(point))
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true);
+    })
+    && freshHeadPoints >= 2;
+}
+
+export function getFreshMuscleUpPullupTorsoLengthPx(
+  keypoints: PosePoint[] | undefined,
+  measurementSides: PoseSide[],
+) {
+  if (!keypoints || measurementSides.length === 0) return null;
+  const torsoLengths = measurementSides.flatMap((side) => {
+    const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+    const shoulder = keypoints[indexes.shoulder];
+    const hip = keypoints[indexes.hip];
+    if (
+      !isFreshMuscleUpPullupMeasurementPoint(shoulder)
+      || !isFreshMuscleUpPullupMeasurementPoint(hip)
+      || !Number.isFinite(shoulder.x)
+      || !Number.isFinite(shoulder.y)
+      || !Number.isFinite(hip.x)
+      || !Number.isFinite(hip.y)
+    ) {
+      return [];
+    }
+    const torsoLengthPx = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
+    return Number.isFinite(torsoLengthPx) && torsoLengthPx > 0
+      ? [torsoLengthPx]
+      : [];
+  });
+  return torsoLengths.length > 0
+    ? torsoLengths.reduce((sum, length) => sum + length, 0) / torsoLengths.length
+    : null;
+}
+
+export function hasOnlyUnavailableMuscleUpPullupElbow(
+  keypoints: PosePoint[] | undefined,
+  tracker: MuscleUpPullupTracker,
+) {
+  if (!keypoints) return false;
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
+  const nose = keypoints[0];
+  const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
+    isFreshMuscleUpPullupMeasurementPoint(keypoints[index])
+  )).length;
+  const hasUsableNose = isFreshMuscleUpPullupMeasurementPoint(nose)
+    && Number.isFinite(nose.x)
+    && Number.isFinite(nose.y);
+
+  return measurementSides.length > 0
+    && hasUsableNose
+    && freshHeadPoints >= 2
+    && measurementSides.every((side) => {
+      const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+      const shoulder = keypoints[indexes.shoulder];
+      const elbow = keypoints[indexes.elbow];
+      const wrist = keypoints[indexes.wrist];
+      const hip = keypoints[indexes.hip];
+      const hasUsableTorso = isFreshMuscleUpPullupMeasurementPoint(shoulder)
+        && isFreshMuscleUpPullupMeasurementPoint(hip)
+        && Number.isFinite(shoulder.x)
+        && Number.isFinite(shoulder.y)
+        && Number.isFinite(hip.x)
+        && Number.isFinite(hip.y)
+        && Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y) > 0;
+      const hasCachedTorso = tracker.lastHangingTorsoLengthPx !== null
+        && Number.isFinite(tracker.lastHangingTorsoLengthPx)
+        && tracker.lastHangingTorsoLengthPx > 0;
+      return isFreshMuscleUpPullupMeasurementPoint(shoulder)
+        && Number.isFinite(shoulder.x)
+        && Number.isFinite(shoulder.y)
+        && isFreshMuscleUpPullupMeasurementPoint(wrist)
+        && Number.isFinite(wrist.x)
+        && Number.isFinite(wrist.y)
+        && !isFreshMuscleUpPullupMeasurementPoint(elbow)
+        // La cadera solo aporta la escala del margen; si falta, se usa la
+        // última longitud válida tomada al confirmar el colgado.
+        && (hasUsableTorso || hasCachedTorso);
+    });
+}
+
+export function calculateMuscleUpPullupElbowAngles(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return { left: null, right: null, averagedRawAngle: null };
+  const getSideAngle = (side: PoseSide) => calculateAngle(
+    keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].shoulder],
+    keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].elbow],
+    keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].wrist],
+  );
+  const left = getSideAngle('left');
+  const right = getSideAngle('right');
+  const measurementSides = getMuscleUpPullupMeasurementSides(keypoints);
+  const averagedRawAngle = measurementSides.length === 2
+    ? left !== null && right !== null
+      ? Math.round((left + right) / 2)
+      : null
+    : measurementSides.length === 1
+      ? measurementSides[0] === 'left' ? left : right
+      : null;
+  return {
+    left,
+    right,
+    averagedRawAngle,
+  };
+}
+
+export function getMuscleUpPullupHeadOverWrists(
+  keypoints: PosePoint[] | undefined,
+  measurementSides: PoseSide[],
+): boolean | null {
+  const headPoints = HEAD_LANDMARK_INDICES
+    .map((index) => keypoints?.[index])
+    .filter((point): point is PosePoint => (point?.score ?? 0) >= 0.2);
+  const wrists = measurementSides
+    .map((side) => keypoints?.[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side].wrist]);
+  if (
+    headPoints.length < 2
+    || measurementSides.length === 0
+    || wrists.some((wrist) => (wrist?.score ?? 0) < 0.2)
+  ) return null;
+  const headCenterY = headPoints.reduce((sum, point) => sum + point.y, 0) / headPoints.length;
+  const averageWristY = wrists.reduce((sum, wrist) => sum + (wrist?.y ?? 0), 0) / wrists.length;
+  return headCenterY < averageWristY;
+}
+
+export function getMuscleUpPullupExtremityReadings(keypoints: PosePoint[] | undefined) {
+  const readSide = (side: PoseSide) => {
+    if (!keypoints) return { shoulder: null, elbow: null };
+    const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
+    return {
+      shoulder: calculateAngle(
+        keypoints[indexes.hip],
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+      ),
+      elbow: calculateAngle(
+        keypoints[indexes.shoulder],
+        keypoints[indexes.elbow],
+        keypoints[indexes.wrist],
+      ),
+    };
+  };
+  return { left: readSide('left'), right: readSide('right') };
+}
+
+export function getMuscleUpPullupExtremityValidation(
+  readings: ReturnType<typeof getMuscleUpPullupExtremityReadings>,
+  evaluatedSides: PoseSide[] = ['left', 'right'],
+): MuscleUpPullupExtremityValidation {
+  const allElbowsInRange = (min: number, max: number) => (
+    evaluatedSides.length > 0 && evaluatedSides.every((side) => (
+      readings[side].elbow !== null
+      && isWithinMuscleUpPullupAngle(readings[side].elbow!, min, max)
+    ))
+  );
+  return {
+    atBottom: allElbowsInRange(
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG.bottomMinAngle,
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG.bottomMaxAngle,
+    ),
+    atTop: allElbowsInRange(
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG.topElbowMinAngle,
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG.topElbowMaxAngle,
+    ),
+  };
+}
+
+export function isMuscleUpPullupBarDetached(keypoints: PosePoint[] | undefined) {
+  if (!keypoints) return false;
+  const nose = keypoints[0];
+  const leftWrist = keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS.left.wrist];
+  const rightWrist = keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS.right.wrist];
+  const leftShoulder = keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS.left.shoulder];
+  const rightShoulder = keypoints[MUSCLE_UP_PULLUP_SIDE_KEYPOINTS.right.shoulder];
+  const requiredPoints = [nose, leftWrist, rightWrist, leftShoulder, rightShoulder];
+  if (requiredPoints.some((point) => (point?.score ?? 0) < 0.2)) return false;
+  const shoulderSpan = Math.abs(leftShoulder!.x - rightShoulder!.x);
+  const shoulderDropMargin = Math.max(
+    MUSCLE_UP_PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX,
+    shoulderSpan * MUSCLE_UP_PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO,
+  );
+  return leftWrist!.y > leftShoulder!.y + shoulderDropMargin
+    && rightWrist!.y > rightShoulder!.y + shoulderDropMargin
+    && leftWrist!.y > nose!.y
+    && rightWrist!.y > nose!.y;
 }
