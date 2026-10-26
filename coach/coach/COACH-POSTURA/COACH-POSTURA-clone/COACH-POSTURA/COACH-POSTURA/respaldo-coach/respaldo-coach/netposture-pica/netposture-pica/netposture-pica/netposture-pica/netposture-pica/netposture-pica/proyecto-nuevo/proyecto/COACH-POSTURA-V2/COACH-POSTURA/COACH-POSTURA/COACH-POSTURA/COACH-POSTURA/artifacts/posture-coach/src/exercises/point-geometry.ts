@@ -1,4 +1,5 @@
 import type { PosePoint } from '@/pose3d';
+import { MAX_HELD_FRAMES } from '@/pose-filters';
 
 export function getMeasurementCoordinates(point: PosePoint): { x: number; y: number; z: number } {
   return point.world ?? { x: point.x, y: point.y, z: point.z ?? 0 };
@@ -70,4 +71,12 @@ export function calculateAngle(
     ),
   );
   return Math.round(Math.acos(cosine) * (180 / Math.PI));
+}
+
+export function isHeldPoint(point: PosePoint | undefined) {
+  return Boolean(
+    point?.held
+    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) > 0
+    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) <= MAX_HELD_FRAMES,
+  );
 }

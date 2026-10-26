@@ -306,6 +306,7 @@ import {
   getAngleMeasurementCoordinates,
   getMeasurementCoordinates,
   hasWorldCoordinates,
+  isHeldPoint,
 } from '@/exercises/point-geometry';
 import {
   advancePullupTracker,
@@ -6250,14 +6251,6 @@ function isFreshPullupCalibrationPoint(point: PosePoint | undefined) {
     && !isHeldPoint(point)
     && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
     && hasWorldCoordinates(point),
-  );
-}
-
-function isHeldPoint(point: PosePoint | undefined) {
-  return Boolean(
-    point?.held
-    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) > 0
-    && (point.heldFrames ?? MAX_HELD_FRAMES + 1) <= MAX_HELD_FRAMES,
   );
 }
 
