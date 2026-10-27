@@ -13883,6 +13883,15 @@ function Home() {
             pullupCalibrationSuccessfulRef.current = true;
             pullupCalibrationReadySinceRef.current = null;
             updatePullupCalibrationStatus('ready');
+            if (pullupTrackerRef.current.repetitions !== 0) {
+              console.log(
+                `[contador] evento=reinicio-preflight video=${video.currentTime.toFixed(3)}s `
+                + `faseAnterior=${pullupTrackerRef.current.phase} faseNueva=esperando abajo `
+                + `ánguloMedioCodos=${pullupTrackerRef.current.lastAngle?.toFixed(2) ?? '—'}° `
+                + `totalAntes=${pullupTrackerRef.current.repetitions} totalDespués=0 `
+                + `pantallaAntes=${pullupTrackerRef.current.repetitions} pantallaDespués=0`,
+              );
+            }
             pullupTrackerRef.current = createPullupTracker();
             pullupSessionFinishedRef.current = false;
             pullupDetachFramesRef.current = 0;
@@ -13991,6 +14000,15 @@ function Home() {
         pullupPreparationStartedAtRef.current = preparationStartedAt;
         const preparationElapsed = now - preparationStartedAt;
         if (preparationElapsed >= PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
+          if (pullupTrackerRef.current.repetitions !== 0) {
+            console.log(
+              `[contador] evento=reinicio-preparación video=${video.currentTime.toFixed(3)}s `
+              + `faseAnterior=${pullupTrackerRef.current.phase} faseNueva=esperando abajo `
+              + `ánguloMedioCodos=${pullupTrackerRef.current.lastAngle?.toFixed(2) ?? '—'}° `
+              + `totalAntes=${pullupTrackerRef.current.repetitions} totalDespués=0 `
+              + `pantallaAntes=${pullupTrackerRef.current.repetitions} pantallaDespués=0`,
+            );
+          }
           pullupTrackerRef.current = createPullupTracker();
           setPullupRepetitions(0);
           setPullupGoodRepetitions(0);
@@ -15599,6 +15617,17 @@ function Home() {
           pullupTrackerConfig,
         );
         pullupDiagnosticUpdate = pullupUpdate;
+        if (pullupUpdate.tracker.repetitions !== pullupTrackerRef.current.repetitions) {
+          console.log(
+            `[contador] evento=conteo-y-pantalla video=${video.currentTime.toFixed(3)}s `
+            + `faseAnterior=${phaseBeforeUpdate} faseNueva=${pullupUpdate.tracker.phase} `
+            + `ánguloMedioCodos=${pullupUpdate.smoothedAngle.toFixed(2)}° `
+            + `totalAntes=${pullupTrackerRef.current.repetitions} `
+            + `totalDespués=${pullupUpdate.tracker.repetitions} `
+            + `pantallaAntes=${pullupTrackerRef.current.repetitions} `
+            + `pantallaDespués=${pullupUpdate.tracker.repetitions}`,
+          );
+        }
         pullupTrackerRef.current = pullupUpdate.tracker;
         if (pullupUpdate.verdict) {
           logPullupVerdict(
@@ -23159,6 +23188,15 @@ function Home() {
     setSquatPhase('esperando arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
+    if (pullupTrackerRef.current.repetitions !== 0) {
+      console.log(
+        `[contador] evento=reinicio video=${videoRef.current ? videoRef.current.currentTime.toFixed(3) : '—'}s `
+        + `faseAnterior=${pullupTrackerRef.current.phase} faseNueva=esperando abajo `
+        + `ánguloMedioCodos=${pullupTrackerRef.current.lastAngle?.toFixed(2) ?? '—'}° `
+        + `totalAntes=${pullupTrackerRef.current.repetitions} totalDespués=0 `
+        + `pantallaAntes=${pullupTrackerRef.current.repetitions} pantallaDespués=0`,
+      );
+    }
     pullupTrackerRef.current = createPullupTracker();
     pullupSessionFinishedRef.current = false;
     pullupDetachFramesRef.current = 0;
@@ -24926,6 +24964,15 @@ function Home() {
     setSquatPhase('esperando arriba');
     setSquatMinimumAngle(null);
     setSquatFeedback(defaultSquatFeedback);
+    if (pullupTrackerRef.current.repetitions !== 0) {
+      console.log(
+        `[contador] evento=reinicio video=${videoRef.current ? videoRef.current.currentTime.toFixed(3) : '—'}s `
+        + `faseAnterior=${pullupTrackerRef.current.phase} faseNueva=esperando abajo `
+        + `ánguloMedioCodos=${pullupTrackerRef.current.lastAngle?.toFixed(2) ?? '—'}° `
+        + `totalAntes=${pullupTrackerRef.current.repetitions} totalDespués=0 `
+        + `pantallaAntes=${pullupTrackerRef.current.repetitions} pantallaDespués=0`,
+      );
+    }
     pullupTrackerRef.current = createPullupTracker();
     setPullupRepetitions(0);
     setPullupGoodRepetitions(0);
