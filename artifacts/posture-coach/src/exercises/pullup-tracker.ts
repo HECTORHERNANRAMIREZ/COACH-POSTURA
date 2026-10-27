@@ -1,5 +1,8 @@
 import { ANGLE_DISPLAY_SAMPLES } from '@/constants/base';
-import { STANDARD_PULLUP_TRACKER_CONFIG } from '@/constants/pullup';
+import {
+  PULLUP_MIN_SHOULDER_RISE_RATIO,
+  STANDARD_PULLUP_TRACKER_CONFIG,
+} from '@/constants/pullup';
 import { sideKeypoints } from '@/constants/side-keypoints';
 import { isCommandPullup, isStandardOrSupinePullup } from '@/exercises/guards';
 import { isWithinPullupAngle } from '@/exercises/angle-checks';
@@ -40,6 +43,7 @@ export function createPullupTracker(): PullupTracker {
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     suppressNextRepCountUntilBottom: false,
+    cycleMaximumShoulderY: null,
   };
 }
 
@@ -236,6 +240,8 @@ export function advancePullupTracker(
   extremities: PullupExtremityValidation,
   gripped: boolean,
   config: PullupTrackerConfig,
+  shoulderAverageY: number | null = null,
+  shoulderSpanPx: number | null = null,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
   const smoothedAngle = median(samples);
@@ -268,6 +274,26 @@ export function advancePullupTracker(
   const isRising = tracker.lastAngle !== null && smoothedAngle < tracker.lastAngle - 3;
   let completedMinimumAngle: number | null = null;
   let verdict: PullupRepVerdict | null = null;
+  let elevationDecision: PullupTrackerUpdate['elevationDecision'];
+  if (
+    tracker.phase === 'abajo'
+    || (tracker.phase === 'esperando abajo' && isAtBottom)
+  ) {
+    nextTracker.cycleMaximumShoulderY = (
+      shoulderAverageY !== null && Number.isFinite(shoulderAverageY)
+        ? shoulderAverageY
+        : null
+    );
+  } else if (
+    shoulderAverageY !== null
+    && Number.isFinite(shoulderAverageY)
+    && nextTracker.cycleMaximumShoulderY !== null
+  ) {
+    nextTracker.cycleMaximumShoulderY = Math.max(
+      nextTracker.cycleMaximumShoulderY,
+      shoulderAverageY,
+    );
+  }
   if (isAtBottom) {
     nextTracker.suppressNextRepCountUntilBottom = false;
   }
@@ -337,14 +363,39 @@ export function advancePullupTracker(
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
         && topReached;
+      const hasShoulderRiseMeasurements = shoulderAverageY !== null
+        && Number.isFinite(shoulderAverageY)
+        && nextTracker.cycleMaximumShoulderY !== null
+        && Number.isFinite(nextTracker.cycleMaximumShoulderY)
+        && shoulderSpanPx !== null
+        && Number.isFinite(shoulderSpanPx)
+        && shoulderSpanPx > 0;
+      const shoulderRise = hasShoulderRiseMeasurements
+        ? nextTracker.cycleMaximumShoulderY! - shoulderAverageY!
+        : null;
+      const shoulderRiseRatio = shoulderRise !== null && shoulderSpanPx !== null
+        ? shoulderRise / shoulderSpanPx
+        : null;
+      const shoulderRiseAllowsCount = shoulderRiseRatio === null
+        || shoulderRiseRatio >= PULLUP_MIN_SHOULDER_RISE_RATIO;
+      elevationDecision = {
+        decision: shoulderRiseAllowsCount ? 'contada' : 'descartada-sin-elevacion',
+        shoulderRise,
+        shoulderRiseRatio,
+        shoulderSpanPx,
+      };
       if (!nextTracker.suppressNextRepCountUntilBottom) {
-        nextTracker.repetitions += 1;
-        nextTracker.pendingRepHeadFramesEvaluated =
-          nextTracker.topConfirmationHeadFramesEvaluated;
-        nextTracker.pendingRepHeadFramesYes =
-          nextTracker.topConfirmationHeadFramesYes;
-        nextTracker.pendingRepHeadOverWrists =
-          nextTracker.pendingRepHeadFramesYes > 0;
+        if (shoulderRiseAllowsCount) {
+          nextTracker.repetitions += 1;
+          nextTracker.pendingRepHeadFramesEvaluated =
+            nextTracker.topConfirmationHeadFramesEvaluated;
+          nextTracker.pendingRepHeadFramesYes =
+            nextTracker.topConfirmationHeadFramesYes;
+          nextTracker.pendingRepHeadOverWrists =
+            nextTracker.pendingRepHeadFramesYes > 0;
+        } else {
+          nextTracker.currentRepCorrect = false;
+        }
       } else {
         nextTracker.currentRepCorrect = false;
         nextTracker.pendingRepHeadOverWrists = null;
@@ -353,7 +404,9 @@ export function advancePullupTracker(
       }
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
-      nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
+      nextTracker.event = shoulderRiseAllowsCount
+        ? nextTracker.currentRepCorrect ? 'valid' : 'invalid'
+        : null;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
@@ -457,5 +510,6 @@ export function advancePullupTracker(
     isAtBottom,
     hasReachedTop,
     verdict,
+    elevationDecision,
   };
 }

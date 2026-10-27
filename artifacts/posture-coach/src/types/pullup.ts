@@ -7,6 +7,12 @@ export type PullupTrackerUpdate = {
   isAtBottom: boolean;
   hasReachedTop: boolean;
   verdict: PullupRepVerdict | null;
+  elevationDecision?: {
+    decision: 'contada' | 'descartada-sin-elevacion';
+    shoulderRise: number | null;
+    shoulderRiseRatio: number | null;
+    shoulderSpanPx: number | null;
+  };
 };
 
 export type PullupRepVerdict = {

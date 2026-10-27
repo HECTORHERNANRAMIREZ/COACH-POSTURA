@@ -4273,22 +4273,44 @@ function isFreshPullupMeasurementPoint(point: PosePoint | undefined) {
   );
 }
 
+const PULLUP_SEARCH_ELBOW_MAX_HELD_FRAMES = 6;
+
+function isUsablePullupSearchPoint(point: PosePoint | undefined, isElbow = false) {
+  if (!point || (point.score ?? 0) < CAMERA_POINT_MIN_SCORE) return false;
+  if (!isHeldPoint(point)) return true;
+  return isElbow
+    && point.heldFrames !== undefined
+    && point.heldFrames <= PULLUP_SEARCH_ELBOW_MAX_HELD_FRAMES;
+}
+
 function hasFreshPullupMeasurement(
   keypoints: PosePoint[] | undefined,
   side: PoseSide | null = null,
+  allowBriefHeld = false,
 ) {
   if (!keypoints) return false;
 
+  const isUsableMeasurementPoint = (point: PosePoint | undefined, isElbow = false) => (
+    allowBriefHeld
+      ? isUsablePullupSearchPoint(point, isElbow)
+      : isFreshPullupMeasurementPoint(point)
+  );
   const sides = side ? [side] : ['left', 'right'] as PoseSide[];
   const armPoints = sides.flatMap((pointSide) => {
     const indexes = sideKeypoints[pointSide];
-    return [indexes.shoulder, indexes.elbow, indexes.wrist];
+    return [
+      { index: indexes.shoulder, isElbow: false },
+      { index: indexes.elbow, isElbow: true },
+      { index: indexes.wrist, isElbow: false },
+    ];
   });
   const freshHeadPoints = HEAD_LANDMARK_INDICES.filter((index) => (
-    isFreshPullupMeasurementPoint(keypoints[index])
+    isUsableMeasurementPoint(keypoints[index])
   )).length;
 
-  return armPoints.every((index) => isFreshPullupMeasurementPoint(keypoints[index]))
+  return armPoints.every(({ index, isElbow }) => (
+    isUsableMeasurementPoint(keypoints[index], isElbow)
+  ))
     && freshHeadPoints >= 2;
 }
 
@@ -9812,6 +9834,7 @@ function Home() {
   const uploadedDipSearchLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPullupSearchLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPullupBlockedFrameLastLoggedVideoTimeRef = useRef<number | null>(null);
+  const uploadedPullupToleratedFrameLastLoggedVideoTimeRef = useRef<number | null>(null);
   const uploadedPullupLastCalibrationAccumulatedMsRef = useRef(0);
   const uploadedPullupCalibrationRunBaseMsRef = useRef(0);
   const uploadedPullupCalibrationRunStartVideoTimeRef = useRef<number | null>(null);
@@ -10319,6 +10342,18 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const pullupElevationDiagnosticCycleRef = useRef<{
+    bottom: {
+      videoTime: number;
+      avgShoulderY: number | null;
+      avgWristY: number | null;
+      shoulderSpanPx: number | null;
+      elbowMeanAngle: number;
+    };
+    frameCount: number;
+    avgShoulderYMin: number | null;
+    avgShoulderYMax: number | null;
+  } | null>(null);
   const muscleUpPullupTrackerRef = useRef<MuscleUpPullupTracker>(
     createMuscleUpPullupTracker(),
   );
@@ -11464,6 +11499,7 @@ function Home() {
   const processFrame = useCallback(async (
     scheduledTimestamp?: number,
     diagnosticVideoTime?: number,
+    pullupCallbackMediaTime?: number | null,
   ) => {
     const video = videoRef.current;
     const detector = detectorRef.current;
@@ -11881,7 +11917,10 @@ function Home() {
             alertVisible: false,
             suggestionVisible: false,
           };
-      const nextViewAlignment = isCommandPullup(selectedExerciseForFrame)
+      const nextViewAlignment = (
+        isCommandPullup(selectedExerciseForFrame)
+        || isStandardOrSupinePullup(selectedExerciseForFrame)
+      )
         ? { ...assessedViewAlignment, blocking: false }
         : assessedViewAlignment;
       const previousViewAlignment = viewAlignmentRef.current;
@@ -12136,6 +12175,25 @@ function Home() {
         pose?.keypoints,
         measurementSide,
       );
+      const pullupFrameHeldPoints = isStandardOrSupinePullup(selectedExerciseForFrame)
+        && !pullupTrackingIsAnchored
+        && detectedFrameLowConfidence
+        ? getTrackedPointsForExercise(
+            selectedExerciseForFrame,
+            pose?.keypoints,
+            measurementSide,
+          ).filter(({ point }) => isHeldPoint(point))
+        : [];
+      const tolerateBriefHeldPullupElbows = pullupFrameHeldPoints.length > 0
+        && pullupFrameHeldPoints.every(({ point }) => {
+          if (!point) return false;
+          const isElbow = point === pose?.keypoints?.[sideKeypoints.left.elbow]
+            || point === pose?.keypoints?.[sideKeypoints.right.elbow];
+          return isElbow
+            && point.heldFrames !== undefined
+            && point.heldFrames <= PULLUP_SEARCH_ELBOW_MAX_HELD_FRAMES
+            && (point.score ?? 0) >= 0.38;
+        });
       const uploadedPikePushupHeldWristException =
         uploadedPikePushupCountingFrame
         && hasFreshPushupWristHeldExceptionMeasurement(
@@ -12148,7 +12206,9 @@ function Home() {
           ? false
           : uploadedPikePushupHeldWristException
             ? false
-            : detectedFrameLowConfidence;
+            : tolerateBriefHeldPullupElbows
+              ? false
+              : detectedFrameLowConfidence;
       const effectiveViewBlocksFrame = pullupTrackingIsAnchored
         || muscleUpPullupTrackingIsAnchored
         || pushupTrackingIsAnchored
@@ -12194,6 +12254,7 @@ function Home() {
             usesCommandPullupSideMeasurement
               ? commandPullupMeasurementSideForFrame
               : null,
+            isStandardOrSupinePullup(selectedExerciseForFrame),
           )
         );
       // El anclaje conserva la última pose para que el overlay no desaparezca
@@ -13743,16 +13804,30 @@ function Home() {
               : ['left', 'right'] as PoseSide[];
         const pullupArmPoints = preflightSides.flatMap((pointSide) => {
           const indexes = sideKeypoints[pointSide];
-          return [indexes.shoulder, indexes.elbow, indexes.wrist]
-            .map((index) => pose?.keypoints?.[index]);
+          return [
+            { index: indexes.shoulder, isElbow: false },
+            { index: indexes.elbow, isElbow: true },
+            { index: indexes.wrist, isElbow: false },
+          ].map(({ index, isElbow }) => ({
+            index,
+            isElbow,
+            point: pose?.keypoints?.[index],
+          }));
         });
+        const allowBriefHeldPullupElbows = isStandardOrSupinePullup(selectedExerciseForFrame);
         const pullupArmPointsFresh = preflightSides.length > 0
-          && pullupArmPoints.every((point) => (
-          isFreshPullupMeasurementPoint(point)
-          && hasWorldCoordinates(point)
+          && pullupArmPoints.every(({ point, isElbow }) => (
+            isUsablePullupSearchPoint(point, isElbow && allowBriefHeldPullupElbows)
+            && hasWorldCoordinates(point)
+          ));
+        const toleratedPullupSearchElbows = pullupArmPoints.filter(({ point, isElbow }) => (
+          isElbow
+          && allowBriefHeldPullupElbows
+          && isHeldPoint(point)
+          && isUsablePullupSearchPoint(point, true)
         ));
         const freshHeadPointCount = HEAD_LANDMARK_INDICES.filter((index) => (
-          isFreshPullupMeasurementPoint(pose?.keypoints?.[index])
+          isUsablePullupSearchPoint(pose?.keypoints?.[index])
         )).length;
         const muscleUpCalibrationPoints = isMuscleUpPreflight
           ? getMuscleUpPullupCalibrationPoints(pose?.keypoints)
@@ -13799,6 +13874,34 @@ function Home() {
             && pullupArmPointsFresh
             && freshHeadPointCount >= 2
             && !frameMeasurementBlocked;
+        if (
+          !isMuscleUpPreflight
+          && allowBriefHeldPullupElbows
+          && pullupPreflightFrameReady
+          && toleratedPullupSearchElbows.length > 0
+          && (
+            uploadedPullupToleratedFrameLastLoggedVideoTimeRef.current === null
+            || Math.abs(
+              video.currentTime
+              - uploadedPullupToleratedFrameLastLoggedVideoTimeRef.current
+            ) >= 0.3
+          )
+        ) {
+          uploadedPullupToleratedFrameLastLoggedVideoTimeRef.current = video.currentTime;
+          console.log(
+            `[dominadas-tolerado] ${JSON.stringify({
+              tVideo: video.currentTime.toFixed(3),
+              ejercicio: selectedExerciseForFrame,
+              motivo: 'codo retenido durante la búsqueda',
+              codos: toleratedPullupSearchElbows.map(({ index, point }) => ({
+                lado: index === sideKeypoints.left.elbow ? 'izquierdo' : 'derecho',
+                heldFrames: point?.heldFrames ?? null,
+                heldReason: point?.heldReason ?? null,
+                scoreCrudo: detectedPose?.keypoints?.[index]?.score ?? null,
+              })),
+            })}`,
+          );
+        }
         const invalidReasons = isMuscleUpPreflight
           ? [
               !frameCameraReady
@@ -13859,6 +13962,12 @@ function Home() {
                 articulacion,
                 lado: side === 'left' ? 'izquierdo' : 'derecho',
                 score: point?.score ?? null,
+                ...(articulacion === 'codo'
+                  ? {
+                      heldReason: point?.heldReason ?? null,
+                      scoreCrudo: detectedPose?.keypoints?.[index]?.score ?? null,
+                    }
+                  : {}),
                 visible: isVisibleCameraPoint(point, CAMERA_POINT_MIN_SCORE),
                 retenido: isHeldPoint(point),
                 heldFrames: point?.heldFrames ?? null,
@@ -13888,6 +13997,10 @@ function Home() {
               pullupArmPointsFresh,
               freshHeadPointCount,
               hasFreshPose,
+              yawDeg: viewEstimate.yawDeg,
+              shoulderYawDeg: viewEstimate.shoulderYawDeg,
+              hipYawDeg: viewEstimate.hipYawDeg,
+              source: viewEstimate.source,
               causaMedicionBloqueada: [
                 ...(frameLowConfidence ? ['frameLowConfidence'] : []),
                 ...(effectiveViewBlocksFrame ? ['effectiveViewBlocksFrame'] : []),
@@ -15677,6 +15790,27 @@ function Home() {
           ? COMMAND_PULLUP_TRACKER_CONFIG
           : STANDARD_PULLUP_TRACKER_CONFIG;
         const phaseBeforeUpdate = pullupTrackerRef.current.phase;
+        const pullupElevationFrame = inputModeRef.current === 'video'
+          ? (() => {
+              const leftShoulder = pose?.keypoints?.[sideKeypoints.left.shoulder];
+              const rightShoulder = pose?.keypoints?.[sideKeypoints.right.shoulder];
+              const leftWrist = pose?.keypoints?.[sideKeypoints.left.wrist];
+              const rightWrist = pose?.keypoints?.[sideKeypoints.right.wrist];
+              return {
+                videoTime: video.currentTime,
+                avgShoulderY: leftShoulder && rightShoulder
+                  ? (leftShoulder.y + rightShoulder.y) / 2
+                  : null,
+                avgWristY: leftWrist && rightWrist
+                  ? (leftWrist.y + rightWrist.y) / 2
+                  : null,
+                shoulderSpanPx: leftShoulder && rightShoulder
+                  ? Math.abs(leftShoulder.x - rightShoulder.x)
+                  : null,
+                elbowMeanAngle: rawAngle,
+              };
+            })()
+          : null;
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
@@ -15685,8 +15819,169 @@ function Home() {
           pullupExtremityValidation,
           pullupArmingGripped,
           pullupTrackerConfig,
+          pullupElevationFrame?.avgShoulderY ?? null,
+          pullupElevationFrame?.shoulderSpanPx ?? null,
         );
         pullupDiagnosticUpdate = pullupUpdate;
+        if (
+          inputModeRef.current === 'video'
+          && phaseBeforeUpdate === 'subiendo'
+          && pullupUpdate.tracker.phase === 'arriba'
+        ) {
+          const elevationDecision = pullupUpdate.elevationDecision;
+          console.log(`[dominadas-elevacion-decision] ${JSON.stringify({
+            videoCurrentTime: video.currentTime,
+            totalBefore: pullupTrackerRef.current.repetitions,
+            totalAfter: pullupUpdate.tracker.repetitions,
+            decision: elevationDecision?.decision ?? 'contada',
+            shoulderRise: elevationDecision?.shoulderRise ?? null,
+            shoulderRiseRatio: elevationDecision?.shoulderRiseRatio ?? null,
+            shoulderSpanPx: elevationDecision?.shoulderSpanPx ?? null,
+          })}`);
+        }
+        if (pullupElevationFrame) {
+          if (phaseBeforeUpdate === 'abajo') {
+            pullupElevationDiagnosticCycleRef.current = {
+              bottom: pullupElevationFrame,
+              frameCount: 1,
+              avgShoulderYMin: pullupElevationFrame.avgShoulderY,
+              avgShoulderYMax: pullupElevationFrame.avgShoulderY,
+            };
+          } else if (pullupElevationDiagnosticCycleRef.current) {
+            const cycle = pullupElevationDiagnosticCycleRef.current;
+            cycle.frameCount += 1;
+            if (pullupElevationFrame.avgShoulderY !== null) {
+              cycle.avgShoulderYMin = cycle.avgShoulderYMin === null
+                ? pullupElevationFrame.avgShoulderY
+                : Math.min(cycle.avgShoulderYMin, pullupElevationFrame.avgShoulderY);
+              cycle.avgShoulderYMax = cycle.avgShoulderYMax === null
+                ? pullupElevationFrame.avgShoulderY
+                : Math.max(cycle.avgShoulderYMax, pullupElevationFrame.avgShoulderY);
+            }
+          }
+        }
+        if (
+          pullupTrackerRef.current.repetitions >= 8
+          || pullupUpdate.tracker.repetitions >= 8
+          || (
+            inputModeRef.current === 'video'
+            && video.currentTime < 3.5
+          )
+        ) {
+          const nosePoint = pose?.keypoints?.[0];
+          const leftShoulderPoint = pose?.keypoints?.[sideKeypoints.left.shoulder];
+          const rightShoulderPoint = pose?.keypoints?.[sideKeypoints.right.shoulder];
+          const leftWristPoint = pose?.keypoints?.[sideKeypoints.left.wrist];
+          const rightWristPoint = pose?.keypoints?.[sideKeypoints.right.wrist];
+          const shoulderSpanPx = leftShoulderPoint && rightShoulderPoint
+            ? Math.abs(leftShoulderPoint.x - rightShoulderPoint.x)
+            : null;
+          const detachmentSide = usesCommandPullupSideMeasurement
+            ? commandPullupMeasurementSideForFrame
+            : null;
+          const shoulderDropMarginPx = detachmentSide
+            ? PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX
+            : Math.max(
+                PULLUP_BAR_DETACH_MIN_SHOULDER_MARGIN_PX,
+                (shoulderSpanPx ?? 0) * PULLUP_BAR_DETACH_SHOULDER_MARGIN_RATIO,
+              );
+          const leftWristBelowShoulderMargin = leftWristPoint && leftShoulderPoint
+            ? leftWristPoint.y > leftShoulderPoint.y + shoulderDropMarginPx
+            : null;
+          const rightWristBelowShoulderMargin = rightWristPoint && rightShoulderPoint
+            ? rightWristPoint.y > rightShoulderPoint.y + shoulderDropMarginPx
+            : null;
+          const leftWristBelowHead = leftWristPoint && nosePoint
+            ? leftWristPoint.y > nosePoint.y
+            : null;
+          const rightWristBelowHead = rightWristPoint && nosePoint
+            ? rightWristPoint.y > nosePoint.y
+            : null;
+          const selectedWristBelowShoulderMargin = detachmentSide === 'left'
+            ? leftWristBelowShoulderMargin
+            : detachmentSide === 'right'
+              ? rightWristBelowShoulderMargin
+              : null;
+          const selectedWristBelowHead = detachmentSide === 'left'
+            ? leftWristBelowHead
+            : detachmentSide === 'right'
+              ? rightWristBelowHead
+              : null;
+          const detachmentRequiredPoints = detachmentSide === 'left'
+            ? [nosePoint, leftWristPoint, leftShoulderPoint]
+            : detachmentSide === 'right'
+              ? [nosePoint, rightWristPoint, rightShoulderPoint]
+              : [
+                  nosePoint,
+                  leftWristPoint,
+                  rightWristPoint,
+                  leftShoulderPoint,
+                  rightShoulderPoint,
+                ];
+          const detachmentRequiredPointsScoreOk = detachmentRequiredPoints.every(
+            (point) => (point?.score ?? 0) >= 0.2,
+          );
+          const detachmentGeometryMatches = detachmentSide
+            ? selectedWristBelowShoulderMargin === true
+              && selectedWristBelowHead === true
+            : leftWristBelowShoulderMargin === true
+              && rightWristBelowShoulderMargin === true
+              && leftWristBelowHead === true
+              && rightWristBelowHead === true;
+          console.log(`[dominadas-final] ${JSON.stringify({
+            currentTime: video.currentTime,
+            duration: video.duration,
+            ended: video.ended,
+            paused: video.paused,
+            performanceNow: performance.now(),
+            mediaTime: pullupCallbackMediaTime ?? null,
+            phaseBefore: phaseBeforeUpdate,
+            phaseAfter: pullupUpdate.tracker.phase,
+            rawAngle,
+            smoothedAngle: pullupUpdate.smoothedAngle,
+            leftElbow: pullupExtremityReadings.left.elbow,
+            rightElbow: pullupExtremityReadings.right.elbow,
+            topReached: pullupTopReached,
+            atBottom: pullupExtremityValidation.atBottom,
+            topFrames: pullupUpdate.tracker.topFrames,
+            totalBefore: pullupTrackerRef.current.repetitions,
+            totalAfter: pullupUpdate.tracker.repetitions,
+            keypointYFramePx: {
+              leftShoulder: leftShoulderPoint?.y ?? null,
+              rightShoulder: rightShoulderPoint?.y ?? null,
+              leftWrist: leftWristPoint?.y ?? null,
+              rightWrist: rightWristPoint?.y ?? null,
+              nose: nosePoint?.y ?? null,
+            },
+            wristScores: {
+              left: leftWristPoint?.score ?? null,
+              right: rightWristPoint?.score ?? null,
+            },
+            shoulderSpanPx,
+            barDetach: {
+              result: pullupBarDetached,
+              side: detachmentSide,
+              shoulderDropMarginPx,
+              requiredPointsScoreOk: detachmentRequiredPointsScoreOk,
+              leftWristBelowShoulderMargin,
+              rightWristBelowShoulderMargin,
+              leftWristBelowHead,
+              rightWristBelowHead,
+              selectedWristBelowShoulderMargin,
+              selectedWristBelowHead,
+              geometryMatches: detachmentGeometryMatches,
+              wouldReturnDetached: detachmentRequiredPointsScoreOk
+                && detachmentGeometryMatches,
+              candidate: pullupDetachCandidate,
+              confirmed: pullupDetachConfirmed,
+              frames: pullupDetachFramesRef.current,
+            },
+            exerciseStarted: exerciseStartedRef.current,
+            pasada: uploadedPullupPreflightRef.current ? 'busqueda' : 'conteo',
+            conteoDesde: uploadedPullupPreflightRef.current ? null : 0,
+            cabezaSobreMuñecas: pullupHeadOverWrists,
+          })}`);
+        }
         if (pullupUpdate.tracker.repetitions !== pullupTrackerRef.current.repetitions) {
           console.log(
             `[contador] evento=conteo-y-pantalla video=${video.currentTime.toFixed(3)}s `
@@ -15695,8 +15990,66 @@ function Home() {
             + `totalAntes=${pullupTrackerRef.current.repetitions} `
             + `totalDespués=${pullupUpdate.tracker.repetitions} `
             + `pantallaAntes=${pullupTrackerRef.current.repetitions} `
-            + `pantallaDespués=${pullupUpdate.tracker.repetitions}`,
+            + `pantallaDespués=${pullupUpdate.tracker.repetitions} `
+            + `videoEnded=${video.ended} videoPaused=${video.paused} duration=${video.duration}`,
           );
+          if (
+            inputModeRef.current === 'video'
+            && phaseBeforeUpdate === 'subiendo'
+            && pullupUpdate.tracker.phase === 'arriba'
+          ) {
+            const cycle = pullupElevationDiagnosticCycleRef.current;
+            const bottom = cycle?.bottom ?? null;
+            const top = pullupElevationFrame;
+            const shoulderRisePx = bottom
+              && top
+              && bottom.avgShoulderY !== null
+              && top.avgShoulderY !== null
+              ? bottom.avgShoulderY - top.avgShoulderY
+              : null;
+            const wristDeltaYPx = bottom
+              && top
+              && bottom.avgWristY !== null
+              && top.avgWristY !== null
+              ? top.avgWristY - bottom.avgWristY
+              : null;
+            const referenceShoulderSpanPx = bottom?.shoulderSpanPx ?? null;
+            console.log(`[dominadas-elevacion] ${JSON.stringify({
+              videoCurrentTime: video.currentTime,
+              totalBefore: pullupTrackerRef.current.repetitions,
+              totalAfter: pullupUpdate.tracker.repetitions,
+              bottom: {
+                avgShoulderYpx: bottom?.avgShoulderY ?? null,
+                avgWristYpx: bottom?.avgWristY ?? null,
+                elbowMeanAngle: bottom?.elbowMeanAngle ?? null,
+                videoTime: bottom?.videoTime ?? null,
+              },
+              top: {
+                avgShoulderYpx: top?.avgShoulderY ?? null,
+                avgWristYpx: top?.avgWristY ?? null,
+                elbowMeanAngle: top?.elbowMeanAngle ?? null,
+              },
+              shoulderRisePx,
+              shoulderRisePctOfShoulderSpan: shoulderRisePx !== null
+                && referenceShoulderSpanPx !== null
+                && referenceShoulderSpanPx > 0
+                ? (shoulderRisePx / referenceShoulderSpanPx) * 100
+                : null,
+              wristDeltaYPx,
+              wristMovePx: wristDeltaYPx === null ? null : Math.abs(wristDeltaYPx),
+              wristMovePctOfShoulderSpan: wristDeltaYPx !== null
+                && referenceShoulderSpanPx !== null
+                && referenceShoulderSpanPx > 0
+                ? (Math.abs(wristDeltaYPx) / referenceShoulderSpanPx) * 100
+                : null,
+              referenceShoulderSpanPx,
+              topShoulderSpanPx: top?.shoulderSpanPx ?? null,
+              avgShoulderYMinPx: cycle?.avgShoulderYMin ?? null,
+              avgShoulderYMaxPx: cycle?.avgShoulderYMax ?? null,
+              durationSeconds: bottom ? video.currentTime - bottom.videoTime : null,
+              totalFrames: cycle?.frameCount ?? null,
+            })}`);
+          }
         }
         pullupTrackerRef.current = pullupUpdate.tracker;
         if (pullupUpdate.verdict) {
@@ -21014,7 +21367,11 @@ function Home() {
       return;
     }
 
-    const runFrame = (timestamp: number, sourceTime: number) => {
+    const runFrame = (
+      timestamp: number,
+      sourceTime: number,
+      callbackMediaTime: number | null = null,
+    ) => {
       if (picaDiagActiveRef.current && isUploadedPikePlayback) {
         const picaDiagBucket = getPicaDiagBucket(
           picaDiagBucketsRef,
@@ -21144,6 +21501,7 @@ function Home() {
       void processFrame(
         timestamp,
         isUploadedDipPlayback || isUploadedSquatPlayback ? sourceTime : undefined,
+        isUploadedPullupPlayback ? callbackMediaTime : null,
       ).finally(() => {
         processingFrameRef.current = false;
         if (
@@ -21191,7 +21549,7 @@ function Home() {
               false,
             );
           }
-          runFrame(timestamp, metadata.mediaTime);
+          runFrame(timestamp, metadata.mediaTime, metadata.mediaTime);
         },
       );
       return;
@@ -24397,6 +24755,9 @@ function Home() {
     }
     if (isUploadedPullupVideo) {
       if (uploadedPullupVideoEndedRef.current) return;
+      const pullupTotalAtEnded = pullupTrackerRef.current.repetitions;
+      const pullupPhaseAtEnded = pullupTrackerRef.current.phase;
+      const pullupHadProcessingFrame = processingFrameRef.current;
       uploadedPullupVideoEndedRef.current = true;
       const video = videoRef.current;
       if (uploadedPullupPreflightRef.current) {
@@ -24418,7 +24779,9 @@ function Home() {
       activeRef.current = false;
 
       let waitTimedOut = false;
+      let pullupProcessingWaitMs = 0;
       if (processingFrameRef.current) {
+        const pullupProcessingWaitStartedAt = performance.now();
         waitTimedOut = await new Promise<boolean>((resolve) => {
           let pollingTimer: number | null = null;
           const deadlineTimer = window.setTimeout(() => {
@@ -24435,7 +24798,9 @@ function Home() {
           };
           checkForFrameCompletion();
         });
+        pullupProcessingWaitMs = performance.now() - pullupProcessingWaitStartedAt;
       }
+      let pullupSettleResult: ReturnType<typeof settlePendingPullupRep> | null = null;
       const exerciseAtFinish = selectedExerciseRef.current;
       if (
         isStandardOrSupinePullup(exerciseAtFinish)
@@ -24445,6 +24810,7 @@ function Home() {
           pullupTrackerRef.current,
           { bottomReached: false, sessionEnded: true },
         );
+        pullupSettleResult = settled;
         pullupTrackerRef.current = settled.tracker;
         setPullupGoodRepetitions(settled.tracker.goodRepetitions);
         setPullupPendingRepetitions(0);
@@ -24463,6 +24829,21 @@ function Home() {
         + ` | incorrectas=${Math.max(0, tracker.repetitions - tracker.goodRepetitions)}`
         + ` | tope de espera alcanzado=${waitTimedOut}`,
       );
+      console.log(`[dominadas-fin-detalle] ${JSON.stringify({
+        totalAtEnded: pullupTotalAtEnded,
+        phaseAtEnded: pullupPhaseAtEnded,
+        frameInProcessAtEnded: pullupHadProcessingFrame,
+        processingWaitMs: Number(pullupProcessingWaitMs.toFixed(1)),
+        waitTimedOut,
+        settle: pullupSettleResult
+          ? {
+              correct: pullupSettleResult.verdict?.correct ?? null,
+              reason: pullupSettleResult.verdict?.reason ?? null,
+              bottomReached: pullupSettleResult.verdict?.bottomReached ?? null,
+            }
+          : null,
+        finalTotal: tracker.repetitions,
+      })}`);
     }
     if (
       inputModeRef.current === 'video'
