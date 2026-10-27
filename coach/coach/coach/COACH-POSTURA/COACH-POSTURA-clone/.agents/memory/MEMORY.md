@@ -1,1 +1,0 @@
-- [Git actions for muscle-up work](muscle-up-git-scope.md) — leave muscle-up counter changes uncommitted and never push them.

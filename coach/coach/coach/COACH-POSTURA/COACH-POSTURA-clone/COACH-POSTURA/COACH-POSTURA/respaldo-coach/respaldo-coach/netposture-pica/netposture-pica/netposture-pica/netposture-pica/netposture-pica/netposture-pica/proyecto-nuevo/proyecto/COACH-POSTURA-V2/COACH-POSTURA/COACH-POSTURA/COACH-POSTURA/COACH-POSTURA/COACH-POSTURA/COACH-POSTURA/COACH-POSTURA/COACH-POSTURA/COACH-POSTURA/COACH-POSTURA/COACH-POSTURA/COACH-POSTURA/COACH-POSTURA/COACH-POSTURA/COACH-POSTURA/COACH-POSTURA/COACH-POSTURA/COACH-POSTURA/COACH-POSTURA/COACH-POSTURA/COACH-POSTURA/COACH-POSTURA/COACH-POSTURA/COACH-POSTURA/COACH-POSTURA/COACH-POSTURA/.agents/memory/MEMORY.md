@@ -1,1 +1,0 @@
-- [Pull-up session ending](pullup-session-ending.md) — never infer bar release from wrist height alone while the athlete is in the flexed top phase.

@@ -1,1 +1,0 @@
-- [Squat counter thresholds](squat-counter-thresholds.md) — separate minimum motion used to reject noise from depth used to classify real cycles.

@@ -1,5 +1,0 @@
-modules = ["nodejs-20", "python-base-3.13"]
-
-[[ports]]
-localPort = 5173
-externalPort = 80

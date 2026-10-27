@@ -1,1 +1,0 @@
-- [Pull-up preparation flow](pullup-preparation.md) — Standard pull-ups require full-body detection, then an automatic bar countdown before counting repetitions.

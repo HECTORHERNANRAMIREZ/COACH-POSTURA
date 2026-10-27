@@ -1,1 +1,0 @@
-- [Pull-up change scope](pull-up-change-scope.md) — changes for supine pull-ups must preserve standard, commando, and all other validated exercise behavior.

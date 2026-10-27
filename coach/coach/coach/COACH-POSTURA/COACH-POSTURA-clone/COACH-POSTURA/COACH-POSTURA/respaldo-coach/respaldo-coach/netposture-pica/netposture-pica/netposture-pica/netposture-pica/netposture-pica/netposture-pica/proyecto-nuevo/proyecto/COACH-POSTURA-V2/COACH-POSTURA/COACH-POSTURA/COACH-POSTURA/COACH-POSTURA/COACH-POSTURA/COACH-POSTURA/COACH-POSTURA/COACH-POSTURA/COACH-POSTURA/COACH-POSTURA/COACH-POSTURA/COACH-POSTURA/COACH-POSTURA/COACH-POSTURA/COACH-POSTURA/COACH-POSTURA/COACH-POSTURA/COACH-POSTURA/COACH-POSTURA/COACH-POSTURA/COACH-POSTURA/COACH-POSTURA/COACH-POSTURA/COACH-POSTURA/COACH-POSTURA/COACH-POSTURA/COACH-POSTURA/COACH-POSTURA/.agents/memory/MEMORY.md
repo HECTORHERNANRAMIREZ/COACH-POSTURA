@@ -1,1 +1,0 @@
-- [Calibración de dominadas](pullup-calibration.md) — validar el recorrido con señales redundantes porque los ángulos 3D varían según la vista.
