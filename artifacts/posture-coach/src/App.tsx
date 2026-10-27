@@ -9811,6 +9811,7 @@ function Home() {
   const uploadedDipBottomRepCountedAtEndRef = useRef(false);
   const uploadedDipSearchLastLoggedSecondRef = useRef<number | null>(null);
   const uploadedPullupSearchLastLoggedSecondRef = useRef<number | null>(null);
+  const uploadedPullupBlockedFrameLastLoggedVideoTimeRef = useRef<number | null>(null);
   const uploadedPullupLastCalibrationAccumulatedMsRef = useRef(0);
   const uploadedPullupCalibrationRunBaseMsRef = useRef(0);
   const uploadedPullupCalibrationRunStartVideoTimeRef = useRef<number | null>(null);
@@ -13834,6 +13835,75 @@ function Home() {
                 ? 'medición bloqueada por vista o puntos retenidos'
                 : null,
             ].filter((reason): reason is string => reason !== null);
+        if (
+          !isMuscleUpPreflight
+          && !pullupPreflightFrameReady
+          && (
+            uploadedPullupBlockedFrameLastLoggedVideoTimeRef.current === null
+            || Math.abs(
+              video.currentTime
+              - uploadedPullupBlockedFrameLastLoggedVideoTimeRef.current
+            ) >= 0.3
+          )
+        ) {
+          uploadedPullupBlockedFrameLastLoggedVideoTimeRef.current = video.currentTime;
+          const blockedArmPoints = (['left', 'right'] as const).flatMap((side) => {
+            const indexes = sideKeypoints[side];
+            return [
+              { articulacion: 'hombro', index: indexes.shoulder },
+              { articulacion: 'codo', index: indexes.elbow },
+              { articulacion: 'muñeca', index: indexes.wrist },
+            ].map(({ articulacion, index }) => {
+              const point = pose?.keypoints?.[index];
+              return {
+                articulacion,
+                lado: side === 'left' ? 'izquierdo' : 'derecho',
+                score: point?.score ?? null,
+                visible: isVisibleCameraPoint(point, CAMERA_POINT_MIN_SCORE),
+                retenido: isHeldPoint(point),
+                heldFrames: point?.heldFrames ?? null,
+                fresco: isFreshPullupMeasurementPoint(point),
+                world3D: hasWorldCoordinates(point),
+              };
+            });
+          });
+          const blockedHeadPoints = HEAD_LANDMARK_INDICES.map((index) => {
+            const point = pose?.keypoints?.[index];
+            return {
+              index,
+              score: point?.score ?? null,
+              retenido: isHeldPoint(point),
+              fresca: isFreshPullupMeasurementPoint(point),
+            };
+          });
+          console.log(
+            `[dominadas-cuadro-bloqueado] ${JSON.stringify({
+              tVideo: video.currentTime.toFixed(3),
+              motivos: invalidReasons,
+              frameCameraReady,
+              frameLowConfidence,
+              effectiveViewBlocksFrame,
+              pullupMeasurementBlocked,
+              frameMeasurementBlocked,
+              pullupArmPointsFresh,
+              freshHeadPointCount,
+              hasFreshPose,
+              causaMedicionBloqueada: [
+                ...(frameLowConfidence ? ['frameLowConfidence'] : []),
+                ...(effectiveViewBlocksFrame ? ['effectiveViewBlocksFrame'] : []),
+                ...(pullupMeasurementBlocked ? ['pullupMeasurementBlocked'] : []),
+              ],
+              mensajeCamara: rawCameraGuidance.message,
+              vista: {
+                estimada: nextViewAlignment.estimatedView,
+                estado: nextViewAlignment.status,
+                bloquea: effectiveViewBlocksFrame,
+              },
+              brazos: blockedArmPoints,
+              cabeza: blockedHeadPoints,
+            })}`,
+          );
+        }
         const accumulatedMs = recordUploadedPullupSearchFrame(
           video.currentTime,
           pullupPreflightFrameReady,
