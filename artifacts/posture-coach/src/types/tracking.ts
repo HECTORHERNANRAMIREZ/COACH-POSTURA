@@ -72,7 +72,12 @@ export type PullupTracker = {
   pendingRepHeadFramesEvaluated: number;
   pendingRepHeadFramesYes: number;
   suppressNextRepCountUntilBottom: boolean;
-  cycleMaximumShoulderY: number | null;
+  hasBottomSinceLastTop: boolean;
+  hasConfirmedTop: boolean;
+  shoulderYAtLastBottom: number | null;
+  shoulderYMinSinceBottom: number | null;
+  shoulderSpanPxAtLastBottom: number | null;
+  videoCurrentTimeAtLastBottom: number | null;
 };
 export type MuscleUpPullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
 export type MuscleUpPullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;

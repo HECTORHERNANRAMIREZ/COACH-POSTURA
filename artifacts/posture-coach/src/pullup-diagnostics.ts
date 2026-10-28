@@ -1,3 +1,10 @@
+import type {
+  PullupExtremityReadings,
+  PullupExtremityValidation,
+  PullupElevationDecision,
+} from './types/pullup';
+import type { PullupPhase, PullupTrackerConfig } from './types/tracking';
+
 export type ExerciseDiagnosticSnapshot = {
   timestamp: number;
   exercise: string;
@@ -108,3 +115,111 @@ export type ExerciseDiagnosticSnapshot = {
     status: string;
   };
 };
+
+export type PullupDiagnosticKeypoint = {
+  x: number;
+  y: number;
+  score: number | null;
+} | null;
+
+export type PullupTrackerFrameDiagnostic = {
+  frameIndex: number;
+  videoCurrentTime: number;
+  phaseBefore: PullupPhase;
+  phaseAfter: PullupPhase;
+  phaseChanged: boolean;
+  atBottom: boolean;
+  isAtBottom: boolean;
+  atTop: boolean;
+  topReached: boolean;
+  hasReachedTop: boolean;
+  rawAngle: number;
+  smoothedAngle: number;
+  lastAngleBefore: number | null;
+  headOverWrists: boolean | null;
+  extremityReadings: PullupExtremityReadings;
+  extremities: PullupExtremityValidation;
+  gripped: boolean;
+  armingGripped: boolean;
+  config: PullupTrackerConfig;
+  shoulderYAvg: number | null;
+  shoulderSpanPx: number | null;
+  wristYAvg: number | null;
+  keypoints: {
+    nose: PullupDiagnosticKeypoint;
+    leftShoulder: PullupDiagnosticKeypoint;
+    rightShoulder: PullupDiagnosticKeypoint;
+    leftElbow: PullupDiagnosticKeypoint;
+    rightElbow: PullupDiagnosticKeypoint;
+    leftWrist: PullupDiagnosticKeypoint;
+    rightWrist: PullupDiagnosticKeypoint;
+    leftHip: PullupDiagnosticKeypoint;
+    rightHip: PullupDiagnosticKeypoint;
+  };
+  trackerBefore: {
+    isArmed: boolean;
+    bottomReadyFrames: number;
+    topFrames: number;
+    repetitions: number;
+    hasBottomSinceLastTop: boolean;
+    hasConfirmedTop: boolean;
+  };
+  decision: PullupElevationDecision['decision'] | null;
+};
+
+export type PullupDiagnosticMemory = {
+  frameCount: number;
+  decimating: boolean;
+  frames: PullupTrackerFrameDiagnostic[];
+  decisions: PullupElevationDecision[];
+};
+
+export type PullupDiagnosticReport = {
+  resumen: {
+    total: number;
+    candidatas: number;
+    descartadasPorMotivo: Record<string, number>;
+  };
+  decisiones: PullupElevationDecision[];
+  cuadros: PullupTrackerFrameDiagnostic[];
+};
+
+export function createPullupDiagnosticMemory(): PullupDiagnosticMemory {
+  return {
+    frameCount: 0,
+    decimating: false,
+    frames: [],
+    decisions: [],
+  };
+}
+
+export function recordPullupTrackerFrame(
+  memory: PullupDiagnosticMemory,
+  frame: Omit<PullupTrackerFrameDiagnostic, 'frameIndex' | 'phaseChanged'>,
+) {
+  const frameIndex = memory.frameCount;
+  memory.frameCount += 1;
+  const completeFrame: PullupTrackerFrameDiagnostic = {
+    ...frame,
+    frameIndex,
+    phaseChanged: frame.phaseBefore !== frame.phaseAfter,
+  };
+
+  if (!memory.decimating && memory.frameCount > 1500) {
+    memory.frames = memory.frames.filter((existingFrame) => (
+      existingFrame.frameIndex % 2 === 0
+      || existingFrame.phaseChanged
+      || existingFrame.decision !== null
+    ));
+    memory.decimating = true;
+  }
+
+  if (
+    !memory.decimating
+    || frameIndex % 2 === 0
+    || completeFrame.phaseChanged
+    || completeFrame.decision !== null
+  ) {
+    memory.frames.push(completeFrame);
+  }
+}

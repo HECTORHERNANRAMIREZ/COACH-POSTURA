@@ -20,6 +20,7 @@ import type {
 import type {
   PullupExtremityReadings,
   PullupExtremityValidation,
+  PullupElevationDecisionLabel,
   PullupRepVerdict,
   PullupTrackerUpdate,
 } from '@/types/pullup';
@@ -43,13 +44,55 @@ export function createPullupTracker(): PullupTracker {
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     suppressNextRepCountUntilBottom: false,
-    cycleMaximumShoulderY: null,
+    hasBottomSinceLastTop: false,
+    hasConfirmedTop: false,
+    shoulderYAtLastBottom: null,
+    shoulderYMinSinceBottom: null,
+    shoulderSpanPxAtLastBottom: null,
+    videoCurrentTimeAtLastBottom: null,
   };
 }
 
 export function median(values: number[]) {
   const sorted = [...values].sort((first, second) => first - second);
   return sorted[Math.floor(sorted.length / 2)] ?? null;
+}
+
+function getPullupShoulderRiseMeasurement(tracker: PullupTracker) {
+  const shoulderRise = tracker.shoulderYAtLastBottom !== null
+    && Number.isFinite(tracker.shoulderYAtLastBottom)
+    && tracker.shoulderYMinSinceBottom !== null
+    && Number.isFinite(tracker.shoulderYMinSinceBottom)
+    ? tracker.shoulderYAtLastBottom - tracker.shoulderYMinSinceBottom
+    : null;
+  const shoulderSpanPx = tracker.shoulderSpanPxAtLastBottom;
+  const shoulderRiseRatio = shoulderRise !== null
+    && shoulderSpanPx !== null
+    && Number.isFinite(shoulderSpanPx)
+    && shoulderSpanPx > 0
+    ? shoulderRise / shoulderSpanPx
+    : null;
+
+  return { shoulderRise, shoulderRiseRatio, shoulderSpanPx };
+}
+
+function createPullupElevationDecision(
+  tracker: PullupTracker,
+  decision: PullupElevationDecisionLabel,
+  videoCurrentTime: number | null,
+): NonNullable<PullupTrackerUpdate['elevationDecision']> {
+  return {
+    decision,
+    ...getPullupShoulderRiseMeasurement(tracker),
+    shoulderYAtLastBottom: tracker.shoulderYAtLastBottom,
+    shoulderYMinSinceBottom: tracker.shoulderYMinSinceBottom,
+    videoCurrentTimeAtLastBottom: tracker.videoCurrentTimeAtLastBottom,
+    videoCurrentTimeAtDecision: (
+      videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
+        ? videoCurrentTime
+        : null
+    ),
+  };
 }
 
 export function smoothAngleReading(
@@ -242,6 +285,7 @@ export function advancePullupTracker(
   config: PullupTrackerConfig,
   shoulderAverageY: number | null = null,
   shoulderSpanPx: number | null = null,
+  videoCurrentTime: number | null = null,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
   const smoothedAngle = median(samples);
@@ -264,6 +308,7 @@ export function advancePullupTracker(
   };
   const isAtBottom = extremities.atBottom
     && isWithinPullupAngle(smoothedAngle, config.bottomMinAngle, config.bottomMaxAngle);
+  const hasAtBottomFrame = extremities.atBottom;
   const isAtBottomByAngle = isWithinPullupAngle(
     smoothedAngle,
     config.bottomMinAngle,
@@ -275,26 +320,30 @@ export function advancePullupTracker(
   let completedMinimumAngle: number | null = null;
   let verdict: PullupRepVerdict | null = null;
   let elevationDecision: PullupTrackerUpdate['elevationDecision'];
-  if (
-    tracker.phase === 'abajo'
-    || (tracker.phase === 'esperando abajo' && isAtBottom)
-  ) {
-    nextTracker.cycleMaximumShoulderY = (
-      shoulderAverageY !== null && Number.isFinite(shoulderAverageY)
-        ? shoulderAverageY
+  const hasShoulderY = shoulderAverageY !== null
+    && Number.isFinite(shoulderAverageY);
+  if (hasAtBottomFrame) {
+    nextTracker.hasBottomSinceLastTop = true;
+    nextTracker.shoulderYAtLastBottom = hasShoulderY ? shoulderAverageY : null;
+    nextTracker.shoulderYMinSinceBottom = hasShoulderY ? shoulderAverageY : null;
+    nextTracker.shoulderSpanPxAtLastBottom = (
+      shoulderSpanPx !== null && Number.isFinite(shoulderSpanPx)
+        ? shoulderSpanPx
         : null
     );
-  } else if (
-    shoulderAverageY !== null
-    && Number.isFinite(shoulderAverageY)
-    && nextTracker.cycleMaximumShoulderY !== null
-  ) {
-    nextTracker.cycleMaximumShoulderY = Math.max(
-      nextTracker.cycleMaximumShoulderY,
-      shoulderAverageY,
+    nextTracker.videoCurrentTimeAtLastBottom = (
+      videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
+        ? videoCurrentTime
+        : null
+    );
+  } else if (hasShoulderY && nextTracker.shoulderYAtLastBottom !== null) {
+    nextTracker.shoulderYMinSinceBottom = (
+      nextTracker.shoulderYMinSinceBottom === null
+        ? shoulderAverageY
+        : Math.min(nextTracker.shoulderYMinSinceBottom, shoulderAverageY)
     );
   }
-  if (isAtBottom) {
+  if (hasAtBottomFrame) {
     nextTracker.suppressNextRepCountUntilBottom = false;
   }
   if (tracker.phase !== 'subiendo') {
@@ -363,27 +412,31 @@ export function advancePullupTracker(
       nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
         && hasReachedTop
         && topReached;
-      const hasShoulderRiseMeasurements = shoulderAverageY !== null
-        && Number.isFinite(shoulderAverageY)
-        && nextTracker.cycleMaximumShoulderY !== null
-        && Number.isFinite(nextTracker.cycleMaximumShoulderY)
-        && shoulderSpanPx !== null
-        && Number.isFinite(shoulderSpanPx)
-        && shoulderSpanPx > 0;
-      const shoulderRise = hasShoulderRiseMeasurements
-        ? nextTracker.cycleMaximumShoulderY! - shoulderAverageY!
-        : null;
-      const shoulderRiseRatio = shoulderRise !== null && shoulderSpanPx !== null
-        ? shoulderRise / shoulderSpanPx
-        : null;
-      const shoulderRiseAllowsCount = shoulderRiseRatio === null
-        || shoulderRiseRatio >= PULLUP_MIN_SHOULDER_RISE_RATIO;
-      elevationDecision = {
-        decision: shoulderRiseAllowsCount ? 'contada' : 'descartada-sin-elevacion',
-        shoulderRise,
-        shoulderRiseRatio,
-        shoulderSpanPx,
-      };
+      const { shoulderRise, shoulderRiseRatio, shoulderSpanPx: bottomShoulderSpanPx }
+        = getPullupShoulderRiseMeasurement(nextTracker);
+      const hasShoulderRiseMeasurements = shoulderRise !== null
+        && shoulderRiseRatio !== null
+        && bottomShoulderSpanPx !== null
+        && Number.isFinite(bottomShoulderSpanPx)
+        && bottomShoulderSpanPx > 0;
+      const decision: PullupElevationDecisionLabel = nextTracker.hasConfirmedTop
+        && !nextTracker.hasBottomSinceLastTop
+        ? 'descartada-sin-regreso-abajo'
+        : !nextTracker.hasBottomSinceLastTop
+          ? 'descartada-sin-fase-abajo'
+          : !hasShoulderRiseMeasurements
+            ? 'descartada-sin-datos-hombros'
+            : shoulderRiseRatio! < PULLUP_MIN_SHOULDER_RISE_RATIO
+              ? 'descartada-sin-elevacion'
+              : 'contada';
+      elevationDecision = createPullupElevationDecision(
+        nextTracker,
+        decision,
+        videoCurrentTime,
+      );
+      nextTracker.hasConfirmedTop = true;
+      nextTracker.hasBottomSinceLastTop = false;
+      const shoulderRiseAllowsCount = decision === 'contada';
       if (!nextTracker.suppressNextRepCountUntilBottom) {
         if (shoulderRiseAllowsCount) {
           nextTracker.repetitions += 1;
@@ -411,13 +464,17 @@ export function advancePullupTracker(
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
-      nextTracker.repetitions += 1;
       nextTracker.currentRepCorrect = isAtBottom;
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
       completedMinimumAngle = nextTracker.minimumAngle;
+      elevationDecision = createPullupElevationDecision(
+        nextTracker,
+        'descartada-sin-transicion-arriba',
+        videoCurrentTime,
+      );
       verdict = {
-        repetition: nextTracker.repetitions,
+        repetition: nextTracker.repetitions + 1,
         headOverWrists: false,
         headFramesEvaluated: 0,
         headFramesYes: 0,
@@ -460,11 +517,14 @@ export function advancePullupTracker(
       nextTracker.event = 'no-lockout';
       if (nextTracker.pendingRepHeadOverWrists !== null) {
         nextTracker.suppressNextRepCountUntilBottom = true;
-      } else if (!nextTracker.suppressNextRepCountUntilBottom) {
-        nextTracker.repetitions += 1;
       }
       nextTracker.currentRepCorrect = false;
       completedMinimumAngle = nextTracker.minimumAngle;
+      elevationDecision = createPullupElevationDecision(
+        nextTracker,
+        'descartada-sin-transicion-arriba',
+        videoCurrentTime,
+      );
     }
   }
 

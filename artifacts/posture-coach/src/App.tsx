@@ -172,7 +172,12 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
-import type { ExerciseDiagnosticSnapshot } from '@/pullup-diagnostics';
+import {
+  createPullupDiagnosticMemory,
+  recordPullupTrackerFrame,
+  type ExerciseDiagnosticSnapshot,
+  type PullupDiagnosticReport,
+} from '@/pullup-diagnostics';
 import {
   CRUCES_TOLERANCIA_GRADOS,
   PICA_TOLERANCIA_ELEVACION_PROPORCION,
@@ -10342,6 +10347,7 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const pullupTrackerDiagnosticsRef = useRef(createPullupDiagnosticMemory());
   const pullupElevationDiagnosticCycleRef = useRef<{
     bottom: {
       videoTime: number;
@@ -14076,6 +14082,7 @@ function Home() {
               );
             }
             pullupTrackerRef.current = createPullupTracker();
+            pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
             pullupSessionFinishedRef.current = false;
             pullupDetachFramesRef.current = 0;
             setPullupSessionFinished(false);
@@ -14193,6 +14200,7 @@ function Home() {
             );
           }
           pullupTrackerRef.current = createPullupTracker();
+          pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
           setPullupRepetitions(0);
           setPullupGoodRepetitions(0);
           setPullupPendingRepetitions(0);
@@ -15821,22 +15829,82 @@ function Home() {
           pullupTrackerConfig,
           pullupElevationFrame?.avgShoulderY ?? null,
           pullupElevationFrame?.shoulderSpanPx ?? null,
+          pullupElevationFrame?.videoTime ?? null,
         );
         pullupDiagnosticUpdate = pullupUpdate;
+        if (inputModeRef.current === 'video' && pullupElevationFrame) {
+          const pointSnapshot = (point: PosePoint | undefined) => point
+            ? { x: point.x, y: point.y, score: point.score ?? null }
+            : null;
+          const elevationDecision = pullupUpdate.elevationDecision ?? null;
+          if (elevationDecision) {
+            pullupTrackerDiagnosticsRef.current.decisions.push(elevationDecision);
+          }
+          recordPullupTrackerFrame(pullupTrackerDiagnosticsRef.current, {
+            videoCurrentTime: pullupElevationFrame.videoTime,
+            phaseBefore: phaseBeforeUpdate,
+            phaseAfter: pullupUpdate.tracker.phase,
+            atBottom: pullupExtremityValidation.atBottom,
+            isAtBottom: pullupUpdate.isAtBottom,
+            atTop: pullupExtremityValidation.atTop,
+            topReached: pullupTopReached,
+            hasReachedTop: pullupUpdate.hasReachedTop,
+            rawAngle,
+            smoothedAngle: pullupUpdate.smoothedAngle,
+            lastAngleBefore: pullupTrackerRef.current.lastAngle,
+            headOverWrists: pullupHeadOverWrists,
+            extremityReadings: pullupExtremityReadings,
+            extremities: pullupExtremityValidation,
+            gripped,
+            armingGripped: pullupArmingGripped,
+            config: pullupTrackerConfig,
+            shoulderYAvg: pullupElevationFrame.avgShoulderY,
+            shoulderSpanPx: pullupElevationFrame.shoulderSpanPx,
+            wristYAvg: pullupElevationFrame.avgWristY,
+            keypoints: {
+              nose: pointSnapshot(pose?.keypoints?.[0]),
+              leftShoulder: pointSnapshot(
+                pose?.keypoints?.[sideKeypoints.left.shoulder],
+              ),
+              rightShoulder: pointSnapshot(
+                pose?.keypoints?.[sideKeypoints.right.shoulder],
+              ),
+              leftElbow: pointSnapshot(pose?.keypoints?.[sideKeypoints.left.elbow]),
+              rightElbow: pointSnapshot(pose?.keypoints?.[sideKeypoints.right.elbow]),
+              leftWrist: pointSnapshot(pose?.keypoints?.[sideKeypoints.left.wrist]),
+              rightWrist: pointSnapshot(pose?.keypoints?.[sideKeypoints.right.wrist]),
+              leftHip: pointSnapshot(pose?.keypoints?.[sideKeypoints.left.hip]),
+              rightHip: pointSnapshot(pose?.keypoints?.[sideKeypoints.right.hip]),
+            },
+            trackerBefore: {
+              isArmed: pullupTrackerRef.current.isArmed,
+              bottomReadyFrames: pullupTrackerRef.current.bottomReadyFrames,
+              topFrames: pullupTrackerRef.current.topFrames,
+              repetitions: pullupTrackerRef.current.repetitions,
+              hasBottomSinceLastTop:
+                pullupTrackerRef.current.hasBottomSinceLastTop,
+              hasConfirmedTop: pullupTrackerRef.current.hasConfirmedTop,
+            },
+            decision: elevationDecision?.decision ?? null,
+          });
+        }
         if (
           inputModeRef.current === 'video'
-          && phaseBeforeUpdate === 'subiendo'
-          && pullupUpdate.tracker.phase === 'arriba'
+          && pullupUpdate.elevationDecision
         ) {
           const elevationDecision = pullupUpdate.elevationDecision;
           console.log(`[dominadas-elevacion-decision] ${JSON.stringify({
-            videoCurrentTime: video.currentTime,
+            videoCurrentTime: elevationDecision.videoCurrentTimeAtDecision,
             totalBefore: pullupTrackerRef.current.repetitions,
             totalAfter: pullupUpdate.tracker.repetitions,
-            decision: elevationDecision?.decision ?? 'contada',
-            shoulderRise: elevationDecision?.shoulderRise ?? null,
-            shoulderRiseRatio: elevationDecision?.shoulderRiseRatio ?? null,
-            shoulderSpanPx: elevationDecision?.shoulderSpanPx ?? null,
+            decision: elevationDecision.decision,
+            shoulderRise: elevationDecision.shoulderRise,
+            shoulderRiseRatio: elevationDecision.shoulderRiseRatio,
+            shoulderSpanPx: elevationDecision.shoulderSpanPx,
+            shoulderYAtLastBottom: elevationDecision.shoulderYAtLastBottom,
+            shoulderYMinSinceBottom: elevationDecision.shoulderYMinSinceBottom,
+            videoCurrentTimeAtLastBottom:
+              elevationDecision.videoCurrentTimeAtLastBottom,
           })}`);
         }
         if (pullupElevationFrame) {
@@ -23626,6 +23694,7 @@ function Home() {
       );
     }
     pullupTrackerRef.current = createPullupTracker();
+    pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     pullupSessionFinishedRef.current = false;
     pullupDetachFramesRef.current = 0;
     setPullupSessionFinished(false);
@@ -24844,6 +24913,30 @@ function Home() {
           : null,
         finalTotal: tracker.repetitions,
       })}`);
+      const diagnosticMemory = pullupTrackerDiagnosticsRef.current;
+      const descartadasPorMotivo = diagnosticMemory.decisions.reduce<Record<string, number>>(
+        (counts, decision) => {
+          if (decision.decision.startsWith('descartada-')) {
+            const reason = decision.decision.slice('descartada-'.length);
+            counts[reason] = (counts[reason] ?? 0) + 1;
+          }
+          return counts;
+        },
+        {},
+      );
+      const diagnosticReport: PullupDiagnosticReport = {
+        resumen: {
+          total: tracker.repetitions,
+          candidatas: diagnosticMemory.decisions.length,
+          descartadasPorMotivo,
+        },
+        decisiones: [...diagnosticMemory.decisions],
+        cuadros: [...diagnosticMemory.frames],
+      };
+      (window as Window & {
+        __dominadasDiagnostico?: PullupDiagnosticReport;
+      }).__dominadasDiagnostico = diagnosticReport;
+      console.log(`[dominadas-diagnostico] ${JSON.stringify(diagnosticReport)}`);
     }
     if (
       inputModeRef.current === 'video'
@@ -25425,6 +25518,7 @@ function Home() {
       );
     }
     pullupTrackerRef.current = createPullupTracker();
+    pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     setPullupRepetitions(0);
     setPullupGoodRepetitions(0);
     setPullupPhase('esperando abajo');
