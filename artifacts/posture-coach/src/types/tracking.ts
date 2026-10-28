@@ -71,6 +71,8 @@ export type PullupTracker = {
   topConfirmationHeadFramesYes: number;
   pendingRepHeadFramesEvaluated: number;
   pendingRepHeadFramesYes: number;
+  headWindowActive: boolean;
+  headWindowStartVideoTime: number | null;
   suppressNextRepCountUntilBottom: boolean;
   hasBottomSinceLastTop: boolean;
   hasConfirmedTop: boolean;
@@ -78,6 +80,8 @@ export type PullupTracker = {
   shoulderYMinSinceBottom: number | null;
   shoulderSpanPxAtLastBottom: number | null;
   videoCurrentTimeAtLastBottom: number | null;
+  lastAcceptedRawAngle: number | null;
+  pendingAngleJumpFrame: PullupPendingAngleJumpFrame | null;
 };
 export type MuscleUpPullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
 export type MuscleUpPullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
@@ -193,6 +197,17 @@ export type PullupTrackerConfig = {
   topConfirmationFrames: number;
   risingDeltaDeg: number;
   angleToleranceDeg: number;
+};
+export type PullupPendingAngleJumpFrame = {
+  rawAngle: number;
+  topReached: boolean;
+  headOverWrists: boolean | null;
+  extremities: { atBottom: boolean; atTop: boolean };
+  gripped: boolean;
+  config: PullupTrackerConfig;
+  shoulderAverageY: number | null;
+  shoulderSpanPx: number | null;
+  videoCurrentTime: number | null;
 };
 export type ExerciseRepPhase = 'esperando inicio' | 'inicio' | 'en movimiento' | 'final';
 export type ExerciseRepDirection = 'decrease' | 'increase';

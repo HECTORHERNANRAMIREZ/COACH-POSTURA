@@ -2,6 +2,7 @@ import type {
   PullupExtremityReadings,
   PullupExtremityValidation,
   PullupElevationDecision,
+  PullupHeadWindowVerdict,
 } from './types/pullup';
 import type { PullupPhase, PullupTrackerConfig } from './types/tracking';
 
@@ -172,6 +173,7 @@ export type PullupDiagnosticMemory = {
   decimating: boolean;
   frames: PullupTrackerFrameDiagnostic[];
   decisions: PullupElevationDecision[];
+  discardedAngleJumpFrames: number;
 };
 
 export type PullupDiagnosticReport = {
@@ -179,6 +181,7 @@ export type PullupDiagnosticReport = {
     total: number;
     candidatas: number;
     descartadasPorMotivo: Record<string, number>;
+    cuadrosDescartadosPorSalto: number;
   };
   decisiones: PullupElevationDecision[];
   cuadros: PullupTrackerFrameDiagnostic[];
@@ -190,7 +193,28 @@ export function createPullupDiagnosticMemory(): PullupDiagnosticMemory {
     decimating: false,
     frames: [],
     decisions: [],
+    discardedAngleJumpFrames: 0,
   };
+}
+
+export function recordPullupHeadWindowVerdict(
+  memory: PullupDiagnosticMemory,
+  verdict: PullupHeadWindowVerdict,
+) {
+  if (verdict.videoCurrentTimeStart === null) return;
+  const veredictoCabeza = {
+    resultado: verdict.correct ? 'correcta' as const : 'incorrecta' as const,
+    motivo: verdict.reason,
+    cabezaEvaluados: verdict.headFramesEvaluated,
+    cabezaSi: verdict.headFramesYes,
+    videoCurrentTimeInicio: verdict.videoCurrentTimeStart,
+    videoCurrentTimeFin: verdict.videoCurrentTimeEnd,
+  };
+  memory.decisions.forEach((decision) => {
+    if (decision.headWindowStartVideoTime === verdict.videoCurrentTimeStart) {
+      decision.veredictoCabeza = veredictoCabeza;
+    }
+  });
 }
 
 export function recordPullupTrackerFrame(

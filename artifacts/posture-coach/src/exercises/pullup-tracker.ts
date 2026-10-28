@@ -12,12 +12,14 @@ import type {
   ExerciseId,
   MuscleUpPullupRepVerdict,
   MuscleUpPullupTracker,
+  PullupPendingAngleJumpFrame,
   PoseSide,
   PullupTracker,
   PullupTrackerConfig,
   TechniqueFeedback,
 } from '@/types/tracking';
 import type {
+  PullupDiscardedAngleJumpFrame,
   PullupExtremityReadings,
   PullupExtremityValidation,
   PullupElevationDecisionLabel,
@@ -43,6 +45,8 @@ export function createPullupTracker(): PullupTracker {
     topConfirmationHeadFramesYes: 0,
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
+    headWindowActive: false,
+    headWindowStartVideoTime: null,
     suppressNextRepCountUntilBottom: false,
     hasBottomSinceLastTop: false,
     hasConfirmedTop: false,
@@ -50,6 +54,8 @@ export function createPullupTracker(): PullupTracker {
     shoulderYMinSinceBottom: null,
     shoulderSpanPxAtLastBottom: null,
     videoCurrentTimeAtLastBottom: null,
+    lastAcceptedRawAngle: null,
+    pendingAngleJumpFrame: null,
   };
 }
 
@@ -81,12 +87,26 @@ function createPullupElevationDecision(
   decision: PullupElevationDecisionLabel,
   videoCurrentTime: number | null,
 ): NonNullable<PullupTrackerUpdate['elevationDecision']> {
+  const veredictoCabeza = getPullupHeadWindowVerdict(tracker, videoCurrentTime) ?? {
+    correct: false,
+    reason: 'no-top-cabeza' as const,
+    headFramesEvaluated: tracker.topConfirmationHeadFramesEvaluated,
+    headFramesYes: tracker.topConfirmationHeadFramesYes,
+    videoCurrentTimeStart: tracker.headWindowStartVideoTime,
+    videoCurrentTimeEnd: (
+      videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
+        ? videoCurrentTime
+        : null
+    ),
+  };
   return {
     decision,
     ...getPullupShoulderRiseMeasurement(tracker),
     shoulderYAtLastBottom: tracker.shoulderYAtLastBottom,
     shoulderYMinSinceBottom: tracker.shoulderYMinSinceBottom,
     videoCurrentTimeAtLastBottom: tracker.videoCurrentTimeAtLastBottom,
+    headWindowStartVideoTime: tracker.headWindowStartVideoTime,
+    veredictoCabeza,
     videoCurrentTimeAtDecision: (
       videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
         ? videoCurrentTime
@@ -160,20 +180,65 @@ export function getPullupExtremityValidation(
   };
 }
 
+function getPullupHeadWindowVerdict(
+  tracker: PullupTracker,
+  videoCurrentTime: number | null,
+) {
+  if (!tracker.headWindowActive) return undefined;
+  const headFramesYes = tracker.topConfirmationHeadFramesYes;
+  return {
+    correct: headFramesYes > 0,
+    reason: headFramesYes > 0 ? 'ok' as const : 'no-top-cabeza' as const,
+    headFramesEvaluated: tracker.topConfirmationHeadFramesEvaluated,
+    headFramesYes,
+    videoCurrentTimeStart: tracker.headWindowStartVideoTime,
+    videoCurrentTimeEnd: (
+      videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
+        ? videoCurrentTime
+        : null
+    ),
+  };
+}
+
+function resetPullupHeadWindow(tracker: PullupTracker): PullupTracker {
+  return {
+    ...tracker,
+    headWindowActive: false,
+    headWindowStartVideoTime: null,
+    topConfirmationHeadFramesEvaluated: 0,
+    topConfirmationHeadFramesYes: 0,
+  };
+}
+
 export function settlePendingPullupRep(
   tracker: PullupTracker,
   options: {
     bottomReached: boolean;
     sessionEnded?: boolean;
     noLockout?: boolean;
+    videoCurrentTime?: number | null;
   },
-): { tracker: PullupTracker; verdict: PullupRepVerdict | null } {
+): {
+  tracker: PullupTracker;
+  verdict: PullupRepVerdict | null;
+  headWindowVerdict?: ReturnType<typeof getPullupHeadWindowVerdict>;
+} {
+  const headWindowVerdict = getPullupHeadWindowVerdict(
+    tracker,
+    options.videoCurrentTime ?? null,
+  );
   if (tracker.pendingRepHeadOverWrists === null) {
-    return { tracker, verdict: null };
+    return {
+      tracker: headWindowVerdict ? resetPullupHeadWindow(tracker) : tracker,
+      verdict: null,
+      headWindowVerdict,
+    };
   }
 
-  const headFramesEvaluated = tracker.pendingRepHeadFramesEvaluated;
-  const headFramesYes = tracker.pendingRepHeadFramesYes;
+  const headFramesEvaluated = headWindowVerdict?.headFramesEvaluated
+    ?? tracker.pendingRepHeadFramesEvaluated;
+  const headFramesYes = headWindowVerdict?.headFramesYes
+    ?? tracker.pendingRepHeadFramesYes;
   const headOverWrists = headFramesYes > 0;
   const correct = !options.noLockout
     && headOverWrists
@@ -194,9 +259,10 @@ export function settlePendingPullupRep(
     goodRepetitions: tracker.goodRepetitions + (correct ? 1 : 0),
     event: options.noLockout ? 'no-lockout' : correct ? 'valid' : 'invalid',
   };
+  const closedTracker = resetPullupHeadWindow(nextTracker);
 
   return {
-    tracker: nextTracker,
+    tracker: closedTracker,
     verdict: {
       repetition: tracker.repetitions,
       headOverWrists,
@@ -205,7 +271,10 @@ export function settlePendingPullupRep(
       bottomReached: options.bottomReached,
       correct,
       reason,
+      headWindowStartVideoTime: headWindowVerdict?.videoCurrentTimeStart ?? null,
+      headWindowEndVideoTime: headWindowVerdict?.videoCurrentTimeEnd ?? null,
     },
+    headWindowVerdict,
   };
 }
 
@@ -275,7 +344,7 @@ export function logMuscleUpPullupFinish(tracker: MuscleUpPullupTracker) {
   );
 }
 
-export function advancePullupTracker(
+function advancePullupTrackerFrame(
   tracker: PullupTracker,
   rawAngle: number,
   topReached: boolean,
@@ -320,10 +389,15 @@ export function advancePullupTracker(
   let completedMinimumAngle: number | null = null;
   let verdict: PullupRepVerdict | null = null;
   let elevationDecision: PullupTrackerUpdate['elevationDecision'];
+  let headWindowVerdict: PullupTrackerUpdate['headWindowVerdict'];
   const hasShoulderY = shoulderAverageY !== null
     && Number.isFinite(shoulderAverageY);
+  const isBottomPhase = tracker.phase === 'esperando abajo' || tracker.phase === 'abajo';
+  const isReturningToBottom = tracker.hasConfirmedTop && !tracker.hasBottomSinceLastTop;
   if (hasAtBottomFrame) {
     nextTracker.hasBottomSinceLastTop = true;
+  }
+  if (hasAtBottomFrame && isBottomPhase) {
     nextTracker.shoulderYAtLastBottom = hasShoulderY ? shoulderAverageY : null;
     nextTracker.shoulderYMinSinceBottom = hasShoulderY ? shoulderAverageY : null;
     nextTracker.shoulderSpanPxAtLastBottom = (
@@ -343,12 +417,32 @@ export function advancePullupTracker(
         : Math.min(nextTracker.shoulderYMinSinceBottom, shoulderAverageY)
     );
   }
-  if (hasAtBottomFrame) {
-    nextTracker.suppressNextRepCountUntilBottom = false;
-  }
-  if (tracker.phase !== 'subiendo') {
+  if (hasAtBottomFrame && isBottomPhase && !isReturningToBottom) {
+    nextTracker.headWindowActive = true;
+    nextTracker.headWindowStartVideoTime = (
+      videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
+        ? videoCurrentTime
+        : null
+    );
     nextTracker.topConfirmationHeadFramesEvaluated = 0;
     nextTracker.topConfirmationHeadFramesYes = 0;
+  }
+  if (nextTracker.headWindowActive && headOverWrists !== null) {
+    nextTracker.topConfirmationHeadFramesEvaluated += 1;
+    if (headOverWrists) {
+      nextTracker.topConfirmationHeadFramesYes += 1;
+    }
+    if (nextTracker.pendingRepHeadOverWrists !== null) {
+      nextTracker.pendingRepHeadFramesEvaluated =
+        nextTracker.topConfirmationHeadFramesEvaluated;
+      nextTracker.pendingRepHeadFramesYes =
+        nextTracker.topConfirmationHeadFramesYes;
+      nextTracker.pendingRepHeadOverWrists =
+        nextTracker.pendingRepHeadFramesYes > 0;
+    }
+  }
+  if (hasAtBottomFrame) {
+    nextTracker.suppressNextRepCountUntilBottom = false;
   }
 
   if (!nextTracker.isArmed) {
@@ -395,17 +489,6 @@ export function advancePullupTracker(
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
 
     nextTracker.topFrames = hasReachedTop ? nextTracker.topFrames + 1 : 0;
-    if (hasReachedTop) {
-      if (headOverWrists !== null) {
-        nextTracker.topConfirmationHeadFramesEvaluated += 1;
-        if (headOverWrists) {
-          nextTracker.topConfirmationHeadFramesYes += 1;
-        }
-      }
-    } else {
-      nextTracker.topConfirmationHeadFramesEvaluated = 0;
-      nextTracker.topConfirmationHeadFramesYes = 0;
-    }
     if (nextTracker.topFrames >= 2) {
       nextTracker.phase = 'arriba';
       nextTracker.topFrames = 0;
@@ -455,8 +538,6 @@ export function advancePullupTracker(
         nextTracker.pendingRepHeadFramesEvaluated = 0;
         nextTracker.pendingRepHeadFramesYes = 0;
       }
-      nextTracker.topConfirmationHeadFramesEvaluated = 0;
-      nextTracker.topConfirmationHeadFramesYes = 0;
       nextTracker.event = shoulderRiseAllowsCount
         ? nextTracker.currentRepCorrect ? 'valid' : 'invalid'
         : null;
@@ -465,36 +546,31 @@ export function advancePullupTracker(
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
       nextTracker.currentRepCorrect = isAtBottom;
-      nextTracker.topConfirmationHeadFramesEvaluated = 0;
-      nextTracker.topConfirmationHeadFramesYes = 0;
       completedMinimumAngle = nextTracker.minimumAngle;
       elevationDecision = createPullupElevationDecision(
         nextTracker,
         'descartada-sin-transicion-arriba',
         videoCurrentTime,
       );
+      headWindowVerdict = getPullupHeadWindowVerdict(
+        nextTracker,
+        videoCurrentTime,
+      );
       verdict = {
         repetition: nextTracker.repetitions + 1,
-        headOverWrists: false,
-        headFramesEvaluated: 0,
-        headFramesYes: 0,
+        headOverWrists: (headWindowVerdict?.headFramesYes ?? 0) > 0,
+        headFramesEvaluated: headWindowVerdict?.headFramesEvaluated ?? 0,
+        headFramesYes: headWindowVerdict?.headFramesYes ?? 0,
         bottomReached: isAtBottom,
         correct: false,
         reason: 'no-top-cabeza',
+        headWindowStartVideoTime: headWindowVerdict?.videoCurrentTimeStart ?? null,
+        headWindowEndVideoTime: headWindowVerdict?.videoCurrentTimeEnd ?? null,
       };
+      if (headWindowVerdict) nextTracker = resetPullupHeadWindow(nextTracker);
     }
   } else if (nextTracker.phase === 'arriba') {
     nextTracker.topFrames = 0;
-    if (nextTracker.pendingRepHeadOverWrists !== null) {
-      if (headOverWrists !== null) {
-        nextTracker.pendingRepHeadFramesEvaluated += 1;
-        if (headOverWrists) {
-          nextTracker.pendingRepHeadFramesYes += 1;
-        }
-      }
-      nextTracker.pendingRepHeadOverWrists =
-        nextTracker.pendingRepHeadFramesYes > 0;
-    }
     if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.currentRepCorrect = isAtBottom;
@@ -535,9 +611,11 @@ export function advancePullupTracker(
     const settled = settlePendingPullupRep(nextTracker, {
       bottomReached: false,
       noLockout: true,
+      videoCurrentTime,
     });
     nextTracker = settled.tracker;
     verdict = settled.verdict;
+    headWindowVerdict = settled.headWindowVerdict;
     nextTracker.suppressNextRepCountUntilBottom = true;
   } else if (
     nextTracker.pendingRepHeadOverWrists !== null
@@ -545,9 +623,11 @@ export function advancePullupTracker(
   ) {
     const settled = settlePendingPullupRep(nextTracker, {
       bottomReached: true,
+      videoCurrentTime,
     });
     nextTracker = settled.tracker;
     verdict = settled.verdict;
+    headWindowVerdict = settled.headWindowVerdict;
   } else if (
     nextTracker.pendingRepHeadOverWrists !== null
     && nextTracker.phase === 'subiendo'
@@ -557,10 +637,25 @@ export function advancePullupTracker(
     const settled = settlePendingPullupRep(nextTracker, {
       bottomReached: false,
       noLockout: true,
+      videoCurrentTime,
     });
     nextTracker = settled.tracker;
     verdict = settled.verdict;
+    headWindowVerdict = settled.headWindowVerdict;
     nextTracker.suppressNextRepCountUntilBottom = true;
+  }
+
+  if (
+    !headWindowVerdict
+    && isReturningToBottom
+    && isAtBottomByAngle
+    && nextTracker.pendingRepHeadOverWrists === null
+  ) {
+    headWindowVerdict = getPullupHeadWindowVerdict(
+      nextTracker,
+      videoCurrentTime,
+    );
+    if (headWindowVerdict) nextTracker = resetPullupHeadWindow(nextTracker);
   }
 
   return {
@@ -571,5 +666,165 @@ export function advancePullupTracker(
     hasReachedTop,
     verdict,
     elevationDecision,
+    headWindowVerdict,
+    phaseBefore: tracker.phase,
+  };
+}
+
+function advancePullupFrame(
+  tracker: PullupTracker,
+  frame: PullupPendingAngleJumpFrame,
+) {
+  return advancePullupTrackerFrame(
+    tracker,
+    frame.rawAngle,
+    frame.topReached,
+    frame.headOverWrists,
+    frame.extremities,
+    frame.gripped,
+    frame.config,
+    frame.shoulderAverageY,
+    frame.shoulderSpanPx,
+    frame.videoCurrentTime,
+  );
+}
+
+function createDiscardedAngleJump(
+  frame: PullupPendingAngleJumpFrame,
+  lastAcceptedRawAngle: number,
+): PullupDiscardedAngleJumpFrame {
+  return {
+    videoCurrentTime: frame.videoCurrentTime,
+    rawAngle: frame.rawAngle,
+    lastAcceptedRawAngle,
+    reason: 'no confirmó un cambio sostenido: el siguiente rawAngle no mantuvo el salto >50°',
+  };
+}
+
+export function advancePullupTracker(
+  tracker: PullupTracker,
+  rawAngle: number,
+  topReached: boolean,
+  headOverWrists: boolean | null,
+  extremities: PullupExtremityValidation,
+  gripped: boolean,
+  config: PullupTrackerConfig,
+  shoulderAverageY: number | null = null,
+  shoulderSpanPx: number | null = null,
+  videoCurrentTime: number | null = null,
+): PullupTrackerUpdate {
+  const frame: PullupPendingAngleJumpFrame = {
+    rawAngle,
+    topReached,
+    headOverWrists,
+    extremities,
+    gripped,
+    config,
+    shoulderAverageY,
+    shoulderSpanPx,
+    videoCurrentTime,
+  };
+  const discardedAngleJumpFrames: PullupDiscardedAngleJumpFrame[] = [];
+  let trackerForCurrentFrame = tracker;
+  const pendingFrame = tracker.pendingAngleJumpFrame;
+
+  if (pendingFrame) {
+    const lastAcceptedRawAngle = tracker.lastAcceptedRawAngle;
+    const sustainedChange = lastAcceptedRawAngle !== null
+      && Math.abs(rawAngle - lastAcceptedRawAngle) > 50
+      && Math.abs(rawAngle - pendingFrame.rawAngle) < 20;
+    if (sustainedChange) {
+      const trackerWithoutPending = {
+        ...tracker,
+        pendingAngleJumpFrame: null,
+      };
+      const priorUpdate = advancePullupFrame(trackerWithoutPending, pendingFrame);
+      const priorAcceptedTracker: PullupTracker = {
+        ...priorUpdate.tracker,
+        lastAcceptedRawAngle: pendingFrame.rawAngle,
+        pendingAngleJumpFrame: null,
+      };
+      const currentUpdate = advancePullupFrame(priorAcceptedTracker, frame);
+      return {
+        ...currentUpdate,
+        tracker: {
+          ...currentUpdate.tracker,
+          lastAcceptedRawAngle: rawAngle,
+          pendingAngleJumpFrame: null,
+        },
+        frameAccepted: true,
+        phaseBefore: priorAcceptedTracker.phase,
+        discardedAngleJumpFrames,
+        replayedPriorFrame: {
+          videoCurrentTime: pendingFrame.videoCurrentTime,
+          phaseBefore: tracker.phase,
+          trackerBefore: trackerWithoutPending,
+          tracker: priorAcceptedTracker,
+          smoothedAngle: priorUpdate.smoothedAngle,
+          isAtBottom: priorUpdate.isAtBottom,
+          hasReachedTop: priorUpdate.hasReachedTop,
+          verdict: priorUpdate.verdict,
+          elevationDecision: priorUpdate.elevationDecision,
+          headWindowVerdict: priorUpdate.headWindowVerdict,
+        },
+      };
+    }
+
+    if (lastAcceptedRawAngle !== null) {
+      discardedAngleJumpFrames.push(
+        createDiscardedAngleJump(pendingFrame, lastAcceptedRawAngle),
+      );
+    }
+    trackerForCurrentFrame = {
+      ...tracker,
+      pendingAngleJumpFrame: null,
+    };
+  }
+
+  const currentIsJump = trackerForCurrentFrame.lastAcceptedRawAngle !== null
+    && Math.abs(rawAngle - trackerForCurrentFrame.lastAcceptedRawAngle) > 50;
+  if (currentIsJump) {
+    return {
+      tracker: {
+        ...trackerForCurrentFrame,
+        pendingAngleJumpFrame: frame,
+      },
+      smoothedAngle: trackerForCurrentFrame.lastAngle ?? rawAngle,
+      completedMinimumAngle: null,
+      isAtBottom: false,
+      hasReachedTop: false,
+      verdict: null,
+      frameAccepted: false,
+      phaseBefore: trackerForCurrentFrame.phase,
+      discardedAngleJumpFrames,
+    };
+  }
+
+  const update = advancePullupFrame(trackerForCurrentFrame, frame);
+  return {
+    ...update,
+    tracker: {
+      ...update.tracker,
+      lastAcceptedRawAngle: rawAngle,
+      pendingAngleJumpFrame: null,
+    },
+    frameAccepted: true,
+    phaseBefore: trackerForCurrentFrame.phase,
+    discardedAngleJumpFrames,
+  };
+}
+
+export function discardPendingPullupAngleJumpFrame(tracker: PullupTracker) {
+  const pendingFrame = tracker.pendingAngleJumpFrame;
+  const lastAcceptedRawAngle = tracker.lastAcceptedRawAngle;
+  if (!pendingFrame || lastAcceptedRawAngle === null) {
+    return { tracker, discardedFrame: null };
+  }
+  return {
+    tracker: {
+      ...tracker,
+      pendingAngleJumpFrame: null,
+    },
+    discardedFrame: createDiscardedAngleJump(pendingFrame, lastAcceptedRawAngle),
   };
 }
