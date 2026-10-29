@@ -15959,7 +15959,37 @@ function Home() {
             decision: NonNullable<PullupTrackerUpdate['elevationDecision']>,
             totalBefore: number,
             totalAfter: number,
+            trackerAfter: PullupTracker,
           ) => {
+            const motivo = decision.decision === 'contada'
+              ? 'elevacion-superada'
+              : decision.decision.slice('descartada-'.length);
+            const tiempoDesdeUltimoFondo = (
+              decision.videoCurrentTimeAtDecision !== null
+              && decision.videoCurrentTimeAtLastBottom !== null
+              && Number.isFinite(decision.videoCurrentTimeAtDecision)
+              && Number.isFinite(decision.videoCurrentTimeAtLastBottom)
+            )
+              ? decision.videoCurrentTimeAtDecision - decision.videoCurrentTimeAtLastBottom
+              : null;
+            const pendingRepetitions = trackerAfter.pendingRepHeadOverWrists === null ? 0 : 1;
+            console.log(`[dominadas-candidato] ${JSON.stringify({
+              t: decision.videoCurrentTimeAtDecision,
+              decision: decision.decision,
+              motivo,
+              shoulderRise: decision.shoulderRise,
+              shoulderRiseRatio: decision.shoulderRiseRatio,
+              shoulderSpanPx: decision.shoulderSpanPx,
+              tiempoDesdeUltimoFondo,
+              anguloCodoMin: trackerAfter.minimumAngle,
+              cabezaSobreMunecasFrames: decision.veredictoCabeza?.headFramesYes ?? 0,
+              total: trackerAfter.repetitions,
+              correctas: trackerAfter.goodRepetitions,
+              incorrectas: Math.max(
+                0,
+                trackerAfter.repetitions - trackerAfter.goodRepetitions - pendingRepetitions,
+              ),
+            })}`);
             console.log(`[dominadas-elevacion-decision] ${JSON.stringify({
               videoCurrentTime: decision.videoCurrentTimeAtDecision,
               totalBefore,
@@ -15994,6 +16024,7 @@ function Home() {
                 replayedPriorFrame.elevationDecision,
                 replayedPriorFrame.trackerBefore.repetitions,
                 replayedPriorFrame.tracker.repetitions,
+                replayedPriorFrame.tracker,
               );
             }
             if (replayedPriorFrame.headWindowVerdict) {
@@ -16018,6 +16049,7 @@ function Home() {
               pullupUpdate.elevationDecision,
               trackerBeforeFrame.repetitions,
               pullupUpdate.tracker.repetitions,
+              pullupUpdate.tracker,
             );
           }
           if (pullupUpdate.headWindowVerdict) {
@@ -25086,6 +25118,23 @@ function Home() {
         decisiones: [...diagnosticMemory.decisions],
         cuadros: [...diagnosticMemory.frames],
       };
+      const dominadasResumen = {
+        total: tracker.repetitions,
+        correctas: tracker.goodRepetitions,
+        incorrectas: Math.max(0, tracker.repetitions - tracker.goodRepetitions),
+        candidatos: diagnosticMemory.decisions.map((decision) => ({
+          t: decision.videoCurrentTimeAtDecision,
+          decision: decision.decision,
+          motivo: decision.decision === 'contada'
+            ? 'elevacion-superada'
+            : decision.decision.slice('descartada-'.length),
+          shoulderRiseRatio: decision.shoulderRiseRatio,
+        })),
+      };
+      (window as Window & {
+        __dominadasResumen?: typeof dominadasResumen;
+      }).__dominadasResumen = dominadasResumen;
+      console.log(`[dominadas-resumen] ${JSON.stringify(dominadasResumen)}`);
       (window as Window & {
         __dominadasDiagnostico?: PullupDiagnosticReport;
       }).__dominadasDiagnostico = diagnosticReport;
