@@ -15963,7 +15963,9 @@ function Home() {
           ) => {
             const motivo = decision.decision === 'contada'
               ? 'elevacion-superada'
-              : decision.decision.slice('descartada-'.length);
+              : decision.decision === 'media-repeticion'
+                ? 'media-repeticion'
+                : decision.decision.slice('descartada-'.length);
             const tiempoDesdeUltimoFondo = (
               decision.videoCurrentTimeAtDecision !== null
               && decision.videoCurrentTimeAtLastBottom !== null
@@ -15973,12 +15975,30 @@ function Home() {
               ? decision.videoCurrentTimeAtDecision - decision.videoCurrentTimeAtLastBottom
               : null;
             const pendingRepetitions = trackerAfter.pendingRepHeadOverWrists === null ? 0 : 1;
+            const partial = decision.decision === 'media-repeticion';
+            const headFramesEvaluated = decision.veredictoCabeza?.headFramesEvaluated ?? 0;
+            const headFramesYes = decision.veredictoCabeza?.headFramesYes ?? 0;
             console.log(`[dominadas-candidato] ${JSON.stringify({
               t: decision.videoCurrentTimeAtDecision,
               decision: decision.decision,
               motivo,
               shoulderRise: decision.shoulderRise,
               shoulderRiseRatio: decision.shoulderRiseRatio,
+              ratioHombros: decision.shoulderRiseRatio,
+              elevacionSuficiente: decision.elevationSufficient,
+              sobrePisoRuido: decision.aboveNoiseFloor,
+              cabezaSobreMuñecas: headFramesYes > 0,
+              cuadrosCabezaEvaluados: headFramesEvaluated,
+              cuadrosCabezaSi: headFramesYes,
+              fondoAlcanzado: null,
+              noLockout: null,
+              sessionEnded: false,
+              partial,
+              correcta: null,
+              totalAntes: totalBefore,
+              totalDespues: totalAfter,
+              correctasAntes: trackerAfter.goodRepetitions,
+              correctasDespues: trackerAfter.goodRepetitions,
               shoulderSpanPx: decision.shoulderSpanPx,
               tiempoDesdeUltimoFondo,
               anguloCodoMin: trackerAfter.minimumAngle,
@@ -15990,6 +16010,16 @@ function Home() {
                 trackerAfter.repetitions - trackerAfter.goodRepetitions - pendingRepetitions,
               ),
             })}`);
+            if (partial) {
+              console.log(`[dominadas-media-repeticion] ${JSON.stringify({
+                t: decision.videoCurrentTimeAtDecision,
+                ratioHombros: decision.shoulderRiseRatio,
+                totalAntes: totalBefore,
+                totalDespues: totalAfter,
+                partial: true,
+                motivo,
+              })}`);
+            }
             console.log(`[dominadas-elevacion-decision] ${JSON.stringify({
               videoCurrentTime: decision.videoCurrentTimeAtDecision,
               totalBefore,
@@ -16322,6 +16352,12 @@ function Home() {
               : isSupinePullup
               ? `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}° · agarre supino.`
               : `Cabeza sobre ambas muñecas · codos completamente extendidos entre ${PULLUP_BOTTOM_MIN_ANGLE}–${PULLUP_BOTTOM_MAX_ANGLE}°.`,
+          });
+        } else if (pullupUpdate.verdict?.partial) {
+          setPullupFeedback({
+            tone: 'warning',
+            message: 'Repetición incompleta: EVALUADA',
+            detail: 'No subiste lo suficiente. No suma como correcta.',
           });
         } else if (pullupUpdate.verdict && pullupUpdate.tracker.event === 'invalid') {
           setPullupFeedback({
@@ -25127,7 +25163,9 @@ function Home() {
           decision: decision.decision,
           motivo: decision.decision === 'contada'
             ? 'elevacion-superada'
-            : decision.decision.slice('descartada-'.length),
+            : decision.decision === 'media-repeticion'
+              ? 'media-repeticion'
+              : decision.decision.slice('descartada-'.length),
           shoulderRiseRatio: decision.shoulderRiseRatio,
         })),
       };

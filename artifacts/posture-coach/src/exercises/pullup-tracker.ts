@@ -1,6 +1,7 @@
 import { ANGLE_DISPLAY_SAMPLES } from '@/constants/base';
 import {
   PULLUP_MIN_SHOULDER_RISE_RATIO,
+  PULLUP_PARTIAL_REP_MIN_RISE_RATIO,
   STANDARD_PULLUP_TRACKER_CONFIG,
 } from '@/constants/pullup';
 import { sideKeypoints } from '@/constants/side-keypoints';
@@ -41,6 +42,7 @@ export function createPullupTracker(): PullupTracker {
     bottomReadyFrames: 0,
     isArmed: false,
     pendingRepHeadOverWrists: null,
+    pendingRepPartial: false,
     topConfirmationHeadFramesEvaluated: 0,
     topConfirmationHeadFramesYes: 0,
     pendingRepHeadFramesEvaluated: 0,
@@ -87,6 +89,7 @@ function createPullupElevationDecision(
   decision: PullupElevationDecisionLabel,
   videoCurrentTime: number | null,
 ): NonNullable<PullupTrackerUpdate['elevationDecision']> {
+  const shoulderRiseMeasurement = getPullupShoulderRiseMeasurement(tracker);
   const veredictoCabeza = getPullupHeadWindowVerdict(tracker, videoCurrentTime) ?? {
     correct: false,
     reason: 'no-top-cabeza' as const,
@@ -101,12 +104,16 @@ function createPullupElevationDecision(
   };
   return {
     decision,
-    ...getPullupShoulderRiseMeasurement(tracker),
+    ...shoulderRiseMeasurement,
     shoulderYAtLastBottom: tracker.shoulderYAtLastBottom,
     shoulderYMinSinceBottom: tracker.shoulderYMinSinceBottom,
     videoCurrentTimeAtLastBottom: tracker.videoCurrentTimeAtLastBottom,
     headWindowStartVideoTime: tracker.headWindowStartVideoTime,
     veredictoCabeza,
+    elevationSufficient: shoulderRiseMeasurement.shoulderRiseRatio !== null
+      && shoulderRiseMeasurement.shoulderRiseRatio >= PULLUP_MIN_SHOULDER_RISE_RATIO,
+    aboveNoiseFloor: shoulderRiseMeasurement.shoulderRiseRatio !== null
+      && shoulderRiseMeasurement.shoulderRiseRatio >= PULLUP_PARTIAL_REP_MIN_RISE_RATIO,
     videoCurrentTimeAtDecision: (
       videoCurrentTime !== null && Number.isFinite(videoCurrentTime)
         ? videoCurrentTime
@@ -240,10 +247,19 @@ export function settlePendingPullupRep(
   const headFramesYes = headWindowVerdict?.headFramesYes
     ?? tracker.pendingRepHeadFramesYes;
   const headOverWrists = headFramesYes > 0;
+  const { shoulderRiseRatio } = getPullupShoulderRiseMeasurement(tracker);
+  const elevationSufficient = shoulderRiseRatio !== null
+    && shoulderRiseRatio >= PULLUP_MIN_SHOULDER_RISE_RATIO;
+  const aboveNoiseFloor = shoulderRiseRatio !== null
+    && shoulderRiseRatio >= PULLUP_PARTIAL_REP_MIN_RISE_RATIO;
+  const partial = tracker.pendingRepPartial;
   const correct = !options.noLockout
     && headOverWrists
-    && (options.bottomReached || options.sessionEnded === true);
-  const reason = options.noLockout
+    && (options.bottomReached || options.sessionEnded === true)
+    && !partial;
+  const reason = partial
+    ? 'media-repeticion'
+    : options.noLockout
     ? 'no-lockout'
     : !headOverWrists
       ? 'no-top-cabeza'
@@ -253,6 +269,7 @@ export function settlePendingPullupRep(
   const nextTracker: PullupTracker = {
     ...tracker,
     pendingRepHeadOverWrists: null,
+    pendingRepPartial: false,
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     currentRepCorrect: correct,
@@ -273,6 +290,16 @@ export function settlePendingPullupRep(
       reason,
       headWindowStartVideoTime: headWindowVerdict?.videoCurrentTimeStart ?? null,
       headWindowEndVideoTime: headWindowVerdict?.videoCurrentTimeEnd ?? null,
+      shoulderRiseRatio,
+      elevationSufficient,
+      aboveNoiseFloor,
+      noLockout: options.noLockout === true,
+      sessionEnded: options.sessionEnded === true,
+      partial,
+      totalBefore: Math.max(0, tracker.repetitions - 1),
+      totalAfter: tracker.repetitions,
+      goodBefore: tracker.goodRepetitions,
+      goodAfter: tracker.goodRepetitions + (correct ? 1 : 0),
     },
     headWindowVerdict,
   };
@@ -285,6 +312,9 @@ export function logPullupVerdict(
 ) {
   if (!isStandardOrSupinePullup(exercise) && !isCommandPullup(exercise)) return;
 
+  const formatFlag = (value: boolean | undefined) => (
+    value === undefined ? '—' : value ? 'sí' : 'no'
+  );
   console.log(
     `[pullup-veredicto] ejercicio=${exercise} `
     + (isCommandPullup(exercise) && measuredSide !== null
@@ -295,8 +325,20 @@ export function logPullupVerdict(
     + `cuadrosCabezaEvaluados=${verdict.headFramesEvaluated} `
     + `cuadrosCabezaSi=${verdict.headFramesYes} `
     + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
+    + `ratioHombros=${verdict.shoulderRiseRatio ?? '—'} `
+    + `elevacionSuficiente=${formatFlag(verdict.elevationSufficient)} `
+    + `sobrePisoRuido=${formatFlag(verdict.aboveNoiseFloor)} `
+    + `fondoAlcanzado=${verdict.bottomReached ? 'sí' : 'no'} `
+    + `noLockout=${formatFlag(verdict.noLockout)} `
+    + `sessionEnded=${formatFlag(verdict.sessionEnded)} `
+    + `partial=${formatFlag(verdict.partial)} `
     + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
-    + `motivo=${verdict.reason}`,
+    + `correcta=${verdict.correct ? 'sí' : 'no'} `
+    + `motivo=${verdict.reason} `
+    + `totalAntes=${verdict.totalBefore ?? '—'} `
+    + `totalDespues=${verdict.totalAfter ?? '—'} `
+    + `correctasAntes=${verdict.goodBefore ?? '—'} `
+    + `correctasDespues=${verdict.goodAfter ?? '—'}`,
   );
 }
 
@@ -510,7 +552,9 @@ function advancePullupTrackerFrame(
           : !hasShoulderRiseMeasurements
             ? 'descartada-sin-datos-hombros'
             : shoulderRiseRatio! < PULLUP_MIN_SHOULDER_RISE_RATIO
-              ? 'descartada-sin-elevacion'
+              ? shoulderRiseRatio! >= PULLUP_PARTIAL_REP_MIN_RISE_RATIO
+                ? 'media-repeticion'
+                : 'descartada-sin-elevacion'
               : 'contada';
       elevationDecision = createPullupElevationDecision(
         nextTracker,
@@ -519,7 +563,8 @@ function advancePullupTrackerFrame(
       );
       nextTracker.hasConfirmedTop = true;
       nextTracker.hasBottomSinceLastTop = false;
-      const shoulderRiseAllowsCount = decision === 'contada';
+      const shoulderRiseAllowsCount = decision === 'contada'
+        || decision === 'media-repeticion';
       if (!nextTracker.suppressNextRepCountUntilBottom) {
         if (shoulderRiseAllowsCount) {
           nextTracker.repetitions += 1;
@@ -529,12 +574,17 @@ function advancePullupTrackerFrame(
             nextTracker.topConfirmationHeadFramesYes;
           nextTracker.pendingRepHeadOverWrists =
             nextTracker.pendingRepHeadFramesYes > 0;
+          nextTracker.pendingRepPartial = decision === 'media-repeticion';
+          if (nextTracker.pendingRepPartial) {
+            nextTracker.currentRepCorrect = false;
+          }
         } else {
           nextTracker.currentRepCorrect = false;
         }
       } else {
         nextTracker.currentRepCorrect = false;
         nextTracker.pendingRepHeadOverWrists = null;
+        nextTracker.pendingRepPartial = false;
         nextTracker.pendingRepHeadFramesEvaluated = 0;
         nextTracker.pendingRepHeadFramesYes = 0;
       }

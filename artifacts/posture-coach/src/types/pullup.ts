@@ -2,6 +2,7 @@ import type { PullupTracker } from './tracking';
 
 export type PullupElevationDecisionLabel =
   | 'contada'
+  | 'media-repeticion'
   | 'descartada-sin-fase-abajo'
   | 'descartada-sin-regreso-abajo'
   | 'descartada-sin-datos-hombros'
@@ -13,6 +14,8 @@ export type PullupElevationDecision = {
   shoulderRise: number | null;
   shoulderRiseRatio: number | null;
   shoulderSpanPx: number | null;
+  elevationSufficient: boolean;
+  aboveNoiseFloor: boolean;
   shoulderYAtLastBottom: number | null;
   shoulderYMinSinceBottom: number | null;
   videoCurrentTimeAtLastBottom: number | null;
@@ -70,9 +73,19 @@ export type PullupRepVerdict = {
   headFramesYes: number;
   bottomReached: boolean;
   correct: boolean;
-  reason: 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | 'ok';
+  reason: 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | 'media-repeticion' | 'ok';
   headWindowStartVideoTime: number | null;
   headWindowEndVideoTime: number | null;
+  shoulderRiseRatio?: number | null;
+  elevationSufficient?: boolean;
+  aboveNoiseFloor?: boolean;
+  noLockout?: boolean;
+  sessionEnded?: boolean;
+  partial?: boolean;
+  totalBefore?: number;
+  totalAfter?: number;
+  goodBefore?: number;
+  goodAfter?: number;
 };
 
 export type PullupExtremityValidation = {
