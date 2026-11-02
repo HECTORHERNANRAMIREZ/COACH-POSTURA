@@ -9737,6 +9737,12 @@ function logPicaRangosFinal(
 }
 
 function Home() {
+  const diagnosticWindow = window as Window & {
+    __dominadasContarDescartadas?: boolean;
+  };
+  if (typeof diagnosticWindow.__dominadasContarDescartadas !== 'boolean') {
+    diagnosticWindow.__dominadasContarDescartadas = false;
+  }
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const detectorFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -15828,6 +15834,10 @@ function Home() {
               };
             })()
           : null;
+        const contarDescartadas = inputModeRef.current === 'video'
+          && (window as Window & {
+            __dominadasContarDescartadas?: boolean;
+          }).__dominadasContarDescartadas === true;
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
@@ -15839,6 +15849,7 @@ function Home() {
           pullupElevationFrame?.avgShoulderY ?? null,
           pullupElevationFrame?.shoulderSpanPx ?? null,
           pullupElevationFrame?.videoTime ?? null,
+          contarDescartadas,
         );
         phaseBeforeUpdate = pullupUpdate.phaseBefore ?? phaseBeforeUpdate;
         const trackerBeforeFrame = pullupUpdate.replayedPriorFrame?.tracker
@@ -15961,7 +15972,11 @@ function Home() {
             totalAfter: number,
             trackerAfter: PullupTracker,
           ) => {
-            const motivo = decision.decision === 'contada'
+            const diagnosticDiscarded = decision.decision === 'descartada-sin-elevacion'
+              && trackerAfter.pendingRepDiscardedDiagnostic;
+            const motivo = diagnosticDiscarded
+              ? 'descartada-diagnostico'
+              : decision.decision === 'contada'
               ? 'elevacion-superada'
               : decision.decision === 'media-repeticion'
                 ? 'media-repeticion'
@@ -15975,7 +15990,7 @@ function Home() {
               ? decision.videoCurrentTimeAtDecision - decision.videoCurrentTimeAtLastBottom
               : null;
             const pendingRepetitions = trackerAfter.pendingRepHeadOverWrists === null ? 0 : 1;
-            const partial = decision.decision === 'media-repeticion';
+            const partial = decision.decision === 'media-repeticion' || diagnosticDiscarded;
             const headFramesEvaluated = decision.veredictoCabeza?.headFramesEvaluated ?? 0;
             const headFramesYes = decision.veredictoCabeza?.headFramesYes ?? 0;
             console.log(`[dominadas-candidato] ${JSON.stringify({
@@ -16010,7 +16025,7 @@ function Home() {
                 trackerAfter.repetitions - trackerAfter.goodRepetitions - pendingRepetitions,
               ),
             })}`);
-            if (partial) {
+            if (decision.decision === 'media-repeticion') {
               console.log(`[dominadas-media-repeticion] ${JSON.stringify({
                 t: decision.videoCurrentTimeAtDecision,
                 ratioHombros: decision.shoulderRiseRatio,
@@ -16018,6 +16033,21 @@ function Home() {
                 totalDespues: totalAfter,
                 partial: true,
                 motivo,
+              })}`);
+            }
+            if (diagnosticDiscarded) {
+              console.log(`[dominadas-descartada-contada] ${JSON.stringify({
+                t: decision.videoCurrentTimeAtDecision,
+                ratioHombros: decision.shoulderRiseRatio,
+                anguloCodoMin: trackerAfter.minimumAngle,
+                cuadrosCabezaSi: headFramesYes,
+                cuadrosCabezaEvaluados: headFramesEvaluated,
+                totalAntes: totalBefore,
+                totalDespues: totalAfter,
+                incorrectasDespues: Math.max(
+                  0,
+                  trackerAfter.repetitions - trackerAfter.goodRepetitions,
+                ),
               })}`);
             }
             console.log(`[dominadas-elevacion-decision] ${JSON.stringify({
@@ -23198,6 +23228,15 @@ function Home() {
   );
   const handleVideoPlay = useCallback(() => {
     if (inputModeRef.current !== 'video') return;
+    if (
+      isStandardOrSupinePullup(selectedExerciseRef.current)
+      || isCommandPullup(selectedExerciseRef.current)
+    ) {
+      const contarDescartadas = (window as Window & {
+        __dominadasContarDescartadas?: boolean;
+      }).__dominadasContarDescartadas === true;
+      console.log(`[dominadas-interruptor] ${JSON.stringify({ contarDescartadas })}`);
+    }
     const video = videoRef.current;
     if (
       selectedExerciseRef.current === 'muscle-up'
@@ -25158,6 +25197,9 @@ function Home() {
         total: tracker.repetitions,
         correctas: tracker.goodRepetitions,
         incorrectas: Math.max(0, tracker.repetitions - tracker.goodRepetitions),
+        contarDescartadas: (window as Window & {
+          __dominadasContarDescartadas?: boolean;
+        }).__dominadasContarDescartadas === true,
         candidatos: diagnosticMemory.decisions.map((decision) => ({
           t: decision.videoCurrentTimeAtDecision,
           decision: decision.decision,

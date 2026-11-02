@@ -68,6 +68,7 @@ export type PullupTracker = {
   isArmed: boolean;
   pendingRepHeadOverWrists: boolean | null;
   pendingRepPartial: boolean;
+  pendingRepDiscardedDiagnostic: boolean;
   topConfirmationHeadFramesEvaluated: number;
   topConfirmationHeadFramesYes: number;
   pendingRepHeadFramesEvaluated: number;

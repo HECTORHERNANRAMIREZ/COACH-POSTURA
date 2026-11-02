@@ -43,6 +43,7 @@ export function createPullupTracker(): PullupTracker {
     isArmed: false,
     pendingRepHeadOverWrists: null,
     pendingRepPartial: false,
+    pendingRepDiscardedDiagnostic: false,
     topConfirmationHeadFramesEvaluated: 0,
     topConfirmationHeadFramesYes: 0,
     pendingRepHeadFramesEvaluated: 0,
@@ -253,11 +254,14 @@ export function settlePendingPullupRep(
   const aboveNoiseFloor = shoulderRiseRatio !== null
     && shoulderRiseRatio >= PULLUP_PARTIAL_REP_MIN_RISE_RATIO;
   const partial = tracker.pendingRepPartial;
+  const diagnosticDiscarded = tracker.pendingRepDiscardedDiagnostic;
   const correct = !options.noLockout
     && headOverWrists
     && (options.bottomReached || options.sessionEnded === true)
     && !partial;
-  const reason = partial
+  const reason = diagnosticDiscarded
+    ? 'descartada-diagnostico'
+    : partial
     ? 'media-repeticion'
     : options.noLockout
     ? 'no-lockout'
@@ -270,6 +274,7 @@ export function settlePendingPullupRep(
     ...tracker,
     pendingRepHeadOverWrists: null,
     pendingRepPartial: false,
+    pendingRepDiscardedDiagnostic: false,
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     currentRepCorrect: correct,
@@ -397,6 +402,7 @@ function advancePullupTrackerFrame(
   shoulderAverageY: number | null = null,
   shoulderSpanPx: number | null = null,
   videoCurrentTime: number | null = null,
+  countDiscardedForDiagnostics = false,
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
   const smoothedAngle = median(samples);
@@ -564,7 +570,13 @@ function advancePullupTrackerFrame(
       nextTracker.hasConfirmedTop = true;
       nextTracker.hasBottomSinceLastTop = false;
       const shoulderRiseAllowsCount = decision === 'contada'
-        || decision === 'media-repeticion';
+        || decision === 'media-repeticion'
+        || (
+          decision === 'descartada-sin-elevacion'
+          && countDiscardedForDiagnostics
+        );
+      const diagnosticDiscarded = decision === 'descartada-sin-elevacion'
+        && countDiscardedForDiagnostics;
       if (!nextTracker.suppressNextRepCountUntilBottom) {
         if (shoulderRiseAllowsCount) {
           nextTracker.repetitions += 1;
@@ -574,7 +586,9 @@ function advancePullupTrackerFrame(
             nextTracker.topConfirmationHeadFramesYes;
           nextTracker.pendingRepHeadOverWrists =
             nextTracker.pendingRepHeadFramesYes > 0;
-          nextTracker.pendingRepPartial = decision === 'media-repeticion';
+          nextTracker.pendingRepPartial = decision === 'media-repeticion'
+            || diagnosticDiscarded;
+          nextTracker.pendingRepDiscardedDiagnostic = diagnosticDiscarded;
           if (nextTracker.pendingRepPartial) {
             nextTracker.currentRepCorrect = false;
           }
@@ -585,6 +599,7 @@ function advancePullupTrackerFrame(
         nextTracker.currentRepCorrect = false;
         nextTracker.pendingRepHeadOverWrists = null;
         nextTracker.pendingRepPartial = false;
+        nextTracker.pendingRepDiscardedDiagnostic = false;
         nextTracker.pendingRepHeadFramesEvaluated = 0;
         nextTracker.pendingRepHeadFramesYes = 0;
       }
@@ -724,6 +739,7 @@ function advancePullupTrackerFrame(
 function advancePullupFrame(
   tracker: PullupTracker,
   frame: PullupPendingAngleJumpFrame,
+  countDiscardedForDiagnostics: boolean,
 ) {
   return advancePullupTrackerFrame(
     tracker,
@@ -736,6 +752,7 @@ function advancePullupFrame(
     frame.shoulderAverageY,
     frame.shoulderSpanPx,
     frame.videoCurrentTime,
+    countDiscardedForDiagnostics,
   );
 }
 
@@ -762,6 +779,7 @@ export function advancePullupTracker(
   shoulderAverageY: number | null = null,
   shoulderSpanPx: number | null = null,
   videoCurrentTime: number | null = null,
+  countDiscardedForDiagnostics = false,
 ): PullupTrackerUpdate {
   const frame: PullupPendingAngleJumpFrame = {
     rawAngle,
@@ -788,13 +806,21 @@ export function advancePullupTracker(
         ...tracker,
         pendingAngleJumpFrame: null,
       };
-      const priorUpdate = advancePullupFrame(trackerWithoutPending, pendingFrame);
+      const priorUpdate = advancePullupFrame(
+        trackerWithoutPending,
+        pendingFrame,
+        countDiscardedForDiagnostics,
+      );
       const priorAcceptedTracker: PullupTracker = {
         ...priorUpdate.tracker,
         lastAcceptedRawAngle: pendingFrame.rawAngle,
         pendingAngleJumpFrame: null,
       };
-      const currentUpdate = advancePullupFrame(priorAcceptedTracker, frame);
+      const currentUpdate = advancePullupFrame(
+        priorAcceptedTracker,
+        frame,
+        countDiscardedForDiagnostics,
+      );
       return {
         ...currentUpdate,
         tracker: {
@@ -850,7 +876,11 @@ export function advancePullupTracker(
     };
   }
 
-  const update = advancePullupFrame(trackerForCurrentFrame, frame);
+  const update = advancePullupFrame(
+    trackerForCurrentFrame,
+    frame,
+    countDiscardedForDiagnostics,
+  );
   return {
     ...update,
     tracker: {

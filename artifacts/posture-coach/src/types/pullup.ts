@@ -73,7 +73,13 @@ export type PullupRepVerdict = {
   headFramesYes: number;
   bottomReached: boolean;
   correct: boolean;
-  reason: 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | 'media-repeticion' | 'ok';
+  reason:
+    | 'no-top-cabeza'
+    | 'no-fondo'
+    | 'no-lockout'
+    | 'media-repeticion'
+    | 'descartada-diagnostico'
+    | 'ok';
   headWindowStartVideoTime: number | null;
   headWindowEndVideoTime: number | null;
   shoulderRiseRatio?: number | null;
