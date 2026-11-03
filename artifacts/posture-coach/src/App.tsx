@@ -638,7 +638,16 @@ function logUploadedDipDiagnostic(message: string) {
     uploadedDipDiagnosticLogLines.splice(0, uploadedDipDiagnosticLogStartIndex);
     uploadedDipDiagnosticLogStartIndex = 0;
   }
-  console.log(line);
+  if (
+    !line.startsWith('[dominadas-video]')
+    || (
+      !line.includes(' búsqueda segundosVálidos=')
+      && !line.includes(' hueco tolerado ')
+    )
+    || (window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true
+  ) {
+    console.log(line);
+  }
 }
 
 // TEMP-DIAGNOSTICO: ordena el buffer circular truncado al preparar descargarLogFondos().
@@ -10080,7 +10089,7 @@ function Home() {
             );
           }
         } else if (!closedSearchGap.reset) {
-          console.log(
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log(
             `[dominadas-video] ejercicio=${exercise} t=${videoTime.toFixed(2)}s hueco tolerado `
             + `duración=${gapDurationSeconds.toFixed(2)}s `
             + `segundosVálidos=${(uploadedPullupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/${(requiredHoldMs / 1000).toFixed(2)} `
@@ -13907,7 +13916,7 @@ function Home() {
           )
         ) {
           uploadedPullupToleratedFrameLastLoggedVideoTimeRef.current = video.currentTime;
-          console.log(
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log(
             `[dominadas-tolerado] ${JSON.stringify({
               tVideo: video.currentTime.toFixed(3),
               ejercicio: selectedExerciseForFrame,
@@ -14004,7 +14013,7 @@ function Home() {
               fresca: isFreshPullupMeasurementPoint(point),
             };
           });
-          console.log(
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log(
             `[dominadas-cuadro-bloqueado] ${JSON.stringify({
               tVideo: video.currentTime.toFixed(3),
               motivos: invalidReasons,
@@ -16244,7 +16253,7 @@ function Home() {
               && rightWristBelowShoulderMargin === true
               && leftWristBelowHead === true
               && rightWristBelowHead === true;
-          console.log(`[dominadas-final] ${JSON.stringify({
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log(`[dominadas-final] ${JSON.stringify({
             currentTime: video.currentTime,
             duration: video.duration,
             ended: video.ended,
@@ -17521,8 +17530,8 @@ function Home() {
           );
         }
         if (now - lastPullupDiagnosticLogAtRef.current >= 500) {
-          console.log('[view-diagnostics]', viewDiagnosticSnapshot);
-          console.log('[pullup-diagnostics]', diagnosticSnapshot);
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log('[view-diagnostics]', viewDiagnosticSnapshot);
+          if ((window as Window & { __dominadasLogsRuido?: boolean }).__dominadasLogsRuido === true) console.log('[pullup-diagnostics]', diagnosticSnapshot);
           lastPullupDiagnosticLogAtRef.current = now;
         }
       }
@@ -24116,6 +24125,9 @@ function Home() {
           );
         }
         if (isUploadedPullupVideo) {
+          console.log(
+            '[dominadas-consola] {"logsRuido":false,"nota":"activar con window.__dominadasLogsRuido = true"}',
+          );
           console.log(
             `[dominadas-video] ejercicio=${activeExercise} t=${video.currentTime.toFixed(2)}s subida `
             + `nombre=${JSON.stringify(videoFile.name)} `
