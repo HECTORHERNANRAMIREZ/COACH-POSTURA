@@ -336,6 +336,7 @@ import {
   settlePendingPullupRep,
   smoothAngleReading,
 } from '@/exercises/pullup-tracker';
+import { getPullupIncorrectRulesConfiguration } from '@/exercises/pullup-incorrect-rules';
 import {
   advanceExerciseRepTracker,
   createExerciseRepTracker,
@@ -15850,6 +15851,7 @@ function Home() {
           pullupElevationFrame?.shoulderSpanPx ?? null,
           pullupElevationFrame?.videoTime ?? null,
           contarDescartadas,
+          viewAlignmentRef.current.estimatedView,
         );
         phaseBeforeUpdate = pullupUpdate.phaseBefore ?? phaseBeforeUpdate;
         const trackerBeforeFrame = pullupUpdate.replayedPriorFrame?.tracker
@@ -15972,15 +15974,17 @@ function Home() {
             totalAfter: number,
             trackerAfter: PullupTracker,
           ) => {
+            const incorrectRule = decision.incorrectRule;
             const diagnosticDiscarded = decision.decision === 'descartada-sin-elevacion'
               && trackerAfter.pendingRepDiscardedDiagnostic;
-            const motivo = diagnosticDiscarded
+            const motivo = incorrectRule?.reason
+              ?? (diagnosticDiscarded
               ? 'descartada-diagnostico'
               : decision.decision === 'contada'
-              ? 'elevacion-superada'
-              : decision.decision === 'media-repeticion'
-                ? 'media-repeticion'
-                : decision.decision.slice('descartada-'.length);
+                ? 'elevacion-superada'
+                : decision.decision === 'media-repeticion'
+                  ? 'media-repeticion'
+                  : decision.decision.slice('descartada-'.length));
             const tiempoDesdeUltimoFondo = (
               decision.videoCurrentTimeAtDecision !== null
               && decision.videoCurrentTimeAtLastBottom !== null
@@ -15990,7 +15994,9 @@ function Home() {
               ? decision.videoCurrentTimeAtDecision - decision.videoCurrentTimeAtLastBottom
               : null;
             const pendingRepetitions = trackerAfter.pendingRepHeadOverWrists === null ? 0 : 1;
-            const partial = decision.decision === 'media-repeticion' || diagnosticDiscarded;
+            const partial = decision.decision === 'media-repeticion'
+              || diagnosticDiscarded
+              || incorrectRule !== undefined;
             const headFramesEvaluated = decision.veredictoCabeza?.headFramesEvaluated ?? 0;
             const headFramesYes = decision.veredictoCabeza?.headFramesYes ?? 0;
             console.log(`[dominadas-candidato] ${JSON.stringify({
@@ -16047,6 +16053,29 @@ function Home() {
                 incorrectasDespues: Math.max(
                   0,
                   trackerAfter.repetitions - trackerAfter.goodRepetitions,
+                ),
+              })}`);
+            }
+            if (incorrectRule) {
+              console.log(`[dominadas-incorrecta] ${JSON.stringify({
+                t: decision.videoCurrentTimeAtDecision,
+                regla: incorrectRule.rule,
+                ratioHombros: decision.shoulderRiseRatio,
+                cuadrosCabezaSi: headFramesYes,
+                cuadrosCabezaEvaluados: headFramesEvaluated,
+                anguloCodoMin: trackerAfter.minimumAngle,
+                topeUsado: incorrectRule.topeUsado,
+                topeProvisional: incorrectRule.topeProvisional,
+                margenContraCorrectas: incorrectRule.margenContraCorrectas,
+                totalAntes: totalBefore,
+                totalDespues: totalAfter,
+                incorrectasAntes: Math.max(
+                  0,
+                  totalBefore - trackerAfter.goodRepetitions,
+                ),
+                incorrectasDespues: Math.max(
+                  0,
+                  totalAfter - trackerAfter.goodRepetitions,
                 ),
               })}`);
             }
@@ -23236,6 +23265,27 @@ function Home() {
         __dominadasContarDescartadas?: boolean;
       }).__dominadasContarDescartadas === true;
       console.log(`[dominadas-interruptor] ${JSON.stringify({ contarDescartadas })}`);
+      const incorrectRulesConfiguration = getPullupIncorrectRulesConfiguration();
+      console.log(`[dominadas-incorrectas-config] ${JSON.stringify({
+        PULLUP_INCORRECT_MIN_RISE_RATIO:
+          incorrectRulesConfiguration.incorrectMinRiseRatio,
+        PULLUP_INCORRECT_MAX_RISE_RATIO:
+          incorrectRulesConfiguration.incorrectMaxRiseRatio,
+        PULLUP_INCORRECT_MAX_RISE_RATIO_IS_PROVISIONAL:
+          incorrectRulesConfiguration.incorrectMaxRiseRatioIsProvisional,
+        PULLUP_MIN_SHOULDER_RISE_RATIO:
+          incorrectRulesConfiguration.correctMinShoulderRiseRatio,
+        PULLUP_INCORRECT_MARGIN_AGAINST_CORRECT:
+          incorrectRulesConfiguration.marginAgainstCorrect,
+        vistaEstimada: viewAlignmentRef.current.estimatedView,
+        moduloActivo: incorrectRulesConfiguration.active,
+      })}`);
+      if (!incorrectRulesConfiguration.active) {
+        console.error(
+          '[dominadas-incorrectas-config-error] Se desactivaron las reglas: '
+          + 'el límite incorrecto no mantiene el margen requerido frente a correctas.',
+        );
+      }
     }
     const video = videoRef.current;
     if (
@@ -25173,6 +25223,15 @@ function Home() {
         finalTotal: tracker.repetitions,
       })}`);
       const diagnosticMemory = pullupTrackerDiagnosticsRef.current;
+      const incorrectasModuloPorRegla = diagnosticMemory.decisions.reduce<
+        Record<string, number>
+      >((counts, decision) => {
+        if (decision.incorrectRule) {
+          counts[decision.incorrectRule.rule] =
+            (counts[decision.incorrectRule.rule] ?? 0) + 1;
+        }
+        return counts;
+      }, {});
       const descartadasPorMotivo = diagnosticMemory.decisions.reduce<Record<string, number>>(
         (counts, decision) => {
           if (decision.decision.startsWith('descartada-')) {
@@ -25197,6 +25256,9 @@ function Home() {
         total: tracker.repetitions,
         correctas: tracker.goodRepetitions,
         incorrectas: Math.max(0, tracker.repetitions - tracker.goodRepetitions),
+        incorrectasModulo: Object.values(incorrectasModuloPorRegla)
+          .reduce((total, count) => total + count, 0),
+        incorrectasModuloPorRegla,
         contarDescartadas: (window as Window & {
           __dominadasContarDescartadas?: boolean;
         }).__dominadasContarDescartadas === true,

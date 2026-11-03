@@ -69,6 +69,7 @@ export type PullupTracker = {
   pendingRepHeadOverWrists: boolean | null;
   pendingRepPartial: boolean;
   pendingRepDiscardedDiagnostic: boolean;
+  pendingRepIncorrectReason: 'no-top-cabeza' | null;
   topConfirmationHeadFramesEvaluated: number;
   topConfirmationHeadFramesYes: number;
   pendingRepHeadFramesEvaluated: number;

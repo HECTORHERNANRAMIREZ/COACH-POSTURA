@@ -7,10 +7,20 @@ export type PullupElevationDecisionLabel =
   | 'descartada-sin-regreso-abajo'
   | 'descartada-sin-datos-hombros'
   | 'descartada-sin-elevacion'
+  | 'descartada-fuera-rango-incorrecto'
   | 'descartada-sin-transicion-arriba';
+
+export type PullupIncorrectRuleRecord = {
+  rule: 'R1' | 'R2' | 'R3';
+  reason: 'no-top-cabeza' | 'media-repeticion' | 'descartada-diagnostico';
+  topeUsado: number | null;
+  topeProvisional: boolean;
+  margenContraCorrectas: number;
+};
 
 export type PullupElevationDecision = {
   decision: PullupElevationDecisionLabel;
+  incorrectRule?: PullupIncorrectRuleRecord;
   shoulderRise: number | null;
   shoulderRiseRatio: number | null;
   shoulderSpanPx: number | null;

@@ -8,6 +8,11 @@ import { sideKeypoints } from '@/constants/side-keypoints';
 import { isCommandPullup, isStandardOrSupinePullup } from '@/exercises/guards';
 import { isWithinPullupAngle } from '@/exercises/angle-checks';
 import { calculateAngle } from '@/exercises/point-geometry';
+import {
+  evaluatePullupIncorrectRule,
+  isPullupIncorrectRulesConfigurationSafe,
+  PULLUP_INCORRECT_MAX_RISE_RATIO,
+} from '@/exercises/pullup-incorrect-rules';
 import type { PosePoint } from '@/pose3d';
 import type {
   ExerciseId,
@@ -44,6 +49,7 @@ export function createPullupTracker(): PullupTracker {
     pendingRepHeadOverWrists: null,
     pendingRepPartial: false,
     pendingRepDiscardedDiagnostic: false,
+    pendingRepIncorrectReason: null,
     topConfirmationHeadFramesEvaluated: 0,
     topConfirmationHeadFramesYes: 0,
     pendingRepHeadFramesEvaluated: 0,
@@ -255,12 +261,15 @@ export function settlePendingPullupRep(
     && shoulderRiseRatio >= PULLUP_PARTIAL_REP_MIN_RISE_RATIO;
   const partial = tracker.pendingRepPartial;
   const diagnosticDiscarded = tracker.pendingRepDiscardedDiagnostic;
+  const pendingIncorrectReason = tracker.pendingRepIncorrectReason;
   const correct = !options.noLockout
     && headOverWrists
     && (options.bottomReached || options.sessionEnded === true)
     && !partial;
   const reason = diagnosticDiscarded
     ? 'descartada-diagnostico'
+    : pendingIncorrectReason
+    ? pendingIncorrectReason
     : partial
     ? 'media-repeticion'
     : options.noLockout
@@ -275,6 +284,7 @@ export function settlePendingPullupRep(
     pendingRepHeadOverWrists: null,
     pendingRepPartial: false,
     pendingRepDiscardedDiagnostic: false,
+    pendingRepIncorrectReason: null,
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
     currentRepCorrect: correct,
@@ -403,6 +413,7 @@ function advancePullupTrackerFrame(
   shoulderSpanPx: number | null = null,
   videoCurrentTime: number | null = null,
   countDiscardedForDiagnostics = false,
+  estimatedView = 'unknown',
 ): PullupTrackerUpdate {
   const samples = [...tracker.samples, rawAngle].slice(-config.smoothingSamples);
   const smoothedAngle = median(samples);
@@ -550,7 +561,7 @@ function advancePullupTrackerFrame(
         && bottomShoulderSpanPx !== null
         && Number.isFinite(bottomShoulderSpanPx)
         && bottomShoulderSpanPx > 0;
-      const decision: PullupElevationDecisionLabel = nextTracker.hasConfirmedTop
+      const initialDecision: PullupElevationDecisionLabel = nextTracker.hasConfirmedTop
         && !nextTracker.hasBottomSinceLastTop
         ? 'descartada-sin-regreso-abajo'
         : !nextTracker.hasBottomSinceLastTop
@@ -562,21 +573,48 @@ function advancePullupTrackerFrame(
                 ? 'media-repeticion'
                 : 'descartada-sin-elevacion'
               : 'contada';
+      const isBackView = estimatedView === 'back';
+      const isBackIncorrectRulesActive = isBackView
+        && isPullupIncorrectRulesConfigurationSafe();
+      const decision: PullupElevationDecisionLabel = (
+        isBackIncorrectRulesActive
+        && initialDecision === 'media-repeticion'
+        && shoulderRiseRatio! > PULLUP_INCORRECT_MAX_RISE_RATIO
+      )
+        ? 'descartada-fuera-rango-incorrecto'
+        : initialDecision;
       elevationDecision = createPullupElevationDecision(
         nextTracker,
         decision,
         videoCurrentTime,
       );
+      const candidateIncorrectRule = evaluatePullupIncorrectRule({
+        estimatedView,
+        decision,
+        shoulderRiseRatio,
+        headVerdict: elevationDecision.veredictoCabeza,
+        countDiscardedForDiagnostics,
+      });
+      const incorrectRule = !nextTracker.suppressNextRepCountUntilBottom
+        && nextTracker.pendingRepHeadOverWrists === null
+        ? candidateIncorrectRule
+        : null;
+      if (incorrectRule) {
+        elevationDecision = { ...elevationDecision, incorrectRule };
+      }
       nextTracker.hasConfirmedTop = true;
       nextTracker.hasBottomSinceLastTop = false;
       const shoulderRiseAllowsCount = decision === 'contada'
-        || decision === 'media-repeticion'
-        || (
-          decision === 'descartada-sin-elevacion'
-          && countDiscardedForDiagnostics
-        );
+        || (isBackView
+          ? isBackIncorrectRulesActive && incorrectRule !== null
+          : decision === 'media-repeticion'
+            || (
+              decision === 'descartada-sin-elevacion'
+              && countDiscardedForDiagnostics
+            ));
       const diagnosticDiscarded = decision === 'descartada-sin-elevacion'
-        && countDiscardedForDiagnostics;
+        && countDiscardedForDiagnostics
+        && (!isBackView || incorrectRule?.rule === 'R3');
       if (!nextTracker.suppressNextRepCountUntilBottom) {
         if (shoulderRiseAllowsCount) {
           nextTracker.repetitions += 1;
@@ -587,8 +625,10 @@ function advancePullupTrackerFrame(
           nextTracker.pendingRepHeadOverWrists =
             nextTracker.pendingRepHeadFramesYes > 0;
           nextTracker.pendingRepPartial = decision === 'media-repeticion'
-            || diagnosticDiscarded;
+            || diagnosticDiscarded
+            || incorrectRule !== null;
           nextTracker.pendingRepDiscardedDiagnostic = diagnosticDiscarded;
+          nextTracker.pendingRepIncorrectReason = null;
           if (nextTracker.pendingRepPartial) {
             nextTracker.currentRepCorrect = false;
           }
@@ -600,6 +640,7 @@ function advancePullupTrackerFrame(
         nextTracker.pendingRepHeadOverWrists = null;
         nextTracker.pendingRepPartial = false;
         nextTracker.pendingRepDiscardedDiagnostic = false;
+        nextTracker.pendingRepIncorrectReason = null;
         nextTracker.pendingRepHeadFramesEvaluated = 0;
         nextTracker.pendingRepHeadFramesYes = 0;
       }
@@ -621,8 +662,33 @@ function advancePullupTrackerFrame(
         nextTracker,
         videoCurrentTime,
       );
+      const candidateIncorrectRule = evaluatePullupIncorrectRule({
+        estimatedView,
+        decision: elevationDecision.decision,
+        shoulderRiseRatio: elevationDecision.shoulderRiseRatio,
+        headVerdict: elevationDecision.veredictoCabeza,
+        countDiscardedForDiagnostics,
+      });
+      const incorrectRule = candidateIncorrectRule
+        && !nextTracker.suppressNextRepCountUntilBottom
+        && nextTracker.pendingRepHeadOverWrists === null
+        ? candidateIncorrectRule
+        : null;
+      if (incorrectRule) {
+        elevationDecision = { ...elevationDecision, incorrectRule };
+        nextTracker.repetitions += 1;
+        nextTracker.pendingRepHeadFramesEvaluated =
+          headWindowVerdict?.headFramesEvaluated ?? 0;
+        nextTracker.pendingRepHeadFramesYes =
+          headWindowVerdict?.headFramesYes ?? 0;
+        nextTracker.pendingRepHeadOverWrists = false;
+        nextTracker.pendingRepPartial = true;
+        nextTracker.pendingRepDiscardedDiagnostic = false;
+        nextTracker.pendingRepIncorrectReason = 'no-top-cabeza';
+        nextTracker.currentRepCorrect = false;
+      }
       verdict = {
-        repetition: nextTracker.repetitions + 1,
+        repetition: nextTracker.repetitions + (incorrectRule ? 0 : 1),
         headOverWrists: (headWindowVerdict?.headFramesYes ?? 0) > 0,
         headFramesEvaluated: headWindowVerdict?.headFramesEvaluated ?? 0,
         headFramesYes: headWindowVerdict?.headFramesYes ?? 0,
@@ -740,6 +806,7 @@ function advancePullupFrame(
   tracker: PullupTracker,
   frame: PullupPendingAngleJumpFrame,
   countDiscardedForDiagnostics: boolean,
+  estimatedView: string,
 ) {
   return advancePullupTrackerFrame(
     tracker,
@@ -753,6 +820,7 @@ function advancePullupFrame(
     frame.shoulderSpanPx,
     frame.videoCurrentTime,
     countDiscardedForDiagnostics,
+    estimatedView,
   );
 }
 
@@ -780,6 +848,7 @@ export function advancePullupTracker(
   shoulderSpanPx: number | null = null,
   videoCurrentTime: number | null = null,
   countDiscardedForDiagnostics = false,
+  estimatedView = 'unknown',
 ): PullupTrackerUpdate {
   const frame: PullupPendingAngleJumpFrame = {
     rawAngle,
@@ -810,6 +879,7 @@ export function advancePullupTracker(
         trackerWithoutPending,
         pendingFrame,
         countDiscardedForDiagnostics,
+        estimatedView,
       );
       const priorAcceptedTracker: PullupTracker = {
         ...priorUpdate.tracker,
@@ -820,6 +890,7 @@ export function advancePullupTracker(
         priorAcceptedTracker,
         frame,
         countDiscardedForDiagnostics,
+        estimatedView,
       );
       return {
         ...currentUpdate,
@@ -880,6 +951,7 @@ export function advancePullupTracker(
     trackerForCurrentFrame,
     frame,
     countDiscardedForDiagnostics,
+    estimatedView,
   );
   return {
     ...update,
