@@ -16060,6 +16060,7 @@ function Home() {
               console.log(`[dominadas-incorrecta] ${JSON.stringify({
                 t: decision.videoCurrentTimeAtDecision,
                 regla: incorrectRule.rule,
+                origenVeredicto: 'global',
                 ratioHombros: decision.shoulderRiseRatio,
                 cuadrosCabezaSi: headFramesYes,
                 cuadrosCabezaEvaluados: headFramesEvaluated,

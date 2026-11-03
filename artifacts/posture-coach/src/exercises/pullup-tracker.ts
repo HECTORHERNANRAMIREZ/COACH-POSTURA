@@ -662,11 +662,25 @@ function advancePullupTrackerFrame(
         nextTracker,
         videoCurrentTime,
       );
+      const candidateVerdict: PullupRepVerdict = {
+        repetition: nextTracker.repetitions + 1,
+        headOverWrists: (headWindowVerdict?.headFramesYes ?? 0) > 0,
+        headFramesEvaluated: headWindowVerdict?.headFramesEvaluated ?? 0,
+        headFramesYes: headWindowVerdict?.headFramesYes ?? 0,
+        bottomReached: isAtBottom,
+        correct: false,
+        reason: 'no-top-cabeza',
+        headWindowStartVideoTime: headWindowVerdict?.videoCurrentTimeStart ?? null,
+        headWindowEndVideoTime: headWindowVerdict?.videoCurrentTimeEnd ?? null,
+      };
+      verdict = candidateVerdict;
       const candidateIncorrectRule = evaluatePullupIncorrectRule({
         estimatedView,
         decision: elevationDecision.decision,
         shoulderRiseRatio: elevationDecision.shoulderRiseRatio,
-        headVerdict: elevationDecision.veredictoCabeza,
+        headVerdict: candidateVerdict as unknown as Parameters<
+          typeof evaluatePullupIncorrectRule
+        >[0]['headVerdict'],
         countDiscardedForDiagnostics,
       });
       const incorrectRule = candidateIncorrectRule
@@ -687,17 +701,6 @@ function advancePullupTrackerFrame(
         nextTracker.pendingRepIncorrectReason = 'no-top-cabeza';
         nextTracker.currentRepCorrect = false;
       }
-      verdict = {
-        repetition: nextTracker.repetitions + (incorrectRule ? 0 : 1),
-        headOverWrists: (headWindowVerdict?.headFramesYes ?? 0) > 0,
-        headFramesEvaluated: headWindowVerdict?.headFramesEvaluated ?? 0,
-        headFramesYes: headWindowVerdict?.headFramesYes ?? 0,
-        bottomReached: isAtBottom,
-        correct: false,
-        reason: 'no-top-cabeza',
-        headWindowStartVideoTime: headWindowVerdict?.videoCurrentTimeStart ?? null,
-        headWindowEndVideoTime: headWindowVerdict?.videoCurrentTimeEnd ?? null,
-      };
       if (headWindowVerdict) nextTracker = resetPullupHeadWindow(nextTracker);
     }
   } else if (nextTracker.phase === 'arriba') {
