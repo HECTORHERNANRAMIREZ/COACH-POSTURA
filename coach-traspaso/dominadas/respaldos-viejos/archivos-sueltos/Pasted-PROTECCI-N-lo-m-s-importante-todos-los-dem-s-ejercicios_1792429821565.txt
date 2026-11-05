@@ -1,0 +1,11 @@
+PROTECCIÓN (lo más importante): todos los demás ejercicios, incluidos `dominadas`, `dominadas-comando` y `dominadas-supinas`, deben dar EXACTAMENTE el mismo resultado que hoy (por ejemplo, total=10 | correctas=10 con el video de prueba en dominadas). No borres ni modifiques el código existente de dominadas: solo añade. No ajustes nada a un video concreto: debe valer para cualquier video y cualquier número de repeticiones.
+
+TAREA: crea una COPIA INDEPENDIENTE del camino completo de `dominadas` (barra, ambos lados) para `muscle-up`. La copia incluye: configuración de puntos y lados, entrada en `repetitionConfigs`, evaluador de vista, calibración y preparación, prevalidación, contador de repeticiones, umbrales, veredicto y logs. Reglas de la copia:
+- Funciones, constantes y configuraciones propias con nombre `muscleUp...` (o el prefijo equivalente del proyecto), sin compartir estado mutable (refs, acumuladores, trackers) con dominadas.
+- Todo detrás de la identidad `muscle-up`: donde hoy se pregunte por `muscle-up`, entra por la copia; `dominadas` sigue por su camino original sin ningún cambio.
+- Los valores iniciales de la copia son idénticos a los de dominadas. No los ajustes ahora: se ajustarán después con los logs.
+- Textos y pantallas propios de muscle-up se mantienen.
+
+LOG: mantén `[muscleup-trace]` solo para muscle-up, durante todo el video, como máximo cada 150 ms (no lo cambies). Añade a la cadena JSON la fase actual y anterior del contador copiado, el número de repeticiones y el ángulo que recibe. Si algún dato no existe, null. Los logs `pullup-event`, `pullup-veredicto` y `[fin]` deben salir también con muscle-up, con su propia etiqueta de ejercicio para distinguirlos de los de dominadas.
+
+VERIFICACIÓN FINAL: lista cada línea modificada o añadida con archivo y línea. Confirma, citando líneas, que ningún otro ejercicio cambia y que la copia no comparte estado mutable con dominadas. Dime qué partes de dominadas NO pudiste copiar de forma independiente (si hay alguna) y por qué.
