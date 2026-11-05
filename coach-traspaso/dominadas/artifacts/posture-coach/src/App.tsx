@@ -1412,7 +1412,7 @@ function logOpenPullupAttempt(
     tInicio: attempt.tInicio,
     tFin: videoTime,
     duracion: duration,
-    faseTracker,
+    faseTracker: phaseTracker,
     anguloCodoMin: attempt.angleMin,
     ratioHombrosMax: attempt.shoulderRiseRatioMax,
     subidaCabezaMax: attempt.headRiseRatioMax,
