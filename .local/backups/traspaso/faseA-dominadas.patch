@@ -1,0 +1,460 @@
+diff --git a/dominadas/artifacts/posture-coach/src/App.tsx b/dominadas/artifacts/posture-coach/src/App.tsx
+index faa3b7e..35289b3 100644
+--- a/dominadas/artifacts/posture-coach/src/App.tsx
++++ b/dominadas/artifacts/posture-coach/src/App.tsx
+@@ -337,6 +337,10 @@ import {
+   smoothAngleReading,
+ } from '@/exercises/pullup-tracker';
+ import { getPullupIncorrectRulesConfiguration } from '@/exercises/pullup-incorrect-rules';
++import {
++  createPullupAttemptShadowState,
++  updatePullupAttemptShadow,
++} from '@/exercises/pullup-attempt-shadow';
+ import {
+   advanceExerciseRepTracker,
+   createExerciseRepTracker,
+@@ -1384,6 +1388,7 @@ const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
+   ...STANDARD_PULLUP_TRACKER_CONFIG,
+ };
+ const COMMAND_PULLUP_TRACE_ENABLED = true;
++const PULLUP_SHADOW_LOG_ENABLED = true;
+ const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
+ const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
+ const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
+@@ -10366,6 +10371,7 @@ function Home() {
+     createUploadedSquatDiagnosticState(),
+   );
+   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
++  const pullupAttemptShadowRef = useRef(createPullupAttemptShadowState());
+   const pullupTrackerDiagnosticsRef = useRef(createPullupDiagnosticMemory());
+   const pullupPendingAngleJumpDiagnosticRef = useRef<
+     Omit<PullupTrackerFrameDiagnostic, 'frameIndex' | 'phaseChanged'> | null
+@@ -15802,6 +15808,15 @@ function Home() {
+             lastAngle: pullupTrackerRef.current.lastAngle,
+           }
+         : null;
++      const pullupShadowTrackerBeforeFrame = pullupTrackerRef.current;
++      let pullupShadowPhaseAfterFrame = pullupShadowTrackerBeforeFrame.phase;
++      let pullupShadowTrackerArmedForFrame = pullupShadowTrackerBeforeFrame.isArmed;
++      let pullupShadowAngleForFrame = rawAngle;
++      let pullupShadowAtBottomForFrame = pullupExtremityValidation.atBottom;
++      let pullupShadowRepetitionsForFrame =
++        pullupShadowTrackerBeforeFrame.repetitions;
++      let pullupShadowCandidateCreatedForFrame = false;
++      let pullupShadowFrameAccepted = true;
+       if (
+         (
+           isStandardOrSupinePullup(selectedExerciseRef.current)
+@@ -15862,6 +15877,20 @@ function Home() {
+           contarDescartadas,
+           viewAlignmentRef.current.estimatedView,
+         );
++        pullupShadowPhaseAfterFrame = pullupUpdate.tracker.phase;
++        pullupShadowTrackerArmedForFrame = pullupUpdate.tracker.isArmed;
++        pullupShadowAngleForFrame = pullupUpdate.frameAccepted === false
++          ? rawAngle
++          : pullupUpdate.smoothedAngle;
++        pullupShadowAtBottomForFrame = pullupUpdate.isAtBottom;
++        pullupShadowRepetitionsForFrame = pullupUpdate.tracker.repetitions;
++        pullupShadowCandidateCreatedForFrame = Boolean(
++          pullupUpdate.elevationDecision
++          || pullupUpdate.replayedPriorFrame?.elevationDecision
++          || pullupUpdate.tracker.repetitions
++            > pullupShadowTrackerBeforeFrame.repetitions,
++        );
++        pullupShadowFrameAccepted = pullupUpdate.frameAccepted !== false;
+         phaseBeforeUpdate = pullupUpdate.phaseBefore ?? phaseBeforeUpdate;
+         const trackerBeforeFrame = pullupUpdate.replayedPriorFrame?.tracker
+           ?? trackerBeforeUpdate;
+@@ -16465,6 +16494,62 @@ function Home() {
+           );
+         }
+       }
++      if (
++        PULLUP_SHADOW_LOG_ENABLED
++        && inputModeRef.current === 'video'
++        && (
++          isStandardOrSupinePullup(selectedExerciseForFrame)
++          || isCommandPullup(selectedExerciseForFrame)
++        )
++      ) {
++        const leftShoulder = hasFreshPose
++          ? pose?.keypoints?.[sideKeypoints.left.shoulder]
++          : undefined;
++        const rightShoulder = hasFreshPose
++          ? pose?.keypoints?.[sideKeypoints.right.shoulder]
++          : undefined;
++        const nose = hasFreshPose ? pose?.keypoints?.[0] : undefined;
++        const shadowResult = updatePullupAttemptShadow(
++          pullupAttemptShadowRef.current,
++          {
++            exercise: selectedExerciseForFrame,
++            exerciseStarted: exerciseStartedRef.current,
++            videoTime: video.currentTime,
++            phaseAfter: pullupShadowPhaseAfterFrame,
++            trackerArmed: pullupShadowTrackerArmedForFrame,
++            atBottom: pullupShadowAtBottomForFrame,
++            gripped,
++            frameBlocked: (
++              !hasFreshPose
++              || !effectiveFrameCameraReady
++              || !effectiveFrameDetectionStable
++              || rawAngle === null
++              || frameMeasurementBlocked
++              || pullupSessionFinishedRef.current
++              || pullupCountingBlockedByDetach
++              || !pullupShadowFrameAccepted
++            ),
++            elbowAngle: pullupShadowAngleForFrame,
++            shoulderY: leftShoulder && rightShoulder
++              ? (leftShoulder.y + rightShoulder.y) / 2
++              : null,
++            shoulderSpanPx: leftShoulder && rightShoulder
++              ? Math.abs(leftShoulder.x - rightShoulder.x)
++              : null,
++            noseY: nose && (nose.score ?? 0) >= 0.2
++              ? nose.y
++              : null,
++            headOverWrists: pullupHeadOverWrists,
++            estimatedView: viewAlignmentRef.current.estimatedView,
++            candidateCreated: pullupShadowCandidateCreatedForFrame,
++            repetitions: pullupShadowRepetitionsForFrame,
++          },
++        );
++        pullupAttemptShadowRef.current = shadowResult.state;
++        if (shadowResult.log) {
++          console.log(`[dominadas-intento]: ${JSON.stringify(shadowResult.log)}`);
++        }
++      }
+       let muscleUpPullupCountLog: {
+         camino: 'top' | 'no-top' | 'no-lockout';
+         countedVia: 'normal' | 'positional';
+diff --git a/dominadas/artifacts/posture-coach/src/exercises/pullup-attempt-shadow.ts b/dominadas/artifacts/posture-coach/src/exercises/pullup-attempt-shadow.ts
+new file mode 100644
+index 0000000..7ab0a22
+--- /dev/null
++++ b/dominadas/artifacts/posture-coach/src/exercises/pullup-attempt-shadow.ts
+@@ -0,0 +1,323 @@
++export type PullupAttemptShadowReason =
++  | 'cedido-a-ruta-principal'
++  | 'tracker-no-armado'
++  | 'cuadro-bloqueado'
++  | 'codo-no-llego-120'
++  | 'caida-menor-a-3';
++
++export type PullupAttemptShadowLog = {
++  tInicio: number | null;
++  tFin: number | null;
++  duracion: number | null;
++  faseTracker: string;
++  anguloCodoMin: number | null;
++  ratioHombrosMax: number;
++  subidaCabezaMax: number;
++  cabezaSobreMuñecas: boolean | null;
++  vistaInicio: string;
++  vistaFin: string;
++  vistaCambio: boolean;
++  motivo: PullupAttemptShadowReason;
++};
++
++type PullupShadowBaseline = {
++  shoulderY: number;
++  noseY: number;
++  shoulderSpanPx: number;
++  samples: number;
++};
++
++type PullupShadowAttempt = {
++  tInicio: number | null;
++  angleMin: number | null;
++  shoulderRiseRatioMax: number;
++  headRiseRatioMax: number;
++  headOverWrists: boolean | null;
++  viewStart: string;
++  viewEnd: string;
++  viewChanged: boolean;
++  trackerUnarmed: boolean;
++  frameBlocked: boolean;
++  ceded: boolean;
++};
++
++export type PullupAttemptShadowState = {
++  baseline: PullupShadowBaseline | null;
++  attempt: PullupShadowAttempt | null;
++  lastVideoTime: number | null;
++  lastExercise: string | null;
++  lastRepetitions: number | null;
++};
++
++export type PullupAttemptShadowFrame = {
++  exercise: string;
++  exerciseStarted: boolean;
++  videoTime: number | null;
++  phaseAfter: string;
++  trackerArmed: boolean;
++  atBottom: boolean;
++  gripped: boolean;
++  frameBlocked: boolean;
++  elbowAngle: number | null;
++  shoulderY: number | null;
++  shoulderSpanPx: number | null;
++  noseY: number | null;
++  headOverWrists: boolean | null;
++  estimatedView: string;
++  candidateCreated: boolean;
++  repetitions: number;
++};
++
++function isFiniteNumber(value: number | null): value is number {
++  return value !== null && Number.isFinite(value);
++}
++
++function normalizedRise(
++  baselineY: number,
++  currentY: number | null,
++  shoulderSpanPx: number,
++) {
++  return isFiniteNumber(currentY)
++    ? (baselineY - currentY) / shoulderSpanPx
++    : null;
++}
++
++export function createPullupAttemptShadowState(): PullupAttemptShadowState {
++  return {
++    baseline: null,
++    attempt: null,
++    lastVideoTime: null,
++    lastExercise: null,
++    lastRepetitions: null,
++  };
++}
++
++function updateBaseline(
++  baseline: PullupShadowBaseline | null,
++  frame: PullupAttemptShadowFrame,
++): PullupShadowBaseline | null {
++  if (
++    !frame.atBottom
++    || !frame.gripped
++    || frame.frameBlocked
++    || !isFiniteNumber(frame.shoulderY)
++    || !isFiniteNumber(frame.noseY)
++    || !isFiniteNumber(frame.shoulderSpanPx)
++    || frame.shoulderSpanPx <= 0
++  ) {
++    return baseline;
++  }
++
++  if (!baseline) {
++    return {
++      shoulderY: frame.shoulderY,
++      noseY: frame.noseY,
++      shoulderSpanPx: frame.shoulderSpanPx,
++      samples: 1,
++    };
++  }
++
++  const samples = baseline.samples + 1;
++  return {
++    shoulderY: (
++      baseline.shoulderY * baseline.samples + frame.shoulderY
++    ) / samples,
++    noseY: (baseline.noseY * baseline.samples + frame.noseY) / samples,
++    shoulderSpanPx: (
++      baseline.shoulderSpanPx * baseline.samples + frame.shoulderSpanPx
++    ) / samples,
++    samples,
++  };
++}
++
++function getAttemptReason(
++  attempt: PullupShadowAttempt,
++): PullupAttemptShadowReason {
++  if (attempt.ceded) return 'cedido-a-ruta-principal';
++  if (attempt.trackerUnarmed) return 'tracker-no-armado';
++  if (attempt.frameBlocked || attempt.angleMin === null) {
++    return 'cuadro-bloqueado';
++  }
++  if (attempt.angleMin > 120) return 'codo-no-llego-120';
++  return 'caida-menor-a-3';
++}
++
++export function updatePullupAttemptShadow(
++  priorState: PullupAttemptShadowState,
++  frame: PullupAttemptShadowFrame,
++): {
++  state: PullupAttemptShadowState;
++  log: PullupAttemptShadowLog | null;
++} {
++  if (!frame.exerciseStarted) {
++    return { state: createPullupAttemptShadowState(), log: null };
++  }
++
++  const timeMovedBackward = (
++    frame.videoTime !== null
++    && priorState.lastVideoTime !== null
++    && frame.videoTime < priorState.lastVideoTime
++  );
++  const exerciseChanged = (
++    priorState.lastExercise !== null
++    && priorState.lastExercise !== frame.exercise
++  );
++  const trackerReset = (
++    priorState.lastRepetitions !== null
++    && frame.repetitions < priorState.lastRepetitions
++  );
++  const state = timeMovedBackward || exerciseChanged || trackerReset
++    ? createPullupAttemptShadowState()
++    : priorState;
++  const baseline = state.baseline;
++  const frameState = {
++    ...state,
++    lastVideoTime: frame.videoTime ?? state.lastVideoTime,
++    lastExercise: frame.exercise,
++    lastRepetitions: frame.repetitions,
++  };
++
++  if (!baseline) {
++    return {
++      state: {
++        ...frameState,
++        baseline: updateBaseline(null, frame),
++      },
++      log: null,
++    };
++  }
++
++  const shoulderRiseRatio = normalizedRise(
++    baseline.shoulderY,
++    frame.shoulderY,
++    baseline.shoulderSpanPx,
++  );
++  const headRiseRatio = normalizedRise(
++    baseline.noseY,
++    frame.noseY,
++    baseline.shoulderSpanPx,
++  );
++
++  if (!state.attempt) {
++    // Sin umbral de magnitud: el signo positivo solo detecta dirección de subida.
++    const opensAttempt = (
++      shoulderRiseRatio !== null
++      && shoulderRiseRatio > 0
++      && headRiseRatio !== null
++      && headRiseRatio > 0
++    );
++    if (opensAttempt) {
++      return {
++        state: {
++          ...frameState,
++          attempt: {
++            tInicio: frame.videoTime,
++            angleMin: isFiniteNumber(frame.elbowAngle)
++              ? frame.elbowAngle
++              : null,
++            shoulderRiseRatioMax: shoulderRiseRatio,
++            headRiseRatioMax: headRiseRatio,
++            headOverWrists: frame.headOverWrists,
++            viewStart: frame.estimatedView,
++            viewEnd: frame.estimatedView,
++            viewChanged: false,
++            trackerUnarmed: !frame.trackerArmed,
++            frameBlocked: frame.frameBlocked,
++            ceded: frame.phaseAfter === 'subiendo' || frame.candidateCreated,
++          },
++        },
++        log: null,
++      };
++    }
++
++    const backAtBaseline = (
++      shoulderRiseRatio !== null
++      && shoulderRiseRatio <= 0
++      && headRiseRatio !== null
++      && headRiseRatio <= 0
++    );
++    return {
++      state: {
++        ...frameState,
++        baseline: backAtBaseline
++          ? updateBaseline(baseline, frame)
++          : baseline,
++      },
++      log: null,
++    };
++  }
++
++  const attempt: PullupShadowAttempt = {
++    ...state.attempt,
++    angleMin: isFiniteNumber(frame.elbowAngle)
++      ? state.attempt.angleMin === null
++        ? frame.elbowAngle
++        : Math.min(state.attempt.angleMin, frame.elbowAngle)
++      : state.attempt.angleMin,
++    shoulderRiseRatioMax: shoulderRiseRatio === null
++      ? state.attempt.shoulderRiseRatioMax
++      : Math.max(state.attempt.shoulderRiseRatioMax, shoulderRiseRatio),
++    headRiseRatioMax: headRiseRatio === null
++      ? state.attempt.headRiseRatioMax
++      : Math.max(state.attempt.headRiseRatioMax, headRiseRatio),
++    headOverWrists: frame.headOverWrists === true
++      ? true
++      : state.attempt.headOverWrists ?? frame.headOverWrists,
++    viewEnd: frame.estimatedView,
++    viewChanged: (
++      state.attempt.viewChanged
++      || frame.estimatedView !== state.attempt.viewStart
++    ),
++    trackerUnarmed: state.attempt.trackerUnarmed || !frame.trackerArmed,
++    frameBlocked: state.attempt.frameBlocked || frame.frameBlocked,
++    ceded: (
++      state.attempt.ceded
++      || frame.phaseAfter === 'subiendo'
++      || frame.candidateCreated
++    ),
++  };
++  const returnedToBaseline = (
++    shoulderRiseRatio !== null
++    && shoulderRiseRatio <= 0
++    && headRiseRatio !== null
++    && headRiseRatio <= 0
++  );
++
++  if (!returnedToBaseline) {
++    return {
++      state: { ...frameState, attempt },
++      log: null,
++    };
++  }
++
++  const duration = (
++    attempt.tInicio !== null
++    && frame.videoTime !== null
++    && Number.isFinite(attempt.tInicio)
++    && Number.isFinite(frame.videoTime)
++  )
++    ? frame.videoTime - attempt.tInicio
++    : null;
++  const log: PullupAttemptShadowLog = {
++    tInicio: attempt.tInicio,
++    tFin: frame.videoTime,
++    duracion: duration,
++    faseTracker: frame.phaseAfter,
++    anguloCodoMin: attempt.angleMin,
++    ratioHombrosMax: attempt.shoulderRiseRatioMax,
++    subidaCabezaMax: attempt.headRiseRatioMax,
++    cabezaSobreMuñecas: attempt.headOverWrists,
++    vistaInicio: attempt.viewStart,
++    vistaFin: attempt.viewEnd,
++    vistaCambio: attempt.viewChanged,
++    motivo: getAttemptReason(attempt),
++  };
++  return {
++    state: {
++      ...frameState,
++      baseline: updateBaseline(baseline, frame) ?? baseline,
++      attempt: null,
++    },
++    log,
++  };
++}

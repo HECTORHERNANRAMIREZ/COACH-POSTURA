@@ -1,0 +1,33 @@
+
+> @workspace/posture-coach@0.0.0 typecheck /home/runner/workspace/dominadas/artifacts/posture-coach
+> tsc -p tsconfig.json --noEmit
+
+src/App.tsx(17,8): error TS6305: Output file '/home/runner/workspace/dominadas/lib/api-client-react/dist/index.d.ts' has not been built from source file '/home/runner/workspace/dominadas/lib/api-client-react/src/index.ts'.
+src/App.tsx(10672,11): error TS2345: Argument of type 'string' is not assignable to parameter of type '"video" | "vivo"'.
+src/App.tsx(18107,15): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18118,9): error TS2322: Type 'number | undefined' is not assignable to type 'number | null'.
+  Type 'undefined' is not assignable to type 'number | null'.
+src/App.tsx(18118,44): error TS18047: 'trackerConfig' is possibly 'null'.
+src/App.tsx(18160,45): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18163,57): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18165,18): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18173,11): error TS2345: Argument of type 'ExerciseRepConfig | { startMinAngle: number; endMinAngle: number; endMaxAngle: number; endLabel: string; smoothingSamples: number; countOnReturn: boolean; direction?: ExerciseRepDirection | undefined; ... 10 more ...; techniqueMustHoldThroughout?: boolean | undefined; } | { ...; } | null' is not assignable to parameter of type 'ExerciseRepConfig'.
+  Type 'null' is not assignable to type 'ExerciseRepConfig'.
+src/App.tsx(18190,31): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18210,33): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18226,51): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18227,43): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18237,79): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18552,40): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18724,62): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18782,36): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18856,16): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18857,43): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(18959,32): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(19023,16): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(19025,17): error TS18047: 'repetitionConfig' is possibly 'null'.
+src/App.tsx(19056,13): error TS2322: Type 'ExerciseRepConfig | null' is not assignable to type 'ExerciseRepConfig'.
+  Type 'null' is not assignable to type 'ExerciseRepConfig'.
+src/App.tsx(23768,67): error TS2339: Property 'ladosEvaluados' does not exist on type 'never'.
+src/pullup-diagnostics.ts(215,7): error TS2740: Type '{ resultado: "correcta" | "incorrecta"; motivo: "no-top-cabeza" | "ok"; cabezaEvaluados: number; cabezaSi: number; videoCurrentTimeInicio: number; videoCurrentTimeFin: number | null; }' is missing the following properties from type 'PullupHeadWindowVerdict': correct, reason, headFramesEvaluated, headFramesYes, and 2 more.
+ ELIFECYCLE  Command failed with exit code 1.
