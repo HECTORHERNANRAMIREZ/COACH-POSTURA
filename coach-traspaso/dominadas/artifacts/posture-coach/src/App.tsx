@@ -262,6 +262,7 @@ import {
   PULLUP_BOTTOM_STABLE_FRAMES,
   PULLUP_BODY_DETECTION_HOLD_MS,
   PULLUP_NO_LOCKOUT_ANGLE,
+  PULLUP_MIN_SHOULDER_RISE_RATIO,
   PULLUP_PULL_ACTIVATION_ANGLE,
   PULLUP_RISING_DELTA_DEG,
   PULLUP_SMOOTHING_SAMPLES,
@@ -1389,6 +1390,39 @@ const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 };
 const COMMAND_PULLUP_TRACE_ENABLED = true;
 const PULLUP_SHADOW_LOG_ENABLED = true;
+type PullupShadowAttemptSnapshot = NonNullable<
+  ReturnType<typeof createPullupAttemptShadowState>['attempt']
+>;
+
+function logOpenPullupAttempt(
+  attempt: PullupShadowAttemptSnapshot,
+  videoTime: number | null,
+  phaseTracker: string,
+  reason: 'abierto-al-terminar' | 'descartado-por-reinicio',
+) {
+  const duration = (
+    attempt.tInicio !== null
+    && videoTime !== null
+    && Number.isFinite(attempt.tInicio)
+    && Number.isFinite(videoTime)
+  )
+    ? videoTime - attempt.tInicio
+    : null;
+  console.log(`[dominadas-intento]: ${JSON.stringify({
+    tInicio: attempt.tInicio,
+    tFin: videoTime,
+    duracion: duration,
+    faseTracker,
+    anguloCodoMin: attempt.angleMin,
+    ratioHombrosMax: attempt.shoulderRiseRatioMax,
+    subidaCabezaMax: attempt.headRiseRatioMax,
+    cabezaSobreMuñecas: attempt.headOverWrists,
+    vistaInicio: attempt.viewStart,
+    vistaFin: attempt.viewEnd,
+    vistaCambio: attempt.viewChanged,
+    motivo: reason,
+  })}`);
+}
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
@@ -10372,6 +10406,14 @@ function Home() {
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
   const pullupAttemptShadowRef = useRef(createPullupAttemptShadowState());
+  const diagSombraConteosRef = useRef({
+    abiertos: 0,
+    cerrados: 0,
+    cedidos: 0,
+    descartadosPorReinicio: 0,
+    abiertosAlTerminar: 0,
+    ultimoMotivo: null as string | null,
+  });
   const pullupTrackerDiagnosticsRef = useRef(createPullupDiagnosticMemory());
   const pullupPendingAngleJumpDiagnosticRef = useRef<
     Omit<PullupTrackerFrameDiagnostic, 'frameIndex' | 'phaseChanged'> | null
@@ -16509,6 +16551,65 @@ function Home() {
           ? pose?.keypoints?.[sideKeypoints.right.shoulder]
           : undefined;
         const nose = hasFreshPose ? pose?.keypoints?.[0] : undefined;
+        const shadowStateBeforeLog = pullupAttemptShadowRef.current;
+        const shadowStateResetForLog = !video.ended && (
+          !exerciseStartedRef.current
+          || (
+            shadowStateBeforeLog.lastVideoTime !== null
+            && video.currentTime < shadowStateBeforeLog.lastVideoTime
+          )
+          || (
+            shadowStateBeforeLog.lastExercise !== null
+            && shadowStateBeforeLog.lastExercise !== selectedExerciseForFrame
+          )
+          || (
+            shadowStateBeforeLog.lastRepetitions !== null
+            && pullupShadowRepetitionsForFrame
+              < shadowStateBeforeLog.lastRepetitions
+          )
+        );
+        if (shadowStateResetForLog && shadowStateBeforeLog.attempt) {
+          diagSombraConteosRef.current.descartadosPorReinicio += 1;
+          logOpenPullupAttempt(
+            shadowStateBeforeLog.attempt,
+            video.currentTime,
+            pullupShadowPhaseAfterFrame,
+            'descartado-por-reinicio',
+          );
+        }
+        const shadowShoulderYForLog = leftShoulder && rightShoulder
+          ? (leftShoulder.y + rightShoulder.y) / 2
+          : null;
+        const shadowNoseYForLog = nose && (nose.score ?? 0) >= 0.2
+          ? nose.y
+          : null;
+        const shadowFrameBlockedForLog = (
+          !hasFreshPose
+          || !effectiveFrameCameraReady
+          || !effectiveFrameDetectionStable
+          || rawAngle === null
+          || frameMeasurementBlocked
+          || pullupSessionFinishedRef.current
+          || pullupCountingBlockedByDetach
+          || !pullupShadowFrameAccepted
+        );
+        const shadowBaselineForLog = shadowStateBeforeLog.baseline;
+        const shadowShoulderRiseRatioForLog = shadowBaselineForLog
+          && shadowShoulderYForLog !== null
+          && Number.isFinite(shadowShoulderYForLog)
+          && shadowBaselineForLog.shoulderSpanPx > 0
+          ? (
+              shadowBaselineForLog.shoulderY - shadowShoulderYForLog
+            ) / shadowBaselineForLog.shoulderSpanPx
+          : null;
+        const shadowHeadRiseRatioForLog = shadowBaselineForLog
+          && shadowNoseYForLog !== null
+          && Number.isFinite(shadowNoseYForLog)
+          && shadowBaselineForLog.shoulderSpanPx > 0
+          ? (
+              shadowBaselineForLog.noseY - shadowNoseYForLog
+            ) / shadowBaselineForLog.shoulderSpanPx
+          : null;
         const shadowResult = updatePullupAttemptShadow(
           pullupAttemptShadowRef.current,
           {
@@ -16545,6 +16646,66 @@ function Home() {
             repetitions: pullupShadowRepetitionsForFrame,
           },
         );
+        const shadowAttemptOpenedNow = (
+          !shadowStateBeforeLog.attempt
+          && shadowResult.state.attempt !== null
+        );
+        if (shadowAttemptOpenedNow) {
+          diagSombraConteosRef.current.abiertos += 1;
+        }
+        const shadowAttemptCededNow = (
+          shadowStateBeforeLog.attempt?.ceded !== true
+          && (
+            shadowResult.state.attempt?.ceded === true
+            || shadowResult.log?.motivo === 'cedido-a-ruta-principal'
+          )
+        );
+        if (shadowAttemptCededNow) {
+          diagSombraConteosRef.current.cedidos += 1;
+        }
+        if (shadowResult.log) {
+          diagSombraConteosRef.current.cerrados += 1;
+        }
+        const shadowFrameReason = !exerciseStartedRef.current
+          ? 'ejercicio-no-iniciado'
+          : shadowStateResetForLog
+            ? 'reinicio-estado'
+            : shadowAttemptCededNow
+              ? 'cedido-a-tracker'
+              : shadowResult.log
+                ? 'cerró'
+                : shadowResult.state.attempt
+                  ? 'sigue-abierto'
+                  : !shadowBaselineForLog
+                    || shadowShoulderRiseRatioForLog === null
+                    || shadowHeadRiseRatioForLog === null
+                    ? 'sin-referencia'
+                    : shadowShoulderRiseRatioForLog <= 0
+                      ? 'hombros-no-suben'
+                      : shadowHeadRiseRatioForLog <= 0
+                        ? 'nariz-no-sube'
+                        : 'sin-referencia';
+        if (diagSombraConteosRef.current.ultimoMotivo !== shadowFrameReason) {
+          diagSombraConteosRef.current.ultimoMotivo = shadowFrameReason;
+          console.log(`[dominadas-sombra-cuadro] ${JSON.stringify({
+            t: Number(video.currentTime.toFixed(3)),
+            rH: shadowShoulderRiseRatioForLog === null
+              ? null
+              : Number(shadowShoulderRiseRatioForLog.toFixed(3)),
+            rN: shadowHeadRiseRatioForLog === null
+              ? null
+              : Number(shadowHeadRiseRatioForLog.toFixed(3)),
+            fase: pullupShadowPhaseAfterFrame,
+            armado: pullupShadowTrackerArmedForFrame,
+            bloqueado: shadowFrameBlockedForLog,
+            intento: shadowResult.log
+              ? 'cerrado'
+              : shadowResult.state.attempt
+                ? 'abierto'
+                : 'ninguno',
+            motivo: shadowFrameReason,
+          })}`);
+        }
         pullupAttemptShadowRef.current = shadowResult.state;
         if (shadowResult.log) {
           console.log(`[dominadas-intento]: ${JSON.stringify(shadowResult.log)}`);
@@ -24072,6 +24233,16 @@ function Home() {
       );
     }
     pullupTrackerRef.current = createPullupTracker();
+    if (isUploadedPullupVideo) {
+      diagSombraConteosRef.current = {
+        abiertos: 0,
+        cerrados: 0,
+        cedidos: 0,
+        descartadosPorReinicio: 0,
+        abiertosAlTerminar: 0,
+        ultimoMotivo: null,
+      };
+    }
     pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     pullupPendingAngleJumpDiagnosticRef.current = null;
     pullupSessionFinishedRef.current = false;
@@ -24210,6 +24381,35 @@ function Home() {
           );
         }
         if (isUploadedPullupVideo) {
+          const pullupShadowConfig = isCommandPullup(activeExercise)
+            ? COMMAND_PULLUP_TRACKER_CONFIG
+            : STANDARD_PULLUP_TRACKER_CONFIG;
+          console.log(`[dominadas-sombra-config] ${JSON.stringify({
+            PULLUP_SHADOW_LOG_ENABLED,
+            ejercicio: activeExercise,
+            modo: inputModeRef.current,
+            rangosEfectivos: {
+              fondoCodoDeg: [
+                pullupShadowConfig.bottomMinAngle,
+                pullupShadowConfig.bottomMaxAngle,
+              ],
+              codoArribaDeg: [
+                pullupShadowConfig.topElbowMinAngle,
+                pullupShadowConfig.topElbowMaxAngle,
+              ],
+              toleranciaDeg: pullupShadowConfig.angleToleranceDeg,
+              pullActivationAngle: pullupShadowConfig.pullActivationAngle,
+              noLockoutAngle: pullupShadowConfig.noLockoutAngle,
+              bottomStableFrames: pullupShadowConfig.bottomStableFrames,
+              topConfirmationFrames: pullupShadowConfig.topConfirmationFrames,
+              risingDeltaDeg: pullupShadowConfig.risingDeltaDeg,
+              elevacionMinimaRatio: PULLUP_MIN_SHOULDER_RISE_RATIO,
+              reglaCabeza: {
+                cuadrosPositivosRequeridos: 1,
+                condicion: 'headFramesYes > 0',
+              },
+            },
+          })}`);
           console.log(
             '[dominadas-consola] {"logsRuido":false,"nota":"activar con window.__dominadasLogsRuido = true"}',
           );
@@ -25251,6 +25451,16 @@ function Home() {
         });
         pullupProcessingWaitMs = performance.now() - pullupProcessingWaitStartedAt;
       }
+      const shadowAttemptAtVideoEnd = pullupAttemptShadowRef.current.attempt;
+      if (PULLUP_SHADOW_LOG_ENABLED && shadowAttemptAtVideoEnd) {
+        diagSombraConteosRef.current.abiertosAlTerminar += 1;
+        logOpenPullupAttempt(
+          shadowAttemptAtVideoEnd,
+          videoRef.current?.currentTime ?? null,
+          pullupTrackerRef.current.phase,
+          'abierto-al-terminar',
+        );
+      }
       let pullupSettleResult: ReturnType<typeof settlePendingPullupRep> | null = null;
       const exerciseAtFinish = selectedExerciseRef.current;
       if (
@@ -25360,6 +25570,14 @@ function Home() {
         contarDescartadas: (window as Window & {
           __dominadasContarDescartadas?: boolean;
         }).__dominadasContarDescartadas !== false,
+        intentosSombra: {
+          abiertos: diagSombraConteosRef.current.abiertos,
+          cerrados: diagSombraConteosRef.current.cerrados,
+          cedidos: diagSombraConteosRef.current.cedidos,
+          descartadosPorReinicio:
+            diagSombraConteosRef.current.descartadosPorReinicio,
+          abiertosAlTerminar: diagSombraConteosRef.current.abiertosAlTerminar,
+        },
         candidatos: diagnosticMemory.decisions.map((decision) => ({
           t: decision.videoCurrentTimeAtDecision,
           decision: decision.decision,
