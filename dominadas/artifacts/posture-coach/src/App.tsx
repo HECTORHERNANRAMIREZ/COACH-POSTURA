@@ -338,6 +338,10 @@ import {
 } from '@/exercises/pullup-tracker';
 import { getPullupIncorrectRulesConfiguration } from '@/exercises/pullup-incorrect-rules';
 import {
+  createPullupAttemptShadowState,
+  updatePullupAttemptShadow,
+} from '@/exercises/pullup-attempt-shadow';
+import {
   advanceExerciseRepTracker,
   createExerciseRepTracker,
 } from '@/exercises/rep-tracker';
@@ -1384,6 +1388,7 @@ const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
   ...STANDARD_PULLUP_TRACKER_CONFIG,
 };
 const COMMAND_PULLUP_TRACE_ENABLED = true;
+const PULLUP_SHADOW_LOG_ENABLED = true;
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
@@ -10366,6 +10371,7 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const pullupAttemptShadowRef = useRef(createPullupAttemptShadowState());
   const pullupTrackerDiagnosticsRef = useRef(createPullupDiagnosticMemory());
   const pullupPendingAngleJumpDiagnosticRef = useRef<
     Omit<PullupTrackerFrameDiagnostic, 'frameIndex' | 'phaseChanged'> | null
@@ -15802,6 +15808,15 @@ function Home() {
             lastAngle: pullupTrackerRef.current.lastAngle,
           }
         : null;
+      const pullupShadowTrackerBeforeFrame = pullupTrackerRef.current;
+      let pullupShadowPhaseAfterFrame = pullupShadowTrackerBeforeFrame.phase;
+      let pullupShadowTrackerArmedForFrame = pullupShadowTrackerBeforeFrame.isArmed;
+      let pullupShadowAngleForFrame = rawAngle;
+      let pullupShadowAtBottomForFrame = pullupExtremityValidation.atBottom;
+      let pullupShadowRepetitionsForFrame =
+        pullupShadowTrackerBeforeFrame.repetitions;
+      let pullupShadowCandidateCreatedForFrame = false;
+      let pullupShadowFrameAccepted = true;
       if (
         (
           isStandardOrSupinePullup(selectedExerciseRef.current)
@@ -15862,6 +15877,20 @@ function Home() {
           contarDescartadas,
           viewAlignmentRef.current.estimatedView,
         );
+        pullupShadowPhaseAfterFrame = pullupUpdate.tracker.phase;
+        pullupShadowTrackerArmedForFrame = pullupUpdate.tracker.isArmed;
+        pullupShadowAngleForFrame = pullupUpdate.frameAccepted === false
+          ? rawAngle
+          : pullupUpdate.smoothedAngle;
+        pullupShadowAtBottomForFrame = pullupUpdate.isAtBottom;
+        pullupShadowRepetitionsForFrame = pullupUpdate.tracker.repetitions;
+        pullupShadowCandidateCreatedForFrame = Boolean(
+          pullupUpdate.elevationDecision
+          || pullupUpdate.replayedPriorFrame?.elevationDecision
+          || pullupUpdate.tracker.repetitions
+            > pullupShadowTrackerBeforeFrame.repetitions,
+        );
+        pullupShadowFrameAccepted = pullupUpdate.frameAccepted !== false;
         phaseBeforeUpdate = pullupUpdate.phaseBefore ?? phaseBeforeUpdate;
         const trackerBeforeFrame = pullupUpdate.replayedPriorFrame?.tracker
           ?? trackerBeforeUpdate;
@@ -16463,6 +16492,62 @@ function Home() {
               ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
           );
+        }
+      }
+      if (
+        PULLUP_SHADOW_LOG_ENABLED
+        && inputModeRef.current === 'video'
+        && (
+          isStandardOrSupinePullup(selectedExerciseForFrame)
+          || isCommandPullup(selectedExerciseForFrame)
+        )
+      ) {
+        const leftShoulder = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.left.shoulder]
+          : undefined;
+        const rightShoulder = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.right.shoulder]
+          : undefined;
+        const nose = hasFreshPose ? pose?.keypoints?.[0] : undefined;
+        const shadowResult = updatePullupAttemptShadow(
+          pullupAttemptShadowRef.current,
+          {
+            exercise: selectedExerciseForFrame,
+            exerciseStarted: exerciseStartedRef.current,
+            videoTime: video.currentTime,
+            phaseAfter: pullupShadowPhaseAfterFrame,
+            trackerArmed: pullupShadowTrackerArmedForFrame,
+            atBottom: pullupShadowAtBottomForFrame,
+            gripped,
+            frameBlocked: (
+              !hasFreshPose
+              || !effectiveFrameCameraReady
+              || !effectiveFrameDetectionStable
+              || rawAngle === null
+              || frameMeasurementBlocked
+              || pullupSessionFinishedRef.current
+              || pullupCountingBlockedByDetach
+              || !pullupShadowFrameAccepted
+            ),
+            elbowAngle: pullupShadowAngleForFrame,
+            shoulderY: leftShoulder && rightShoulder
+              ? (leftShoulder.y + rightShoulder.y) / 2
+              : null,
+            shoulderSpanPx: leftShoulder && rightShoulder
+              ? Math.abs(leftShoulder.x - rightShoulder.x)
+              : null,
+            noseY: nose && (nose.score ?? 0) >= 0.2
+              ? nose.y
+              : null,
+            headOverWrists: pullupHeadOverWrists,
+            estimatedView: viewAlignmentRef.current.estimatedView,
+            candidateCreated: pullupShadowCandidateCreatedForFrame,
+            repetitions: pullupShadowRepetitionsForFrame,
+          },
+        );
+        pullupAttemptShadowRef.current = shadowResult.state;
+        if (shadowResult.log) {
+          console.log(`[dominadas-intento]: ${JSON.stringify(shadowResult.log)}`);
         }
       }
       let muscleUpPullupCountLog: {

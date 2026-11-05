@@ -1,0 +1,28 @@
+REGLA PRINCIPAL, ANTES DE TODO: NO ALTERES NADA QUE YA FUNCIONA.
+
+Press de banca plano (`press-banca`) ya está validado y su comportamiento debe quedar EXACTAMENTE igual. Lo mismo vale para todos los demás ejercicios (flexiones, sentadillas, dominadas, fondos, etc.).
+
+PROHIBIDO:
+- Modificar valores, umbrales, tolerancias, puertas, tiempos, textos o logs de `press-banca` y de cualquier otro ejercicio.
+- Refactorizar, renombrar, mover, reformatear o "limpiar" código existente.
+- Tocar el cálculo del ángulo, el tracker compartido (`advanceExerciseRepTracker`), el detector, los filtros, el muestreo de cuadros o el CSS/estilos.
+- Cambiar nada que no sea necesario para el inclinado.
+
+Haz el CAMBIO MÍNIMO: solo agrega lo que falta para `press-banca-inclinado`. Si una condición `=== 'press-banca'` se amplía para incluir el inclinado, el resultado para `press-banca` debe ser idéntico al de hoy.
+
+OBJETIVO: Press de banca inclinado (`press-banca-inclinado`) es el mismo movimiento que el plano, solo cambia el ángulo del banco. Debe usar la misma lógica de conteo, evaluación y preparación que el plano.
+
+PASO 0, antes de editar: lista TODAS las comparaciones con 'press-banca' (puerta, ángulo, validación de ciclos y amplitud de 25°, detección de 5 s, preparación de 5 s, ventanas, logs, countFrameReady) con archivo y línea, y para cada una di si la vas a ampliar al inclinado o la dejas igual. Después edita.
+
+CAMBIOS PERMITIDOS, solo para el inclinado:
+1. Agregar una entrada de configuración de repetición propia para `press-banca-inclinado`, con los mismos valores actuales del plano (arriba ≥70°, abajo ≤50°, tolerancias 15°/30°, smoothingSamples 1, countOnReturn true, countOnlyWhenCorrect false). Debe ser una entrada separada del plano para poder ajustarla después sin afectarlo. No cambies la del plano.
+2. Ampliar las ramas que hoy comprueban `=== 'press-banca'` para que también apliquen al inclinado, sin duplicar lógica y sin alterar el resultado del plano.
+3. Exigir hombro, codo, muñeca y cadera en el inclinado, como el plano. Actualizar su definición y textos de ayuda para pedir la cadera visible y vista de lado.
+4. Que las ventanas de detección y preparación y los logs de press-banca también funcionen para el inclinado. A cada log agrégale el campo `ejercicio` con el id. Los textos de los logs y las ventanas de `press-banca` no cambian.
+5. No cambies el cálculo del ángulo ni los umbrales para el inclinado. Primero hay que medir con un video real.
+
+VERIFICACIÓN FINAL, obligatoria:
+a) Dame archivos y líneas cambiados y el diff de cada cambio.
+b) Confirma que NO hay ninguna línea modificada que afecte a `press-banca` ni a otros ejercicios, y cita las líneas.
+c) Confirma que no tocaste CSS, tracker, ángulo, detector ni muestreo.
+d) Si algún cambio podía afectar al plano o a otro ejercicio, dímelo ya, sin esconderlo.
