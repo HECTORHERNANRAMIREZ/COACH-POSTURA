@@ -1,11 +1,12 @@
 // Umbrales provisionales: calibrar con más grabaciones antes de considerarlos definitivos.
 export const PULLUP_FRONT_INCORRECT_START_RH_PROVISIONAL = 0.30;
-export const PULLUP_FRONT_INCORRECT_RETURN_RH_PROVISIONAL = 0.15;
+export const PULLUP_FRONT_INCORRECT_RETURN_RH_PROVISIONAL = 0.20;
 export const PULLUP_FRONT_INCORRECT_START_FRAMES_PROVISIONAL = 2;
 export const PULLUP_FRONT_INCORRECT_RETURN_FRAMES_PROVISIONAL = 2;
+// N=6 permite fijar la referencia con movimiento continuo sin esperar una pausa larga.
 export const PULLUP_FRONT_INCORRECT_REFERENCE_SAMPLES_PROVISIONAL = 6;
-export const PULLUP_FRONT_INCORRECT_LOW_POSITION_MARGIN_PROVISIONAL = 0.08;
-export const PULLUP_FRONT_INCORRECT_LOW_STABILITY_MARGIN_PROVISIONAL = 0.08;
+export const PULLUP_FRONT_INCORRECT_REFERENCE_PERCENTILE_PROVISIONAL = 0.85;
+export const PULLUP_FRONT_INCORRECT_REFERENCE_LOW_ZONE_PERCENTILE_PROVISIONAL = 0.75;
 export const PULLUP_FRONT_INCORRECT_MIN_SHOULDER_WIDTH_PX_PROVISIONAL = 80;
 export const PULLUP_FRONT_INCORRECT_MAX_SHOULDER_WIDTH_PX_PROVISIONAL = 400;
 export const PULLUP_FRONT_INCORRECT_MAX_WIDTH_DEVIATION_PROVISIONAL = 0.35;
@@ -95,6 +96,17 @@ function median(values: number[]): number | null {
     : sorted[middle];
 }
 
+function percentile(values: number[], fraction: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const position = (sorted.length - 1) * fraction;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const remainder = position - lowerIndex;
+  return sorted[lowerIndex]
+    + (sorted[upperIndex] - sorted[lowerIndex]) * remainder;
+}
+
 function medianSample(samples: PullupFrontSample[]): PullupFrontReference | null {
   const shouldersY = median(samples.map((sample) => sample.shouldersY));
   const noseY = median(samples.map((sample) => sample.noseY));
@@ -166,14 +178,19 @@ function isPlausibleWidth(
   }
 
   const accumulatedMedian = median(state.widthHistory);
+  if (
+    accumulatedMedian !== null
+    && Math.abs(width - accumulatedMedian)
+      > accumulatedMedian * PULLUP_FRONT_INCORRECT_MAX_WIDTH_DEVIATION_PROVISIONAL
+  ) {
+    return false;
+  }
+
   state.widthHistory = [
     ...state.widthHistory,
     width,
   ].slice(-WIDTH_HISTORY_FRAMES);
-
-  return accumulatedMedian === null
-    || Math.abs(width - accumulatedMedian)
-      <= accumulatedMedian * PULLUP_FRONT_INCORRECT_MAX_WIDTH_DEVIATION_PROVISIONAL;
+  return true;
 }
 
 function updateInitialReference(
@@ -185,42 +202,38 @@ function updateInitialReference(
     sample,
   ].slice(-CALIBRATION_WINDOW_FRAMES);
 
-  const highestShoulderY = Math.max(
-    ...state.calibrationWindow.map((item) => item.shouldersY),
-  );
-  const nearLowestPosition = sample.shouldersY
-    >= highestShoulderY
-      - sample.shoulderWidthPx * PULLUP_FRONT_INCORRECT_LOW_POSITION_MARGIN_PROVISIONAL;
-
-  if (!nearLowestPosition) {
-    state.calibrationCandidates = [];
-    return;
-  }
-
-  const previous = state.calibrationCandidates.at(-1);
-  const stableWithPrevious = !previous || (
-    Math.abs(sample.shouldersY - previous.shouldersY)
-      <= sample.shoulderWidthPx
-        * PULLUP_FRONT_INCORRECT_LOW_STABILITY_MARGIN_PROVISIONAL
-    && Math.abs(sample.noseY - previous.noseY)
-      <= sample.shoulderWidthPx
-        * PULLUP_FRONT_INCORRECT_LOW_STABILITY_MARGIN_PROVISIONAL
-  );
-  state.calibrationCandidates = stableWithPrevious
-    ? [...state.calibrationCandidates, sample].slice(
-      -PULLUP_FRONT_INCORRECT_REFERENCE_SAMPLES_PROVISIONAL,
-    )
-    : [sample];
-
   if (
-    state.calibrationCandidates.length
+    state.calibrationWindow.length
       < PULLUP_FRONT_INCORRECT_REFERENCE_SAMPLES_PROVISIONAL
   ) {
     return;
   }
 
-  state.reference = medianSample(state.calibrationCandidates);
-  state.restingReferenceSamples = [...state.calibrationCandidates];
+  const shouldersY = percentile(
+    state.calibrationWindow.map((item) => item.shouldersY),
+    PULLUP_FRONT_INCORRECT_REFERENCE_PERCENTILE_PROVISIONAL,
+  );
+  const lowZoneThreshold = percentile(
+    state.calibrationWindow.map((item) => item.shouldersY),
+    PULLUP_FRONT_INCORRECT_REFERENCE_LOW_ZONE_PERCENTILE_PROVISIONAL,
+  );
+  const lowPositionSamples = lowZoneThreshold === null
+    ? []
+    : state.calibrationWindow.filter((item) => item.shouldersY >= lowZoneThreshold);
+  const noseY = median(lowPositionSamples.map((item) => item.noseY));
+  const shoulderWidthPx = median(
+    state.calibrationWindow.map((item) => item.shoulderWidthPx),
+  );
+  if (
+    shouldersY === null
+    || noseY === null
+    || shoulderWidthPx === null
+  ) {
+    return;
+  }
+
+  state.reference = { shouldersY, noseY, shoulderWidthPx };
+  state.restingReferenceSamples = [...lowPositionSamples];
   state.calibrationWindow = [];
   state.calibrationCandidates = [];
 }
