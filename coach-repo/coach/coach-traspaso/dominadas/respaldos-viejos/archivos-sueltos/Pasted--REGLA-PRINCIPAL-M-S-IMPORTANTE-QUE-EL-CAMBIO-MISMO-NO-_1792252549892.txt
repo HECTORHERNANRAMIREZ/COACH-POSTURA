@@ -1,0 +1,28 @@
+⚠️ REGLA PRINCIPAL, MÁS IMPORTANTE QUE EL CAMBIO MISMO ⚠️
+NO ALTERES NADA DE LO QUE YA FUNCIONA.
+
+Deben quedar EXACTAMENTE IGUAL: el conteo de repeticiones (`advancePullupTracker`, umbrales, ángulo, feedback), `dominadas-comando`, el modo cámara en vivo de todos los ejercicios, y los flujos de video de flexiones, Press de banca (plano e inclinado), sentadillas, fondos y todos los demás ejercicios.
+
+PROHIBIDO: tocar el tracker, el ángulo, los umbrales, el detector, los filtros, el muestreo, el CSS, o refactorizar/renombrar/reformatear código. Si un cambio puede afectar a otro ejercicio o al modo en vivo, DETENTE y avísame antes de editar.
+
+PROBLEMA (video subido, `dominadas` y `dominadas-supinas`): el texto "Buscando cuerpo… X / 5 s" se queda en 0.0 y el conteo arranca con el PRIMER cuadro válido, sin acumular 5 s. El log de ejemplo dice: `[dominadas-video] ... cuerpo detectado segundosVálidos=0.00/5.00 conteoDesde=11.51s en vivo`. El conteo en sí funciona bien (10/10 en el video de prueba); lo que falla es la búsqueda previa.
+
+COMPORTAMIENTO DESEADO, solo en video subido para `dominadas` y `dominadas-supinas`: igual que flexiones y Press de banca en video:
+1. "Buscando cuerpo… X / 5 s" debe SUBIR en tiempo real mientras haya cuadros válidos.
+2. Solo al acumular 5 s de cuadros válidos se considera detectado el cuerpo.
+3. Luego la misma pausa y el mismo retorno al inicio del video que ya usan flexiones o Press de banca en video, y se cuenta desde ahí (así no se pierden repeticiones que ocurren durante esos 5 s).
+4. Mantén la tolerancia de huecos y el reinicio de cuenta que ya existen para dominadas (hueco continuo > 0.60 s).
+
+PASO 0, antes de editar y SIN modificar nada:
+a) Dime exactamente por qué hoy la búsqueda termina con 0.00 s acumulados (archivo y líneas: dónde se pone `uploadedPullupPreflightRef.current = false` y qué condición lo permite).
+b) Dime qué mecanismo usa hoy Press de banca (o flexiones) en video para el acumulado de 5 s, la pausa y el retorno al inicio, con archivo y líneas.
+c) Propón el cambio MÍNIMO para que dominadas use ese mismo mecanismo. Lista cada línea que tocarías y confirma que ninguna afecta al modo en vivo, a `dominadas-comando` ni a otros ejercicios.
+d) ESPERA mi confirmación antes de editar.
+
+VERIFICACIÓN FINAL después de editar, con pruebas:
+1. Diff completo y cuántas líneas cambiaste.
+2. Confirma, citando líneas, que no tocaste el tracker, el ángulo, los umbrales, el CSS, el modo en vivo, `dominadas-comando` ni los otros ejercicios.
+3. Confirma que el log del conteo sigue igual y que el campo `ejercicio` sigue en `[dominadas-video]` y `[pullup-event]`.
+4. Dime qué cambia para el usuario: cuándo empieza el conteo y qué pasa con el video.
+
+RECUERDA: si lo que ya funciona cambia aunque sea un poco, el cambio está mal.
