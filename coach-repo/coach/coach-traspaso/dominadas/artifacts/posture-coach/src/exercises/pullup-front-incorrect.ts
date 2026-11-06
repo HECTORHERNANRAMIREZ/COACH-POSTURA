@@ -1,7 +1,8 @@
 // Umbrales provisionales: calibrar con más grabaciones antes de considerarlos definitivos.
-export const PULLUP_FRONT_INCORRECT_START_RH_PROVISIONAL = 0.30;
+export const PULLUP_FRONT_INCORRECT_START_RH_PROVISIONAL = 0.25;
+export const PULLUP_FRONT_INCORRECT_MIN_PEAK_RH_PROVISIONAL = 0.50;
 export const PULLUP_FRONT_INCORRECT_RETURN_RH_PROVISIONAL = 0.20;
-export const PULLUP_FRONT_INCORRECT_START_FRAMES_PROVISIONAL = 2;
+export const PULLUP_FRONT_INCORRECT_START_FRAMES_PROVISIONAL = 1;
 export const PULLUP_FRONT_INCORRECT_RETURN_FRAMES_PROVISIONAL = 2;
 // N=6 permite fijar la referencia con movimiento continuo sin esperar una pausa larga.
 export const PULLUP_FRONT_INCORRECT_REFERENCE_SAMPLES_PROVISIONAL = 6;
@@ -36,6 +37,7 @@ type PullupFrontStartCandidate = {
 export type PullupFrontActiveCycle = {
   tInicio: number;
   peakRH: number;
+  huecoMaxS: number;
   headReached: boolean;
   trackerRepetitionsAtStart: number | null;
   trackerCountIncreased: boolean;
@@ -46,6 +48,7 @@ export type PullupFrontActiveCycle = {
 export type PullupFrontIncorrectState = {
   reference: PullupFrontReference | null;
   calibrationWindow: PullupFrontSample[];
+  calibrationFrames: PullupFrontIncorrectFrame[];
   calibrationCandidates: PullupFrontSample[];
   restingReferenceSamples: PullupFrontSample[];
   widthHistory: number[];
@@ -78,9 +81,16 @@ export type PullupFrontIncorrectCycleLog = {
   tInicio: number;
   tFin: number;
   picoRH: number;
+  huecoMaxS: number;
   cabezaLlego: boolean;
   contada: boolean;
   motivo: PullupFrontIncorrectReason;
+};
+
+export type PullupFrontIncorrectFrameResult = {
+  state: PullupFrontIncorrectState;
+  log: PullupFrontIncorrectCycleLog | null;
+  logs: PullupFrontIncorrectCycleLog[];
 };
 
 function isFiniteNumber(value: number | null | undefined): value is number {
@@ -121,6 +131,7 @@ function copyState(state: PullupFrontIncorrectState): PullupFrontIncorrectState 
   return {
     ...state,
     calibrationWindow: [...state.calibrationWindow],
+    calibrationFrames: state.calibrationFrames.map((frame) => ({ ...frame })),
     calibrationCandidates: [...state.calibrationCandidates],
     restingReferenceSamples: [...state.restingReferenceSamples],
     widthHistory: [...state.widthHistory],
@@ -133,6 +144,7 @@ export function createPullupFrontIncorrectState(): PullupFrontIncorrectState {
   return {
     reference: null,
     calibrationWindow: [],
+    calibrationFrames: [],
     calibrationCandidates: [],
     restingReferenceSamples: [],
     widthHistory: [],
@@ -196,10 +208,15 @@ function isPlausibleWidth(
 function updateInitialReference(
   state: PullupFrontIncorrectState,
   sample: PullupFrontSample,
+  frame: PullupFrontIncorrectFrame,
 ) {
   state.calibrationWindow = [
     ...state.calibrationWindow,
     sample,
+  ].slice(-CALIBRATION_WINDOW_FRAMES);
+  state.calibrationFrames = [
+    ...state.calibrationFrames,
+    { ...frame },
   ].slice(-CALIBRATION_WINDOW_FRAMES);
 
   if (
@@ -285,25 +302,40 @@ function makeCycleLog(
 ): PullupFrontIncorrectCycleLog {
   const trackerHandledCycle = cycle.trackerCountIncreased || cycle.trackerHadDecision;
   const contada = (
-    cycle.peakRH >= PULLUP_FRONT_INCORRECT_START_RH_PROVISIONAL
+    cycle.peakRH >= PULLUP_FRONT_INCORRECT_MIN_PEAK_RH_PROVISIONAL
     && !cycle.headReached
     && !trackerHandledCycle
   );
-  const motivo: PullupFrontIncorrectReason = contada
-    ? 'sin-cabeza-arriba'
-    : trackerHandledCycle
-      ? 'tracker-principal'
-      : cycle.headReached
-        ? 'cabeza-llego'
-        : 'pico-insuficiente';
+  let motivo: PullupFrontIncorrectReason;
+  if (cycle.peakRH < PULLUP_FRONT_INCORRECT_MIN_PEAK_RH_PROVISIONAL) {
+    motivo = 'pico-insuficiente';
+  } else if (trackerHandledCycle) {
+    motivo = 'tracker-principal';
+  } else if (cycle.headReached) {
+    motivo = 'cabeza-llego';
+  } else {
+    motivo = 'sin-cabeza-arriba';
+  }
 
   return {
     tInicio: cycle.tInicio,
     tFin,
     picoRH: cycle.peakRH,
+    huecoMaxS: cycle.huecoMaxS,
     cabezaLlego: cycle.headReached,
     contada,
     motivo,
+  };
+}
+
+function makeFrameResult(
+  state: PullupFrontIncorrectState,
+  logs: PullupFrontIncorrectCycleLog[] = [],
+): PullupFrontIncorrectFrameResult {
+  return {
+    state,
+    log: logs.at(-1) ?? null,
+    logs,
   };
 }
 
@@ -321,37 +353,65 @@ function resetConsecutiveFramesAfterInvalidInput(
 export function processPullupFrontIncorrectFrame(
   priorState: PullupFrontIncorrectState,
   frame: PullupFrontIncorrectFrame,
-): {
-  state: PullupFrontIncorrectState;
-  log: PullupFrontIncorrectCycleLog | null;
-} {
+): PullupFrontIncorrectFrameResult {
   const timeMovedBackward = (
     isFiniteNumber(frame.videoTime)
     && priorState.lastVideoTime !== null
     && frame.videoTime < priorState.lastVideoTime
   );
-  const state = timeMovedBackward
+  let state = timeMovedBackward
     ? createPullupFrontIncorrectState()
     : copyState(priorState);
 
+  const previousVideoTime = state.lastVideoTime;
   const previousTrackerRepetitions = state.lastTrackerRepetitions;
   if (isFiniteNumber(frame.videoTime)) state.lastVideoTime = frame.videoTime;
   if (isFiniteNumber(frame.trackerRepetitions)) {
     state.lastTrackerRepetitions = frame.trackerRepetitions;
   }
 
-  if (state.activeCycle) noteTrackerActivity(state.activeCycle, frame);
+  if (state.activeCycle) {
+    noteTrackerActivity(state.activeCycle, frame);
+    if (previousVideoTime !== null && isFiniteNumber(frame.videoTime)) {
+      const frameGapS = frame.videoTime - previousVideoTime;
+      if (frameGapS > 0) {
+        state.activeCycle.huecoMaxS = Math.max(
+          state.activeCycle.huecoMaxS,
+          frameGapS,
+        );
+      }
+    }
+  }
   if (state.startCandidate) noteTrackerActivity(state.startCandidate, frame);
 
   const sample = getValidSample(frame);
   if (!sample || !isPlausibleWidth(state, sample.shoulderWidthPx)) {
     resetConsecutiveFramesAfterInvalidInput(state, frame);
-    return { state, log: null };
+    return makeFrameResult(state);
   }
 
   if (!state.reference) {
-    updateInitialReference(state, sample);
-    return { state, log: null };
+    updateInitialReference(state, sample, frame);
+    if (!state.reference) return makeFrameResult(state);
+
+    const calibrationFrames = [...state.calibrationFrames];
+    state.calibrationWindow = [];
+    state.calibrationFrames = [];
+    state.calibrationCandidates = [];
+    state.widthHistory = [];
+    state.startCandidate = null;
+    state.activeCycle = null;
+    state.incorrectCount = 0;
+    state.lastVideoTime = null;
+    state.lastTrackerRepetitions = null;
+
+    const replayLogs: PullupFrontIncorrectCycleLog[] = [];
+    for (const calibrationFrame of calibrationFrames) {
+      const replayResult = processPullupFrontIncorrectFrame(state, calibrationFrame);
+      state = replayResult.state;
+      replayLogs.push(...replayResult.logs);
+    }
+    return makeFrameResult(state, replayLogs);
   }
 
   const riseRatio = (
@@ -370,14 +430,14 @@ export function processPullupFrontIncorrectFrame(
     if (
       cycle.returnFrames < PULLUP_FRONT_INCORRECT_RETURN_FRAMES_PROVISIONAL
     ) {
-      return { state, log: null };
+      return makeFrameResult(state);
     }
 
     const log = makeCycleLog(cycle, frame.videoTime);
     if (log.contada) state.incorrectCount += 1;
     state.activeCycle = null;
     updateRestingReference(state, sample);
-    return { state, log };
+    return makeFrameResult(state, [log]);
   }
 
   if (state.startCandidate) {
@@ -386,7 +446,7 @@ export function processPullupFrontIncorrectFrame(
       if (riseRatio <= PULLUP_FRONT_INCORRECT_RETURN_RH_PROVISIONAL) {
         updateRestingReference(state, sample);
       }
-      return { state, log: null };
+      return makeFrameResult(state);
     }
 
     const candidate = state.startCandidate;
@@ -399,6 +459,7 @@ export function processPullupFrontIncorrectFrame(
       state.activeCycle = {
         tInicio: candidate.tInicio,
         peakRH: candidate.peakRH,
+        huecoMaxS: 0,
         headReached: candidate.headReached,
         trackerRepetitionsAtStart: candidate.trackerRepetitionsAtStart,
         trackerCountIncreased: candidate.trackerCountIncreased,
@@ -407,7 +468,7 @@ export function processPullupFrontIncorrectFrame(
       };
       state.startCandidate = null;
     }
-    return { state, log: null };
+    return makeFrameResult(state);
   }
 
   if (riseRatio >= PULLUP_FRONT_INCORRECT_START_RH_PROVISIONAL) {
@@ -416,7 +477,7 @@ export function processPullupFrontIncorrectFrame(
       : null;
     const repetitionsBeforeStart = previousTrackerRepetitions
       ?? repetitionsAtStart;
-    state.startCandidate = {
+    const candidate: PullupFrontStartCandidate = {
       tInicio: frame.videoTime,
       frames: 1,
       peakRH: riseRatio,
@@ -429,13 +490,29 @@ export function processPullupFrontIncorrectFrame(
       ),
       trackerHadDecision: frame.trackerHadDecision === true,
     };
-    return { state, log: null };
+    if (
+      candidate.frames >= PULLUP_FRONT_INCORRECT_START_FRAMES_PROVISIONAL
+    ) {
+      state.activeCycle = {
+        tInicio: candidate.tInicio,
+        peakRH: candidate.peakRH,
+        huecoMaxS: 0,
+        headReached: candidate.headReached,
+        trackerRepetitionsAtStart: candidate.trackerRepetitionsAtStart,
+        trackerCountIncreased: candidate.trackerCountIncreased,
+        trackerHadDecision: candidate.trackerHadDecision,
+        returnFrames: 0,
+      };
+    } else {
+      state.startCandidate = candidate;
+    }
+    return makeFrameResult(state);
   }
 
   if (riseRatio <= PULLUP_FRONT_INCORRECT_RETURN_RH_PROVISIONAL) {
     updateRestingReference(state, sample);
   }
-  return { state, log: null };
+  return makeFrameResult(state);
 }
 
 export function getPullupFrontIncorrectCount(
