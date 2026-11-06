@@ -337,6 +337,11 @@ import {
   settlePendingPullupRep,
   smoothAngleReading,
 } from '@/exercises/pullup-tracker';
+import {
+  createPullupFrontIncorrectState,
+  getPullupFrontIncorrectCount,
+  processPullupFrontIncorrectFrame,
+} from '@/exercises/pullup-front-incorrect';
 import { getPullupIncorrectRulesConfiguration } from '@/exercises/pullup-incorrect-rules';
 import {
   createPullupAttemptShadowState,
@@ -10415,6 +10420,11 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const pullupFrontIncorrectStateRef = useRef(createPullupFrontIncorrectState());
+  const pullupFrontIncorrectTrackerHeadFramesRef = useRef<
+    Array<{ videoTime: number; headOverWrists: boolean | null }>
+  >([]);
+  const pullupFrontIncorrectOpenLoggedRef = useRef(false);
   const pullupAttemptShadowRef = useRef(createPullupAttemptShadowState());
   const diagSombraConteosRef = useRef({
     abiertos: 0,
@@ -16564,6 +16574,88 @@ function Home() {
               ? getSupinePullupTechniqueFeedback(pose?.keypoints, nextDominantSide)
               : getPullupTechniqueFeedback(pose?.keypoints, nextDominantSide),
           );
+        }
+      }
+      if (
+        inputModeRef.current === 'video'
+        && viewAlignmentRef.current.estimatedView === 'front'
+        && (
+          isStandardOrSupinePullup(selectedExerciseForFrame)
+          || isCommandPullup(selectedExerciseForFrame)
+        )
+      ) {
+        const previousVideoTime =
+          pullupFrontIncorrectStateRef.current.lastVideoTime;
+        if (previousVideoTime !== null && video.currentTime < previousVideoTime) {
+          pullupFrontIncorrectTrackerHeadFramesRef.current = [];
+          pullupFrontIncorrectOpenLoggedRef.current = false;
+        }
+        const leftShoulder = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.left.shoulder]
+          : undefined;
+        const rightShoulder = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.right.shoulder]
+          : undefined;
+        const leftWrist = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.left.wrist]
+          : undefined;
+        const rightWrist = hasFreshPose
+          ? pose?.keypoints?.[sideKeypoints.right.wrist]
+          : undefined;
+        const nose = hasFreshPose ? pose?.keypoints?.[0] : undefined;
+        pullupFrontIncorrectTrackerHeadFramesRef.current.push({
+          videoTime: video.currentTime,
+          headOverWrists: pullupHeadOverWrists,
+        });
+        const frontIncorrectResult = processPullupFrontIncorrectFrame(
+          pullupFrontIncorrectStateRef.current,
+          {
+            videoTime: video.currentTime,
+            shouldersY: leftShoulder && rightShoulder
+              ? (leftShoulder.y + rightShoulder.y) / 2
+              : Number.NaN,
+            shoulderWidthPx: leftShoulder && rightShoulder
+              ? Math.abs(leftShoulder.x - rightShoulder.x)
+              : Number.NaN,
+            noseY: nose?.y ?? Number.NaN,
+            wristsY: leftWrist && rightWrist
+              ? (leftWrist.y + rightWrist.y) / 2
+              : null,
+            headOverWrists: pullupHeadOverWrists,
+            elbowAngle: rawAngle,
+            trackerRepetitions: pullupTrackerRef.current.repetitions,
+            trackerHadDecision: Boolean(
+              pullupDiagnosticUpdate?.elevationDecision,
+            ),
+          },
+        );
+        pullupFrontIncorrectStateRef.current = frontIncorrectResult.state;
+        for (const log of frontIncorrectResult.logs) {
+          const headOverWristsTrackerAlgunaVez =
+            pullupFrontIncorrectTrackerHeadFramesRef.current.some((frame) => (
+              frame.videoTime >= log.tInicio
+              && frame.videoTime <= log.tFin
+              && frame.headOverWrists === true
+            ));
+          console.log(
+            '[dominadas-frontal-ciclo] ' + JSON.stringify({
+              ...log,
+              headOverWristsTrackerAlgunaVez,
+            }),
+          );
+        }
+        const keepTrackerHeadFramesFrom = (
+          frontIncorrectResult.state.activeCycle?.tInicio
+          ?? frontIncorrectResult.state.startCandidate?.tInicio
+          ?? frontIncorrectResult.state.calibrationFrames[0]?.videoTime
+        );
+        if (keepTrackerHeadFramesFrom === undefined) {
+          pullupFrontIncorrectTrackerHeadFramesRef.current = [];
+        } else {
+          pullupFrontIncorrectTrackerHeadFramesRef.current =
+            pullupFrontIncorrectTrackerHeadFramesRef.current.filter(
+              (frame) => frame.videoTime >= keepTrackerHeadFramesFrom,
+            );
         }
       }
       if (
@@ -24347,6 +24439,9 @@ function Home() {
       };
       diagDominadasTrazaFilasRef.current = [];
       diagDominadasTrazaReferenciasRef.current = [];
+      pullupFrontIncorrectStateRef.current = createPullupFrontIncorrectState();
+      pullupFrontIncorrectTrackerHeadFramesRef.current = [];
+      pullupFrontIncorrectOpenLoggedRef.current = false;
     }
     pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     pullupPendingAngleJumpDiagnosticRef.current = null;
@@ -25556,6 +25651,29 @@ function Home() {
         });
         pullupProcessingWaitMs = performance.now() - pullupProcessingWaitStartedAt;
       }
+      const openFrontIncorrectCycle =
+        pullupFrontIncorrectStateRef.current.activeCycle;
+      if (openFrontIncorrectCycle && !pullupFrontIncorrectOpenLoggedRef.current) {
+        const videoTimeAtEnd = videoRef.current?.currentTime ?? null;
+        const headOverWristsTrackerAlgunaVez =
+          pullupFrontIncorrectTrackerHeadFramesRef.current.some((frame) => (
+            frame.videoTime >= openFrontIncorrectCycle.tInicio
+            && (
+              videoTimeAtEnd === null
+              || frame.videoTime <= videoTimeAtEnd
+            )
+            && frame.headOverWrists === true
+          ));
+        console.log(
+          '[dominadas-frontal-abierto] ' + JSON.stringify({
+            ...openFrontIncorrectCycle,
+            tFin: videoTimeAtEnd,
+            contada: false,
+            headOverWristsTrackerAlgunaVez,
+          }),
+        );
+        pullupFrontIncorrectOpenLoggedRef.current = true;
+      }
       const shadowAttemptAtVideoEnd = pullupAttemptShadowRef.current.attempt;
       if (PULLUP_SHADOW_LOG_ENABLED && shadowAttemptAtVideoEnd) {
         diagSombraConteosRef.current.abiertosAlTerminar += 1;
@@ -25678,10 +25796,14 @@ function Home() {
         decisiones: [...diagnosticMemory.decisions],
         cuadros: [...diagnosticMemory.frames],
       };
+      const incorrectasFrontal = getPullupFrontIncorrectCount(
+        pullupFrontIncorrectStateRef.current,
+      );
       const dominadasResumen = {
         total: tracker.repetitions,
         correctas: tracker.goodRepetitions,
-        incorrectas: Math.max(0, tracker.repetitions - tracker.goodRepetitions),
+        incorrectasFrontal,
+        incorrectas: Math.max(0, tracker.repetitions - tracker.goodRepetitions) + (viewAlignmentRef.current.estimatedView === 'front' ? incorrectasFrontal : 0),
         incorrectasModulo: Object.values(incorrectasModuloPorRegla)
           .reduce((total, count) => total + count, 0),
         incorrectasModuloPorRegla,
