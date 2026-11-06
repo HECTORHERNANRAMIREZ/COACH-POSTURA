@@ -1399,6 +1399,12 @@ function logOpenPullupAttempt(
   videoTime: number | null,
   phaseTracker: string,
   reason: 'abierto-al-terminar' | 'descartado-por-reinicio',
+  baseline: {
+    shoulderY: number;
+    noseY: number;
+    shoulderSpanPx: number;
+  } | null,
+  baselineFixedAt: number | null,
 ) {
   const duration = (
     attempt.tInicio !== null
@@ -1421,6 +1427,10 @@ function logOpenPullupAttempt(
     vistaFin: attempt.viewEnd,
     vistaCambio: attempt.viewChanged,
     motivo: reason,
+    referenciaHombrosY: baseline?.shoulderY ?? null,
+    referenciaNarizY: baseline?.noseY ?? null,
+    referenciaAnchoHombrosPx: baseline?.shoulderSpanPx ?? null,
+    referenciaFijadaEn: baselineFixedAt,
   })}`);
 }
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
@@ -10414,6 +10424,26 @@ function Home() {
     abiertosAlTerminar: 0,
     ultimoMotivo: null as string | null,
   });
+  const diagDominadasTrazaFilasRef = useRef<
+    Array<[
+      number,
+      number | null,
+      number | null,
+      number | null,
+      number | null,
+      number | null,
+      string,
+      0 | 1,
+    ]>
+  >([]);
+  const diagDominadasTrazaReferenciasRef = useRef<
+    Array<{
+      t: number;
+      shoulderY: number;
+      noseY: number;
+      span: number;
+    }>
+  >([]);
   const pullupTrackerDiagnosticsRef = useRef(createPullupDiagnosticMemory());
   const pullupPendingAngleJumpDiagnosticRef = useRef<
     Omit<PullupTrackerFrameDiagnostic, 'frameIndex' | 'phaseChanged'> | null
@@ -16552,6 +16582,22 @@ function Home() {
           : undefined;
         const nose = hasFreshPose ? pose?.keypoints?.[0] : undefined;
         const shadowStateBeforeLog = pullupAttemptShadowRef.current;
+        const shadowBaselineForLog = shadowStateBeforeLog.baseline;
+        const shadowBaselineReferenceChanges =
+          diagDominadasTrazaReferenciasRef.current;
+        const shadowBaselineFixedAtForFrame =
+          shadowBaselineReferenceChanges.length > 0
+            ? shadowBaselineReferenceChanges[
+                shadowBaselineReferenceChanges.length - 1
+              ].t
+            : null;
+        const shadowReferenceLogFields = {
+          referenciaHombrosY: shadowBaselineForLog?.shoulderY ?? null,
+          referenciaNarizY: shadowBaselineForLog?.noseY ?? null,
+          referenciaAnchoHombrosPx:
+            shadowBaselineForLog?.shoulderSpanPx ?? null,
+          referenciaFijadaEn: shadowBaselineFixedAtForFrame,
+        };
         const shadowStateResetForLog = !video.ended && (
           !exerciseStartedRef.current
           || (
@@ -16575,6 +16621,8 @@ function Home() {
             video.currentTime,
             pullupShadowPhaseAfterFrame,
             'descartado-por-reinicio',
+            shadowBaselineForLog,
+            shadowBaselineFixedAtForFrame,
           );
         }
         const shadowShoulderYForLog = leftShoulder && rightShoulder
@@ -16593,7 +16641,6 @@ function Home() {
           || pullupCountingBlockedByDetach
           || !pullupShadowFrameAccepted
         );
-        const shadowBaselineForLog = shadowStateBeforeLog.baseline;
         const shadowShoulderRiseRatioForLog = shadowBaselineForLog
           && shadowShoulderYForLog !== null
           && Number.isFinite(shadowShoulderYForLog)
@@ -16646,6 +16693,58 @@ function Home() {
             repetitions: pullupShadowRepetitionsForFrame,
           },
         );
+        const shadowBaselineAfterFrame = shadowResult.state.baseline;
+        if (
+          shadowBaselineAfterFrame !== null
+          && (
+            shadowBaselineForLog === null
+            || shadowBaselineAfterFrame.shoulderY
+              !== shadowBaselineForLog.shoulderY
+            || shadowBaselineAfterFrame.noseY !== shadowBaselineForLog.noseY
+            || shadowBaselineAfterFrame.shoulderSpanPx
+              !== shadowBaselineForLog.shoulderSpanPx
+          )
+        ) {
+          diagDominadasTrazaReferenciasRef.current.push({
+            t: Number(video.currentTime.toFixed(3)),
+            shoulderY: Math.round(shadowBaselineAfterFrame.shoulderY),
+            noseY: Math.round(shadowBaselineAfterFrame.noseY),
+            span: Math.round(shadowBaselineAfterFrame.shoulderSpanPx),
+          });
+        }
+        const pullupShadowPhaseCodeForLog = (
+          pullupShadowPhaseAfterFrame === 'esperando abajo'
+            ? 'ea'
+            : pullupShadowPhaseAfterFrame === 'abajo'
+              ? 'ab'
+              : pullupShadowPhaseAfterFrame === 'subiendo'
+                ? 'su'
+                : pullupShadowPhaseAfterFrame === 'arriba'
+                  ? 'ar'
+                  : pullupShadowPhaseAfterFrame === 'bajando'
+                    ? 'ba'
+                    : '??'
+        );
+        diagDominadasTrazaFilasRef.current.push([
+          Number(video.currentTime.toFixed(3)),
+          shadowShoulderRiseRatioForLog === null
+            ? null
+            : Number(shadowShoulderRiseRatioForLog.toFixed(3)),
+          shadowHeadRiseRatioForLog === null
+            ? null
+            : Number(shadowHeadRiseRatioForLog.toFixed(3)),
+          shadowShoulderYForLog === null
+            ? null
+            : Math.round(shadowShoulderYForLog),
+          shadowNoseYForLog === null
+            ? null
+            : Math.round(shadowNoseYForLog),
+          rawAngle !== null && Number.isFinite(rawAngle)
+            ? Math.round(rawAngle)
+            : null,
+          pullupShadowPhaseCodeForLog,
+          shadowResult.state.attempt ? 1 : 0,
+        ]);
         const shadowAttemptOpenedNow = (
           !shadowStateBeforeLog.attempt
           && shadowResult.state.attempt !== null
@@ -16704,11 +16803,15 @@ function Home() {
                 ? 'abierto'
                 : 'ninguno',
             motivo: shadowFrameReason,
+            ...shadowReferenceLogFields,
           })}`);
         }
         pullupAttemptShadowRef.current = shadowResult.state;
         if (shadowResult.log) {
-          console.log(`[dominadas-intento]: ${JSON.stringify(shadowResult.log)}`);
+          console.log(`[dominadas-intento]: ${JSON.stringify({
+            ...shadowResult.log,
+            ...shadowReferenceLogFields,
+          })}`);
         }
       }
       let muscleUpPullupCountLog: {
@@ -24242,6 +24345,8 @@ function Home() {
         abiertosAlTerminar: 0,
         ultimoMotivo: null,
       };
+      diagDominadasTrazaFilasRef.current = [];
+      diagDominadasTrazaReferenciasRef.current = [];
     }
     pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     pullupPendingAngleJumpDiagnosticRef.current = null;
@@ -25459,8 +25564,21 @@ function Home() {
           videoRef.current?.currentTime ?? null,
           pullupTrackerRef.current.phase,
           'abierto-al-terminar',
+          pullupAttemptShadowRef.current.baseline,
+          diagDominadasTrazaReferenciasRef.current.length > 0
+            ? diagDominadasTrazaReferenciasRef.current[
+                diagDominadasTrazaReferenciasRef.current.length - 1
+              ].t
+            : null,
         );
       }
+      console.log(`[dominadas-traza] ${JSON.stringify({
+        cols: ['t', 'rH', 'rN', 'sy', 'ny', 'codo', 'fase', 'ab'],
+        ref: diagDominadasTrazaReferenciasRef.current,
+        vista: viewAlignmentRef.current.estimatedView,
+        n: diagDominadasTrazaFilasRef.current.length,
+        filas: diagDominadasTrazaFilasRef.current,
+      })}`);
       let pullupSettleResult: ReturnType<typeof settlePendingPullupRep> | null = null;
       const exerciseAtFinish = selectedExerciseRef.current;
       if (
