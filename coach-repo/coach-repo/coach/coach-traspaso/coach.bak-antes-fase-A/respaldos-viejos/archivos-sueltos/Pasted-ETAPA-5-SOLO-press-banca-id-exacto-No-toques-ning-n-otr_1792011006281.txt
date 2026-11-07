@@ -1,0 +1,16 @@
+ETAPA 5 — SOLO 'press-banca' (id exacto). No toques ningún otro ejercicio.
+ANTES: cp artifacts/posture-coach/src/App.tsx /tmp/App.tsx.PB5
+Sé económico: busca por nombre de símbolo, no releas el archivo completo.
+
+PARTE A — CONTEO (countFrameReady siempre false después de activar)
+Hecho: tras la activación (exerciseStarted=true) el log [press-banca-puerta] muestra countFrameReady=false todo el video, aunque repetitionAngle, hasFreshPose y repetitionTechniqueReady están bien. Mi gate propio pressBenchCountFrameReady exige stabilityFramesRef.current >= PUSHUP_COUNT_STABLE_FRAMES, y el video se reinicia a t=0 al activar, así que ese contador probablemente no se recupera.
+1) Añade al log [press-banca-puerta] los campos: frameCameraReady, stabilityFrames (stabilityFramesRef.current), umbralEstabilidad (PUSHUP_COUNT_STABLE_FRAMES).
+2) En pressBenchCountFrameReady, una vez exerciseStartedRef.current === true NO exijas stabilityFramesRef (la estabilidad ya se verificó en los 5 s de detección). Antes de activar, deja la condición como está. Mantén hasFreshPose, frameCameraReady, lados evaluados > 0 y !frameMeasurementBlocked.
+
+PARTE B — PANTALLA VISUAL DE DETECCIÓN (igual a flexiones)
+PASO 1 — SOLO LECTURA. Investiga qué ve el usuario en flexiones durante la detección (pushupPreparationStage, pushupCalibrationStatus y los textos/overlays que se renderizan, video y vivo) y qué ya se renderiza para press-banca (hoy solo el cartel pequeño "Buscando cuerpo… X / 5 s"). Respóndeme en pocas líneas: (a) qué UI muestra flexiones, (b) qué falta en press-banca, (c) líneas COMPARTIDAS a cambiar con el cambio exacto, (d) dudas. Usa AskUserQuestion si hay decisiones mías.
+PASO 2 — tras mi OK: impleméntalo protegido con === 'press-banca', reutilizando los componentes de flexiones sin modificarlos. Si hace falta cambiar una línea compartida, PARA y pregúntame.
+
+REGLAS: 0 líneas quitadas de otros ejercicios; no toques advanceExerciseRepTracker, flexiones, cruces ni pica. NO inventes valores. NO ejecutes typecheck, build ni simulaciones; solo sintaxis.
+
+REPORTA SOLO: (a) rangos de líneas, (b) líneas quitadas, (c) código exacto de la parte A y de la UI nueva.
