@@ -10324,6 +10324,7 @@ function Home() {
   const [squatFeedback, setSquatFeedback] = useState<TechniqueFeedback>(defaultSquatFeedback);
   const [pullupRepetitions, setPullupRepetitions] = useState(0);
   const [pullupGoodRepetitions, setPullupGoodRepetitions] = useState(0);
+  const [pullupFrontIncorrectRepetitions, setPullupFrontIncorrectRepetitions] = useState(0);
   const [pullupPendingRepetitions, setPullupPendingRepetitions] = useState(0);
   const [pullupPhase, setPullupPhase] = useState<PullupPhase>('esperando abajo');
   const [pullupMinimumAngle, setPullupMinimumAngle] = useState<number | null>(null);
@@ -16587,6 +16588,7 @@ function Home() {
         const previousVideoTime =
           pullupFrontIncorrectStateRef.current.lastVideoTime;
         if (previousVideoTime !== null && video.currentTime < previousVideoTime) {
+          setPullupFrontIncorrectRepetitions(0);
           pullupFrontIncorrectTrackerHeadFramesRef.current = [];
           pullupFrontIncorrectOpenLoggedRef.current = false;
         }
@@ -16630,6 +16632,11 @@ function Home() {
           },
         );
         pullupFrontIncorrectStateRef.current = frontIncorrectResult.state;
+        if (frontIncorrectResult.logs.some((log) => log.contada)) {
+          setPullupFrontIncorrectRepetitions(
+            getPullupFrontIncorrectCount(frontIncorrectResult.state),
+          );
+        }
         for (const log of frontIncorrectResult.logs) {
           const headOverWristsTrackerAlgunaVez =
             pullupFrontIncorrectTrackerHeadFramesRef.current.some((frame) => (
@@ -24440,6 +24447,7 @@ function Home() {
       diagDominadasTrazaFilasRef.current = [];
       diagDominadasTrazaReferenciasRef.current = [];
       pullupFrontIncorrectStateRef.current = createPullupFrontIncorrectState();
+      setPullupFrontIncorrectRepetitions(0);
       pullupFrontIncorrectTrackerHeadFramesRef.current = [];
       pullupFrontIncorrectOpenLoggedRef.current = false;
     }
@@ -26762,7 +26770,9 @@ function Home() {
     ? Math.max(
         0,
         evaluatedRepetitions - correctRepetitions - pullupPendingRepetitions,
-      )
+      ) + (viewAlignmentRef.current.estimatedView === 'front'
+        ? pullupFrontIncorrectRepetitions
+        : 0)
     : selectedExercise === 'muscle-up'
       ? muscleUpPullupIncorrectRepetitions
       : Math.max(0, evaluatedRepetitions - correctRepetitions);
