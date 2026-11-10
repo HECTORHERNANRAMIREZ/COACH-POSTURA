@@ -1,1 +1,2 @@
 - [Pull-up shadow boundary](pullup-shadow-boundary.md) — Keep diagnostic-only work separate from existing repetition counting and its frozen rules.
+- [Muscle-up tracker tests](muscle-up-tracker-tests.md) — Run node:test through Vite SSR; plain tsx lacks Vite env, and Replit dev plugins can alter workspace port mappings.

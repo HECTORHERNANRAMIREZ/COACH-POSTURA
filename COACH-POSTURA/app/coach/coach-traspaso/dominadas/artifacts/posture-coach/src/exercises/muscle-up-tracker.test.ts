@@ -17,20 +17,23 @@ function trackerReturningFromARep() {
   };
 }
 
-test('counts the five logged reps as correct when the head and elbow confirm the top', () => {
-  const loggedRepSignals = [
-    { angle: 119, topReached: true },
-    { angle: 72, topReached: false },
-    { angle: 76, topReached: false },
-    { angle: 89, topReached: false },
-    { angle: 79, topReached: false },
-  ];
+test('counts a correct rep after five consecutive geometric top frames', () => {
+  let tracker = {
+    ...createMuscleUpPullupTracker(),
+    phase: 'subiendo' as const,
+    isArmed: true,
+    currentRepCorrect: true,
+    samples: [151, 147, 128, 109],
+    lastAngle: 147,
+    minimumAngle: 147,
+  };
+  const topAngles = [119, 72, 76, 89, 79];
 
-  for (const { angle, topReached } of loggedRepSignals) {
+  for (const angle of topAngles) {
     const update = advanceMuscleUpPullupTracker(
-      trackerReturningFromARep(),
+      tracker,
       angle,
-      topReached,
+      true,
       true,
       { atBottom: false, atTop: true },
       true,
@@ -42,19 +45,29 @@ test('counts the five logged reps as correct when the head and elbow confirm the
       false,
       true,
     );
+    tracker = update.tracker;
 
-    assert.equal(update.tracker.repetitions, 1);
-    assert.equal(update.tracker.goodRepetitions, 1);
-    assert.equal(update.tracker.incorrectRepetitions, 0);
-    assert.equal(update.tracker.event, 'valid');
-    assert.equal(update.tracker.currentRepCorrect, true);
+    if (angle === topAngles[0]) {
+      assert.equal(update.smoothedAngle, 128);
+      assert.equal(tracker.phase, 'subiendo');
+      assert.equal(tracker.repetitions, 0);
+      assert.equal(tracker.event, null);
+    }
   }
+
+  assert.equal(tracker.phase, 'arriba');
+  assert.equal(tracker.repetitions, 1);
+  assert.equal(tracker.goodRepetitions, 0);
+  assert.equal(tracker.incorrectRepetitions, 0);
+  assert.equal(tracker.event, 'valid');
+  assert.equal(tracker.currentRepCorrect, true);
+  assert.equal(tracker.pendingRepHeadOverWrists, true);
 });
 
 test('keeps no-top reps incorrect when the top evidence is missing', () => {
   const update = advanceMuscleUpPullupTracker(
     trackerReturningFromARep(),
-    72,
+    150,
     false,
     false,
     { atBottom: false, atTop: false },
@@ -72,4 +85,87 @@ test('keeps no-top reps incorrect when the top evidence is missing', () => {
   assert.equal(update.tracker.goodRepetitions, 0);
   assert.equal(update.tracker.incorrectRepetitions, 1);
   assert.equal(update.tracker.event, 'no-top');
+});
+
+test('does not close a pull when the smoothed angle lags in the bottom range', () => {
+  let tracker = {
+    ...createMuscleUpPullupTracker(),
+    phase: 'subiendo' as const,
+    isArmed: true,
+    currentRepCorrect: true,
+    samples: [151, 147, 128, 109],
+    lastAngle: 147,
+    minimumAngle: 147,
+  };
+
+  const laggingBottomFrame = advanceMuscleUpPullupTracker(
+    tracker,
+    90,
+    false,
+    true,
+    { atBottom: false, atTop: true },
+    true,
+    MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+    null,
+    true,
+    90,
+    true,
+    false,
+    true,
+  );
+  tracker = laggingBottomFrame.tracker;
+
+  assert.equal(laggingBottomFrame.smoothedAngle, 128);
+  assert.equal(tracker.phase, 'subiendo');
+  assert.equal(tracker.repetitions, 0);
+  assert.equal(tracker.goodRepetitions, 0);
+  assert.equal(tracker.event, null);
+
+  for (const angle of [69, 74, 83, 99, 118]) {
+    tracker = advanceMuscleUpPullupTracker(
+      tracker,
+      angle,
+      true,
+      true,
+      { atBottom: false, atTop: true },
+      true,
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+      null,
+      false,
+      angle,
+      false,
+      false,
+      true,
+    ).tracker;
+  }
+
+  assert.equal(tracker.phase, 'arriba');
+  assert.equal(tracker.repetitions, 1);
+  assert.equal(tracker.goodRepetitions, 0);
+  assert.equal(tracker.event, 'valid');
+  assert.equal(tracker.pendingRepHeadOverWrists, true);
+
+  for (const angle of [150, 160, 165]) {
+    tracker = advanceMuscleUpPullupTracker(
+      tracker,
+      angle,
+      false,
+      false,
+      { atBottom: true, atTop: false },
+      true,
+      MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+      null,
+      false,
+      angle,
+      false,
+      false,
+      true,
+    ).tracker;
+  }
+
+  assert.equal(tracker.phase, 'abajo');
+  assert.equal(tracker.repetitions, 1);
+  assert.equal(tracker.goodRepetitions, 1);
+  assert.equal(tracker.incorrectRepetitions, 0);
+  assert.equal(tracker.event, 'valid');
 });

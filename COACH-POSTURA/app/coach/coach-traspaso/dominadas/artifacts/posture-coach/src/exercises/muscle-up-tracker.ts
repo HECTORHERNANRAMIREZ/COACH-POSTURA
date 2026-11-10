@@ -489,6 +489,10 @@ export function advanceMuscleUpPullupTracker(
     config.bottomMinAngle,
     config.bottomMaxAngle,
   );
+  // A lagging median can still look like the bottom while the raw elbow angle
+  // is in the pull range. Do not close the attempt until the raw angle has
+  // crossed back above the activation threshold.
+  const rawAngleHasReturnedToBottomRange = rawAngle > config.pullActivationAngle;
   const hasStartedPull = recentMinimumRawAngle !== null
     && recentMinimumRawAngle <= config.pullActivationAngle;
   const hasReachedTop = topReached;
@@ -594,7 +598,7 @@ export function advanceMuscleUpPullupTracker(
       nextTracker.topConfirmationHeadFramesYes = 0;
       nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
       completedMinimumAngle = nextTracker.minimumAngle;
-    } else if (isAtBottomByAngle) {
+    } else if (isAtBottomByAngle && rawAngleHasReturnedToBottomRange) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
       if (nextTracker.pendingRepHeadOverWrists === null) {
