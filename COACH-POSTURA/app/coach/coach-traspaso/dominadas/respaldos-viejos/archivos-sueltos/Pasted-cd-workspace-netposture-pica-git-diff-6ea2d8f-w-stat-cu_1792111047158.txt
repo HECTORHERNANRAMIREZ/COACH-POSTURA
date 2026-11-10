@@ -1,0 +1,1 @@
+cd ~/workspace/netposture-pica && git diff 6ea2d8f -w --stat | cut -c1-120; W=$(find . -path '*posture-coach/src/App.tsx' -not -path '*/node_modules/*' | awk '{print length($0), $0}' | sort -n | head -1 | cut -d' ' -f2-) && echo "--- pressBenchEvaluatedSides ---" && grep -n "pressBenchEvaluatedSides" "$W" | cut -c1-140
