@@ -64,7 +64,7 @@ export function isWithinMuscleUpPullupAngle(
   );
 }
 
-export function isRetainedLowScoreMuscleUpWristPoint(point: PosePoint | undefined) {
+export function isRetainedLowScoreMuscleUpOcclusionPoint(point: PosePoint | undefined) {
   return Boolean(
     point
     && point.held
@@ -74,24 +74,33 @@ export function isRetainedLowScoreMuscleUpWristPoint(point: PosePoint | undefine
   );
 }
 
+export function isRetainedLowScoreMuscleUpWristPoint(point: PosePoint | undefined) {
+  return isRetainedLowScoreMuscleUpOcclusionPoint(point);
+}
+
+export function isRetainedLowScoreMuscleUpHipPoint(point: PosePoint | undefined) {
+  return isRetainedLowScoreMuscleUpOcclusionPoint(point);
+}
+
 export function isFreshMuscleUpPullupCalibrationPoint(
   point: PosePoint | undefined,
-  allowRetainedLowScoreWrist = false,
+  allowRetainedLowScoreOcclusionPoint = false,
 ) {
   return Boolean(
-    isFreshMuscleUpPullupMeasurementPoint(point, allowRetainedLowScoreWrist)
+    isFreshMuscleUpPullupMeasurementPoint(point, allowRetainedLowScoreOcclusionPoint)
     && hasWorldCoordinates(point),
   );
 }
 
 export function isFreshMuscleUpPullupMeasurementPoint(
   point: PosePoint | undefined,
-  allowRetainedLowScoreWrist = false,
+  allowRetainedLowScoreOcclusionPoint = false,
 ) {
   return Boolean(
     point
     && (
-      (allowRetainedLowScoreWrist && isRetainedLowScoreMuscleUpWristPoint(point))
+      (allowRetainedLowScoreOcclusionPoint
+        && isRetainedLowScoreMuscleUpOcclusionPoint(point))
       || (
         !isHeldPoint(point)
         && (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
@@ -113,10 +122,9 @@ export function getMuscleUpPullupMeasurementSides(
       keypoints[indexes.wrist],
       keypoints[indexes.hip],
     ];
-    const nonWristPoints = [
+    const nonOcclusionPoints = [
       keypoints[indexes.shoulder],
       keypoints[indexes.elbow],
-      keypoints[indexes.hip],
     ];
     return {
       side,
@@ -124,10 +132,11 @@ export function getMuscleUpPullupMeasurementSides(
         (sum, point) => sum + (point?.score ?? 0),
         0,
       ) / points.length,
-      reliable: nonWristPoints.every((point) => (
+      reliable: nonOcclusionPoints.every((point) => (
         isFreshMuscleUpPullupMeasurementPoint(point)
       ))
-        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true),
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true)
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.hip], true),
     };
   });
   const reliableSides = candidates.filter(({ reliable }) => reliable);
@@ -217,9 +226,9 @@ export function hasFreshMuscleUpPullupMeasurement(keypoints: PosePoint[] | undef
       return [
         keypoints[indexes.shoulder],
         keypoints[indexes.elbow],
-        keypoints[indexes.hip],
       ].every((point) => isFreshMuscleUpPullupMeasurementPoint(point))
-        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true);
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.wrist], true)
+        && isFreshMuscleUpPullupMeasurementPoint(keypoints[indexes.hip], true);
     })
     && freshHeadPoints >= 2;
 }
@@ -235,7 +244,7 @@ export function getFreshMuscleUpPullupTorsoLengthPx(
     const hip = keypoints[indexes.hip];
     if (
       !isFreshMuscleUpPullupMeasurementPoint(shoulder)
-      || !isFreshMuscleUpPullupMeasurementPoint(hip)
+      || !isFreshMuscleUpPullupMeasurementPoint(hip, true)
       || !Number.isFinite(shoulder.x)
       || !Number.isFinite(shoulder.y)
       || !Number.isFinite(hip.x)
@@ -277,7 +286,7 @@ export function hasOnlyUnavailableMuscleUpPullupElbow(
       const wrist = keypoints[indexes.wrist];
       const hip = keypoints[indexes.hip];
       const hasUsableTorso = isFreshMuscleUpPullupMeasurementPoint(shoulder)
-        && isFreshMuscleUpPullupMeasurementPoint(hip)
+        && isFreshMuscleUpPullupMeasurementPoint(hip, true)
         && Number.isFinite(shoulder.x)
         && Number.isFinite(shoulder.y)
         && Number.isFinite(hip.x)
@@ -289,7 +298,7 @@ export function hasOnlyUnavailableMuscleUpPullupElbow(
       return isFreshMuscleUpPullupMeasurementPoint(shoulder)
         && Number.isFinite(shoulder.x)
         && Number.isFinite(shoulder.y)
-        && isFreshMuscleUpPullupMeasurementPoint(wrist)
+        && isFreshMuscleUpPullupMeasurementPoint(wrist, true)
         && Number.isFinite(wrist.x)
         && Number.isFinite(wrist.y)
         && !isFreshMuscleUpPullupMeasurementPoint(elbow)
@@ -335,7 +344,15 @@ export function getMuscleUpPullupHeadOverWrists(
   if (
     headPoints.length < 2
     || measurementSides.length === 0
-    || wrists.some((wrist) => (wrist?.score ?? 0) < 0.2)
+    || wrists.some((wrist) => (
+      (wrist?.score ?? 0) < 0.2
+      && !isRetainedLowScoreMuscleUpWristPoint(wrist)
+    ))
+    || wrists.some((wrist) => (
+      !wrist
+      || !Number.isFinite(wrist.x)
+      || !Number.isFinite(wrist.y)
+    ))
   ) return null;
   const headCenterY = headPoints.reduce((sum, point) => sum + point.y, 0) / headPoints.length;
   const averageWristY = wrists.reduce((sum, wrist) => sum + (wrist?.y ?? 0), 0) / wrists.length;
@@ -412,14 +429,15 @@ export function settlePendingMuscleUpPullupRep(
   const headFramesEvaluated = tracker.pendingRepHeadFramesEvaluated;
   const headFramesYes = tracker.pendingRepHeadFramesYes;
   const headOverWrists = headFramesYes > 0;
+  const completionConfirmed = options.bottomReached || options.sessionEnded === true;
   const correct = !options.noLockout
     && headOverWrists
-    && options.bottomReached;
+    && completionConfirmed;
   const reason = options.noLockout
     ? 'no-lockout'
     : !headOverWrists
       ? 'no-top-cabeza'
-      : options.bottomReached
+      : completionConfirmed
         ? 'ok'
         : 'no-fondo';
   const nextTracker: MuscleUpPullupTracker = {

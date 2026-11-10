@@ -366,6 +366,7 @@ import {
   isFreshMuscleUpPullupCalibrationPoint,
   isFreshMuscleUpPullupMeasurementPoint,
   isMuscleUpPullupBarDetached,
+  isRetainedLowScoreMuscleUpHipPoint,
   isRetainedLowScoreMuscleUpWristPoint,
   isWithinMuscleUpPullupAngle,
   advanceMuscleUpPullupTracker,
@@ -4624,7 +4625,10 @@ function hasHeldPointForExercise(
     return getMuscleUpPullupCalibrationPoints(keypoints)
       .some(({ name, point }) => (
         isHeldPoint(point)
-        && !(name === 'muñeca' && isRetainedLowScoreMuscleUpWristPoint(point))
+        && !(
+          (name === 'muñeca' && isRetainedLowScoreMuscleUpWristPoint(point))
+          || (name === 'cadera' && isRetainedLowScoreMuscleUpHipPoint(point))
+        )
       ));
   }
 
@@ -4747,8 +4751,16 @@ function getCameraGuidance(
     .filter(({ label, point }) => {
       if (
         exercise === 'muscle-up'
-        && label.startsWith('muñeca')
-        && isRetainedLowScoreMuscleUpWristPoint(point)
+        && (
+          (
+            label.startsWith('muñeca')
+            && isRetainedLowScoreMuscleUpWristPoint(point)
+          )
+          || (
+            label.startsWith('cadera')
+            && isRetainedLowScoreMuscleUpHipPoint(point)
+          )
+        )
       ) {
         return false;
       }
@@ -12805,8 +12817,11 @@ function Home() {
         const calibrationPoints = getMuscleUpPullupCalibrationPoints(pose?.keypoints);
         const calibrationFrameReady = rawCameraGuidance.tone === 'ready'
           && calibrationPoints.length > 0
-          && calibrationPoints.every(({ point }) => (
-            isFreshMuscleUpPullupCalibrationPoint(point)
+          && calibrationPoints.every(({ name, point }) => (
+            isFreshMuscleUpPullupCalibrationPoint(
+              point,
+              name === 'muñeca' || name === 'cadera',
+            )
           ));
 
         if (calibrationFrameReady) {
@@ -14027,11 +14042,17 @@ function Home() {
           : [];
         const muscleUpCalibrationPointsFresh = muscleUpCalibrationPoints.length > 0
           && muscleUpCalibrationPoints.every(({ name, point }) => (
-            isFreshMuscleUpPullupCalibrationPoint(point, name === 'muñeca')
+            isFreshMuscleUpPullupCalibrationPoint(
+              point,
+              name === 'muñeca' || name === 'cadera',
+            )
           ));
         const muscleUpCalibrationPointsNotFresh = muscleUpCalibrationPoints
           .filter(({ name, point }) => (
-            !isFreshMuscleUpPullupCalibrationPoint(point, name === 'muñeca')
+            !isFreshMuscleUpPullupCalibrationPoint(
+              point,
+              name === 'muñeca' || name === 'cadera',
+            )
           ))
           .map(({ name, side, point }) => (
             `${name} (lado=${side}, motivo=${getMuscleUpCalibrationPointInvalidReason(point)}, `
@@ -14953,7 +14974,10 @@ function Home() {
         selectedExerciseForFrame === 'muscle-up'
         && inputModeRef.current === 'video'
       ) {
-        const readMuscleUpExtremityPoint = (index: number) => {
+        const readMuscleUpExtremityPoint = (
+          index: number,
+          allowRetainedLowScoreOcclusionPoint = false,
+        ) => {
           const point = pose?.keypoints?.[index];
           const x = typeof point?.x === 'number' && Number.isFinite(point.x)
             ? point.x
@@ -14966,7 +14990,10 @@ function Home() {
             ? point.score
             : null;
           const fresh = Boolean(
-            point && isFreshMuscleUpPullupMeasurementPoint(point),
+            point && isFreshMuscleUpPullupMeasurementPoint(
+              point,
+              allowRetainedLowScoreOcclusionPoint,
+            ),
           );
           return {
             x,
@@ -14982,7 +15009,11 @@ function Home() {
         const frameStats = muscleUpExtremityVisibilityStatsRef.current;
         Object.entries(MUSCLE_UP_EXTREMITY_LOG_POINT_INDEXES).forEach(
           ([key, index]) => {
-            const point = readMuscleUpExtremityPoint(index);
+            const point = readMuscleUpExtremityPoint(
+              index,
+              key.toLowerCase().includes('wrist')
+                || key.toLowerCase().includes('hip'),
+            );
             const stats = frameStats[key as MuscleUpExtremityLogPointKey];
             stats.totalFrames += 1;
             if (point.fresh && point.visible) stats.freshVisibleFrames += 1;
@@ -15087,7 +15118,10 @@ function Home() {
           )
             ? getMuscleUpPullupCalibrationPoints(muscleUpAngleKeypoints)
               .filter(({ name, point }) => (
-                !isFreshMuscleUpPullupMeasurementPoint(point, name === 'muñeca')
+                !isFreshMuscleUpPullupMeasurementPoint(
+                  point,
+                  name === 'muñeca' || name === 'cadera',
+                )
               ))
               .map(({ name, side, point }) => ({
                 name,
@@ -15405,11 +15439,23 @@ function Home() {
           return false;
         }
         if ((point.score ?? 0) < CAMERA_POINT_MIN_SCORE) {
-          reasons.push(`${label}-low-confidence`);
+          if (
+            !(label === 'wrist' && isRetainedLowScoreMuscleUpWristPoint(point))
+          ) {
+            reasons.push(`${label}-low-confidence`);
+          }
         }
-        if (isHeldPoint(point)) reasons.push(`${label}-held`);
-        return (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
-          && !isHeldPoint(point);
+        if (
+          isHeldPoint(point)
+          && !(label === 'wrist' && isRetainedLowScoreMuscleUpWristPoint(point))
+        ) reasons.push(`${label}-held`);
+        return (
+          (point.score ?? 0) >= CAMERA_POINT_MIN_SCORE
+          && !isHeldPoint(point)
+        ) || (
+          label === 'wrist'
+          && isRetainedLowScoreMuscleUpWristPoint(point)
+        );
       };
       for (const side of muscleUpPullupMeasurementSides) {
         const indexes = MUSCLE_UP_PULLUP_SIDE_KEYPOINTS[side];
@@ -15446,7 +15492,7 @@ function Home() {
           && elbow!.y < wrist!.y;
         const currentTorsoLengthPx = (
           isFreshMuscleUpPullupMeasurementPoint(shoulder)
-          && isFreshMuscleUpPullupMeasurementPoint(hip)
+          && isFreshMuscleUpPullupMeasurementPoint(hip, true)
           && Number.isFinite(shoulder!.x)
           && Number.isFinite(shoulder!.y)
           && Number.isFinite(hip!.x)
@@ -17169,7 +17215,7 @@ function Home() {
           !shoulder
           || !hip
           || !isFreshMuscleUpPullupMeasurementPoint(shoulder)
-          || !isFreshMuscleUpPullupMeasurementPoint(hip)
+          || !isFreshMuscleUpPullupMeasurementPoint(hip, true)
           || !Number.isFinite(shoulder.y)
           || !Number.isFinite(hip.y)
         ) {
@@ -17717,8 +17763,8 @@ function Home() {
           return {
             side,
             shoulderFresh: isFreshMuscleUpPullupMeasurementPoint(shoulder),
-            wristFresh: isFreshMuscleUpPullupMeasurementPoint(wrist),
-            hipFresh: isFreshMuscleUpPullupMeasurementPoint(hip),
+            wristFresh: isFreshMuscleUpPullupMeasurementPoint(wrist, true),
+            hipFresh: isFreshMuscleUpPullupMeasurementPoint(hip, true),
             confidence: {
               shoulder: shoulder?.score ?? null,
               wrist: wrist?.score ?? null,

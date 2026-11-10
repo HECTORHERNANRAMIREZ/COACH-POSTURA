@@ -1,0 +1,1 @@
+- [Vite source tests](vite-source-tests.md) — direct tsx imports lack Vite's `import.meta.env` transform; middleware Vite may change `.replit` port mappings.
