@@ -366,6 +366,11 @@ import {
   advanceMuscleUpPullupTracker,
   settlePendingMuscleUpPullupRep,
 } from '@/exercises/muscle-up-tracker';
+import {
+  addMuscleUpIncorrectAttemptCounts,
+  advanceMuscleUpIncorrectAttemptTracker,
+  createMuscleUpIncorrectAttemptTracker,
+} from '@/exercises/muscle-up-incorrect-tracker';
 
 const queryClient = new QueryClient();
 
@@ -10463,6 +10468,9 @@ function Home() {
   const muscleUpPullupTrackerRef = useRef<MuscleUpPullupTracker>(
     createMuscleUpPullupTracker(),
   );
+  const muscleUpIncorrectAttemptTrackerRef = useRef(
+    createMuscleUpIncorrectAttemptTracker(),
+  );
   const muscleUpPullupBodyMotionHistoryRef = useRef<
     Array<{ shoulderY: number; hipY: number }>
   >([]);
@@ -14148,6 +14156,8 @@ function Home() {
             muscleUpCalibrationReadySinceRef.current = null;
             updateMuscleUpCalibrationStatus('ready');
             muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+            muscleUpIncorrectAttemptTrackerRef.current =
+              createMuscleUpIncorrectAttemptTracker();
             muscleUpPullupBodyMotionHistoryRef.current = [];
             muscleUpPullupAscentSignalRef.current = null;
             muscleUpPullupRearmBlockedRef.current = false;
@@ -14333,6 +14343,8 @@ function Home() {
         const preparationElapsed = now - preparationStartedAt;
         if (preparationElapsed >= MUSCLE_UP_PULLUP_BAR_PREPARATION_COUNTDOWN_MS) {
           muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+          muscleUpIncorrectAttemptTrackerRef.current =
+            createMuscleUpIncorrectAttemptTracker();
           muscleUpPullupBodyMotionHistoryRef.current = [];
           muscleUpPullupAscentSignalRef.current = null;
           muscleUpPullupRearmBlockedRef.current = false;
@@ -15066,7 +15078,10 @@ function Home() {
             counter: {
               phaseCurrent: muscleUpPullupTrackerRef.current.phase,
               phasePrevious: muscleUpPullupPreviousPhaseRef.current,
-              repetitions: muscleUpPullupTrackerRef.current.repetitions,
+              repetitions: addMuscleUpIncorrectAttemptCounts(
+                muscleUpPullupTrackerRef.current,
+                muscleUpIncorrectAttemptTrackerRef.current,
+              ).repetitions,
               angleSentToTracker: repetitionAngle,
               angleSentToTrackerNullReason: repetitionAngle === null
                 ? muscleUpAngleNullReasons
@@ -15577,9 +15592,13 @@ function Home() {
           { bottomReached: false, sessionEnded: true },
         );
         muscleUpPullupTrackerRef.current = settled.tracker;
-        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
+        const countedTracker = addMuscleUpIncorrectAttemptCounts(
+          settled.tracker,
+          muscleUpIncorrectAttemptTrackerRef.current,
+        );
+        setMuscleUpPullupRepetitions(countedTracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(countedTracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
@@ -15589,7 +15608,7 @@ function Home() {
         }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
-          logMuscleUpPullupFinish(settled.tracker);
+          logMuscleUpPullupFinish(countedTracker);
         }
       }
       const muscleUpPullupCountingBlockedByDetach = (
@@ -17189,6 +17208,26 @@ function Home() {
           muscleUpPullupAscentSignalRef.current = null;
         }
         muscleUpPullupTrackerRef.current = update.tracker;
+        const incorrectAttemptUpdate = advanceMuscleUpIncorrectAttemptTracker(
+          muscleUpIncorrectAttemptTrackerRef.current,
+          {
+            attemptStarted: phaseBeforeUpdate === 'abajo'
+              && update.tracker.phase === 'subiendo',
+            attemptCompleted: phaseBeforeUpdate !== 'abajo'
+              && update.tracker.phase === 'abajo',
+            primaryRepetitions: update.tracker.repetitions,
+            reason: update.tracker.event === 'no-top'
+              ? 'no-top'
+              : update.tracker.event === 'no-lockout'
+                ? 'no-lockout'
+                : 'other',
+          },
+        );
+        muscleUpIncorrectAttemptTrackerRef.current = incorrectAttemptUpdate.tracker;
+        const countedTracker = addMuscleUpIncorrectAttemptCounts(
+          update.tracker,
+          incorrectAttemptUpdate.tracker,
+        );
         const suppressNoTopForLoggerClosedCycle = (
           update.tracker.event === 'no-top'
           && muscleUpCycleState.loggerClosedCycleAwaitingNoTop === true
@@ -17328,9 +17367,9 @@ function Home() {
             }),
           );
         }
-        setMuscleUpPullupRepetitions(update.tracker.repetitions);
+        setMuscleUpPullupRepetitions(countedTracker.repetitions);
         setMuscleUpPullupGoodRepetitions(update.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(update.tracker.incorrectRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(countedTracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(
           update.tracker.pendingRepHeadOverWrists === null ? 0 : 1,
         );
@@ -17351,6 +17390,24 @@ function Home() {
             message: `Repetición ${update.tracker.repetitions}: CORRECTA`,
             detail: 'La cabeza quedó sobre las muñecas y el ángulo del codo confirmó la posición alta.',
           });
+        } else if (
+          incorrectAttemptUpdate.countedIncorrect
+        ) {
+          setMuscleUpPullupFeedback({
+            tone: 'warning',
+            message: `Repetición ${countedTracker.repetitions}: INCORRECTA · ${incorrectAttemptUpdate.reason}`,
+            detail: 'El intento completo volvió abajo sin cumplir la condición de repetición correcta.',
+          });
+          console.log(
+            '[muscleup-incorrect-count]',
+            JSON.stringify({
+              videoTimeSeconds: muscleUpCycleVideoSeconds,
+              motivo: incorrectAttemptUpdate.reason,
+              total: countedTracker.repetitions,
+              correctas: update.tracker.goodRepetitions,
+              incorrectas: countedTracker.incorrectRepetitions,
+            }),
+          );
         } else if (
           update.tracker.event === 'no-top'
           && update.tracker.repetitions > trackerBeforeUpdate.repetitions
@@ -17384,8 +17441,9 @@ function Home() {
               ? 'no-disponible'
               : `${update.smoothedAngle}°`} `
             + `cabezaSobreMuñecas=${muscleUpPullupHeadOverWrists} `
-            + `total=${update.tracker.repetitions} `
+            + `total=${countedTracker.repetitions} `
             + `correctas=${update.tracker.goodRepetitions} `
+            + `incorrectas=${countedTracker.incorrectRepetitions} `
             + `evento=${update.tracker.event ?? 'ninguno'}`,
           );
         }
@@ -17553,7 +17611,10 @@ function Home() {
         }
       }
       if (isMuscleUpExercise) {
-        const muscleUpRepFrameTracker = muscleUpPullupTrackerRef.current;
+        const muscleUpRepFrameTracker = addMuscleUpIncorrectAttemptCounts(
+          muscleUpPullupTrackerRef.current,
+          muscleUpIncorrectAttemptTrackerRef.current,
+        );
         const muscleUpRepFrameHeadPoints = HEAD_LANDMARK_INDICES.map((index) => {
           const point = pose?.keypoints?.[index];
           return {
@@ -24172,6 +24233,8 @@ function Home() {
     setMuscleUpPreparationStage(muscleUpCalibrationReady ? 'active' : 'body-detection');
     setMuscleUpPreparationCountdown(null);
     muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpIncorrectAttemptTrackerRef.current =
+      createMuscleUpIncorrectAttemptTracker();
     muscleUpPullupBodyMotionHistoryRef.current = [];
     muscleUpPullupAscentSignalRef.current = null;
     muscleUpPullupRearmBlockedRef.current = false;
@@ -24881,11 +24944,15 @@ function Home() {
           { bottomReached: false, sessionEnded: true },
         );
         muscleUpPullupTrackerRef.current = settled.tracker;
+        const countedTracker = addMuscleUpIncorrectAttemptCounts(
+          settled.tracker,
+          muscleUpIncorrectAttemptTrackerRef.current,
+        );
         muscleUpPullupSessionFinishedRef.current = true;
         setMuscleUpPullupSessionFinished(true);
-        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
+        setMuscleUpPullupRepetitions(countedTracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(countedTracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
@@ -24895,7 +24962,7 @@ function Home() {
         }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
-          logMuscleUpPullupFinish(settled.tracker);
+          logMuscleUpPullupFinish(countedTracker);
         }
       }
       exerciseStartedRef.current = false;
@@ -26129,11 +26196,15 @@ function Home() {
           { bottomReached: false, sessionEnded: true },
         );
         muscleUpPullupTrackerRef.current = settled.tracker;
+        const countedTracker = addMuscleUpIncorrectAttemptCounts(
+          settled.tracker,
+          muscleUpIncorrectAttemptTrackerRef.current,
+        );
         muscleUpPullupSessionFinishedRef.current = true;
         setMuscleUpPullupSessionFinished(true);
-        setMuscleUpPullupRepetitions(settled.tracker.repetitions);
+        setMuscleUpPullupRepetitions(countedTracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
+        setMuscleUpPullupIncorrectRepetitions(countedTracker.incorrectRepetitions);
         setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
@@ -26143,7 +26214,7 @@ function Home() {
         }
         if (!muscleUpPullupFinLoggedRef.current) {
           muscleUpPullupFinLoggedRef.current = true;
-          logMuscleUpPullupFinish(settled.tracker);
+          logMuscleUpPullupFinish(countedTracker);
         }
         const tracker = settled.tracker;
         const stats = muscleUpExtremityVisibilityStatsRef.current;
@@ -26213,6 +26284,7 @@ function Home() {
       && (
         exerciseStartedRef.current
         || muscleUpPullupTrackerRef.current.repetitions > 0
+        || muscleUpIncorrectAttemptTrackerRef.current.incorrectRepetitions > 0
       )
     ) {
       const settled = settlePendingMuscleUpPullupRep(
@@ -26220,9 +26292,13 @@ function Home() {
         { bottomReached: false, sessionEnded: true },
       );
       muscleUpPullupTrackerRef.current = settled.tracker;
-      setMuscleUpPullupRepetitions(settled.tracker.repetitions);
+      const countedTracker = addMuscleUpIncorrectAttemptCounts(
+        settled.tracker,
+        muscleUpIncorrectAttemptTrackerRef.current,
+      );
+      setMuscleUpPullupRepetitions(countedTracker.repetitions);
       setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-      setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
+      setMuscleUpPullupIncorrectRepetitions(countedTracker.incorrectRepetitions);
       setMuscleUpPullupPendingRepetitions(0);
       if (settled.verdict) {
         logMuscleUpPullupVerdict(settled.verdict);
@@ -26232,7 +26308,7 @@ function Home() {
       }
       if (!muscleUpPullupFinLoggedRef.current) {
         muscleUpPullupFinLoggedRef.current = true;
-        logMuscleUpPullupFinish(settled.tracker);
+        logMuscleUpPullupFinish(countedTracker);
       }
     }
     stopResources();
@@ -26265,6 +26341,8 @@ function Home() {
     setMuscleUpPreparationStage('body-detection');
     setMuscleUpPreparationCountdown(null);
     muscleUpPullupTrackerRef.current = createMuscleUpPullupTracker();
+    muscleUpIncorrectAttemptTrackerRef.current =
+      createMuscleUpIncorrectAttemptTracker();
     muscleUpPullupBodyMotionHistoryRef.current = [];
     muscleUpPullupAscentSignalRef.current = null;
     muscleUpPullupRearmBlockedRef.current = false;
