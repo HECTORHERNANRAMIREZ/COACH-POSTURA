@@ -372,6 +372,32 @@ import {
   settlePendingMuscleUpPullupRep,
 } from '@/exercises/muscle-up-tracker';
 
+type PullupReadyPositionWindow = {
+  readySinceVideoTime: number | null;
+  minShoulderY: number | null;
+  maxShoulderY: number | null;
+  referenceShoulderSpanPx: number | null;
+  lastVideoTime: number | null;
+};
+
+function createPullupReadyPositionWindow(): PullupReadyPositionWindow {
+  return {
+    readySinceVideoTime: null,
+    minShoulderY: null,
+    maxShoulderY: null,
+    referenceShoulderSpanPx: null,
+    lastVideoTime: null,
+  };
+}
+
+function resetPullupReadyPositionState(
+  hasSeenReadyPosition: { current: boolean },
+  windowRef: { current: PullupReadyPositionWindow },
+) {
+  hasSeenReadyPosition.current = false;
+  windowRef.current = createPullupReadyPositionWindow();
+}
+
 const queryClient = new QueryClient();
 
 const pullupScrollFrames = [
@@ -10421,6 +10447,52 @@ function Home() {
     createUploadedSquatDiagnosticState(),
   );
   const pullupTrackerRef = useRef<PullupTracker>(createPullupTracker());
+  const hasSeenReadyPositionRef = useRef(false);
+  const pullupReadyPositionWindowRef = useRef<PullupReadyPositionWindow>(
+    createPullupReadyPositionWindow(),
+  );
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let lastObservedVideoTime = video.currentTime;
+    const handleVideoTimeChange = () => {
+      const currentVideoTime = video.currentTime;
+      if (!Number.isFinite(currentVideoTime)) return;
+      if (currentVideoTime < lastObservedVideoTime) {
+        resetPullupReadyPositionState(
+          hasSeenReadyPositionRef,
+          pullupReadyPositionWindowRef,
+        );
+      }
+      lastObservedVideoTime = currentVideoTime;
+    };
+    const handleVideoSeeking = () => {
+      const currentVideoTime = video.currentTime;
+      if (!Number.isFinite(currentVideoTime)) return;
+      if (currentVideoTime < lastObservedVideoTime) {
+        resetPullupReadyPositionState(
+          hasSeenReadyPositionRef,
+          pullupReadyPositionWindowRef,
+        );
+      } else {
+        const readyWindow = pullupReadyPositionWindowRef.current;
+        readyWindow.readySinceVideoTime = null;
+        readyWindow.minShoulderY = null;
+        readyWindow.maxShoulderY = null;
+        readyWindow.referenceShoulderSpanPx = null;
+        readyWindow.lastVideoTime = currentVideoTime;
+      }
+      lastObservedVideoTime = currentVideoTime;
+    };
+
+    video.addEventListener('timeupdate', handleVideoTimeChange);
+    video.addEventListener('seeking', handleVideoSeeking);
+    return () => {
+      video.removeEventListener('timeupdate', handleVideoTimeChange);
+      video.removeEventListener('seeking', handleVideoSeeking);
+    };
+  }, []);
   const pullupFrontIncorrectStateRef = useRef(createPullupFrontIncorrectState());
   const pullupFrontIncorrectTrackerHeadFramesRef = useRef<
     Array<{ videoTime: number; headOverWrists: boolean | null }>
@@ -11044,6 +11116,10 @@ function Home() {
       logUploadedDipVideoStop('otro', video, exerciseRepTrackerRef.current);
     }
     activeRef.current = false;
+    resetPullupReadyPositionState(
+      hasSeenReadyPositionRef,
+      pullupReadyPositionWindowRef,
+    );
     uploadedPushupFpsDiagnosticsRef.current.active = false;
     uploadedPushupAnalysisGenerationRef.current += 1;
     uploadedPushupAnalysisStartingRef.current = false;
@@ -14193,6 +14269,10 @@ function Home() {
               );
             }
             pullupTrackerRef.current = createPullupTracker();
+            resetPullupReadyPositionState(
+              hasSeenReadyPositionRef,
+              pullupReadyPositionWindowRef,
+            );
             pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
             pullupPendingAngleJumpDiagnosticRef.current = null;
             pullupSessionFinishedRef.current = false;
@@ -14312,6 +14392,10 @@ function Home() {
             );
           }
           pullupTrackerRef.current = createPullupTracker();
+          resetPullupReadyPositionState(
+            hasSeenReadyPositionRef,
+            pullupReadyPositionWindowRef,
+          );
           pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
           pullupPendingAngleJumpDiagnosticRef.current = null;
           setPullupRepetitions(0);
@@ -15942,10 +16026,103 @@ function Home() {
               };
             })()
           : null;
+        const readyPositionVideoTime = pullupElevationFrame?.videoTime ?? null;
+        if (
+          inputModeRef.current === 'video'
+          && readyPositionVideoTime !== null
+          && Number.isFinite(readyPositionVideoTime)
+        ) {
+          const previousReadyPositionVideoTime =
+            pullupReadyPositionWindowRef.current.lastVideoTime;
+          if (
+            previousReadyPositionVideoTime !== null
+            && readyPositionVideoTime < previousReadyPositionVideoTime
+          ) {
+            resetPullupReadyPositionState(
+              hasSeenReadyPositionRef,
+              pullupReadyPositionWindowRef,
+            );
+          }
+
+          const readyWindow = pullupReadyPositionWindowRef.current;
+          const shoulderY = pullupElevationFrame?.avgShoulderY ?? null;
+          const shoulderSpanPx = pullupElevationFrame?.shoulderSpanPx ?? null;
+          const readyFrame = (
+            viewAlignmentRef.current.estimatedView === 'back'
+            && !video.seeking
+            && shoulderY !== null
+            && Number.isFinite(shoulderY)
+            && shoulderSpanPx !== null
+            && Number.isFinite(shoulderSpanPx)
+            && shoulderSpanPx > 0
+            && rawAngle >= pullupTrackerConfig.bottomMinAngle
+            && pullupArmingGripped
+          );
+
+          if (!hasSeenReadyPositionRef.current && readyFrame) {
+            const nextMinShoulderY = readyWindow.minShoulderY === null
+              ? shoulderY
+              : Math.min(readyWindow.minShoulderY, shoulderY);
+            const nextMaxShoulderY = readyWindow.maxShoulderY === null
+              ? shoulderY
+              : Math.max(readyWindow.maxShoulderY, shoulderY);
+            const referenceShoulderSpanPx = (
+              readyWindow.referenceShoulderSpanPx ?? shoulderSpanPx
+            );
+            const shoulderVariationRatio = (
+              nextMaxShoulderY - nextMinShoulderY
+            ) / referenceShoulderSpanPx;
+            const startsNewWindow = (
+              readyWindow.readySinceVideoTime === null
+              || readyWindow.referenceShoulderSpanPx === null
+              || readyWindow.minShoulderY === null
+              || readyWindow.maxShoulderY === null
+              || shoulderVariationRatio >= 0.05
+            );
+
+            if (startsNewWindow) {
+              readyWindow.readySinceVideoTime = readyPositionVideoTime;
+              readyWindow.minShoulderY = shoulderY;
+              readyWindow.maxShoulderY = shoulderY;
+              readyWindow.referenceShoulderSpanPx = shoulderSpanPx;
+            } else {
+              readyWindow.minShoulderY = nextMinShoulderY;
+              readyWindow.maxShoulderY = nextMaxShoulderY;
+            }
+
+            if (
+              readyWindow.readySinceVideoTime !== null
+              && readyPositionVideoTime - readyWindow.readySinceVideoTime >= 1
+            ) {
+              hasSeenReadyPositionRef.current = true;
+              console.log(`[dominadas-posicion-lista] ${JSON.stringify({
+                t: Number(readyPositionVideoTime.toFixed(3)),
+              })}`);
+            }
+          } else if (!hasSeenReadyPositionRef.current) {
+            readyWindow.readySinceVideoTime = null;
+            readyWindow.minShoulderY = null;
+            readyWindow.maxShoulderY = null;
+            readyWindow.referenceShoulderSpanPx = null;
+          }
+          readyWindow.lastVideoTime = readyPositionVideoTime;
+        }
+        const r3SuppressedByPosition = (
+          inputModeRef.current === 'video'
+          && viewAlignmentRef.current.estimatedView === 'back'
+          && !hasSeenReadyPositionRef.current
+          && (window as Window & {
+            __dominadasContarDescartadas?: boolean;
+          }).__dominadasContarDescartadas !== false
+        );
         const contarDescartadas = inputModeRef.current === 'video'
           && (window as Window & {
             __dominadasContarDescartadas?: boolean;
-          }).__dominadasContarDescartadas !== false;
+          }).__dominadasContarDescartadas !== false
+          && (
+            viewAlignmentRef.current.estimatedView !== 'back'
+            || hasSeenReadyPositionRef.current
+          );
         const pullupUpdate = advancePullupTracker(
           pullupTrackerRef.current,
           rawAngle,
@@ -15960,6 +16137,20 @@ function Home() {
           contarDescartadas,
           viewAlignmentRef.current.estimatedView,
         );
+        if (r3SuppressedByPosition) {
+          [
+            pullupUpdate.replayedPriorFrame?.elevationDecision,
+            pullupUpdate.elevationDecision,
+          ].forEach((decision) => {
+            if (decision?.decision !== 'descartada-sin-elevacion') return;
+            console.log(`[dominadas-r3-suprimida] ${JSON.stringify({
+              t: decision.videoCurrentTimeAtDecision === null
+                ? null
+                : Number(decision.videoCurrentTimeAtDecision.toFixed(3)),
+              ratio: decision.shoulderRiseRatio,
+            })}`);
+          });
+        }
         pullupShadowPhaseAfterFrame = pullupUpdate.tracker.phase;
         pullupShadowTrackerArmedForFrame = pullupUpdate.tracker.isArmed;
         pullupShadowAngleForFrame = pullupUpdate.frameAccepted === false
@@ -24435,6 +24626,10 @@ function Home() {
       );
     }
     pullupTrackerRef.current = createPullupTracker();
+    resetPullupReadyPositionState(
+      hasSeenReadyPositionRef,
+      pullupReadyPositionWindowRef,
+    );
     if (isUploadedPullupVideo) {
       diagSombraConteosRef.current = {
         abiertos: 0,
@@ -25274,6 +25469,10 @@ function Home() {
       setVideoExportStatus('Elige un archivo de video compatible.');
       return;
     }
+    resetPullupReadyPositionState(
+      hasSeenReadyPositionRef,
+      pullupReadyPositionWindowRef,
+    );
     if (exercise === 'muscle-up') {
       muscleUpExtremityVisibilityStatsRef.current
         = createMuscleUpExtremityVisibilityStats();
@@ -26426,6 +26625,10 @@ function Home() {
       );
     }
     pullupTrackerRef.current = createPullupTracker();
+    resetPullupReadyPositionState(
+      hasSeenReadyPositionRef,
+      pullupReadyPositionWindowRef,
+    );
     pullupTrackerDiagnosticsRef.current = createPullupDiagnosticMemory();
     pullupPendingAngleJumpDiagnosticRef.current = null;
     setPullupRepetitions(0);
