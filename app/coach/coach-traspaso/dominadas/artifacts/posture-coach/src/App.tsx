@@ -17344,6 +17344,14 @@ function Home() {
             getMuscleUpPullupVerdictFeedback(update.verdict),
           );
         } else if (
+          update.tracker.goodRepetitions > trackerBeforeUpdate.goodRepetitions
+        ) {
+          setMuscleUpPullupFeedback({
+            tone: 'success',
+            message: `Repetición ${update.tracker.repetitions}: CORRECTA`,
+            detail: 'La cabeza quedó sobre las muñecas y el ángulo del codo confirmó la posición alta.',
+          });
+        } else if (
           update.tracker.event === 'no-top'
           && update.tracker.repetitions > trackerBeforeUpdate.repetitions
         ) {

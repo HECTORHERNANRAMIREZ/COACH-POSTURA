@@ -492,6 +492,12 @@ export function advanceMuscleUpPullupTracker(
   const hasStartedPull = recentMinimumRawAngle !== null
     && recentMinimumRawAngle <= config.pullActivationAngle;
   const hasReachedTop = topReached;
+  const hasTopEvidenceWhenSmoothingLags = hasReachedTop
+    || (
+      headOverWrists === true
+      && extremities.atTop
+      && rawAngle <= config.pullActivationAngle
+    );
   const isRising = tracker.lastAngle !== null
     && smoothedAngle < tracker.lastAngle - config.risingDeltaDeg;
   let completedMinimumAngle: number | null = null;
@@ -594,11 +600,20 @@ export function advanceMuscleUpPullupTracker(
       if (nextTracker.pendingRepHeadOverWrists === null) {
         if (noTopCountAllowed) {
           nextTracker.repetitions += 1;
-          nextTracker.incorrectRepetitions += 1;
-          nextTracker.lastIncorrectReason = 'no-top';
+          if (hasTopEvidenceWhenSmoothingLags) {
+            nextTracker.goodRepetitions += 1;
+            nextTracker.currentRepCorrect = true;
+            nextTracker.event = 'valid';
+            nextTracker.lastIncorrectReason = null;
+          } else {
+            nextTracker.incorrectRepetitions += 1;
+            nextTracker.lastIncorrectReason = 'no-top';
+          }
         }
       }
-      nextTracker.currentRepCorrect = isAtBottom;
+      if (!hasTopEvidenceWhenSmoothingLags || !noTopCountAllowed) {
+        nextTracker.currentRepCorrect = isAtBottom;
+      }
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
       completedMinimumAngle = nextTracker.minimumAngle;
