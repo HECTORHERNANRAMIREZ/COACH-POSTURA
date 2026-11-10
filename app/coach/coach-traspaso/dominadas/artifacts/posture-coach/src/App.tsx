@@ -17552,6 +17552,55 @@ function Home() {
           })}`);
         }
       }
+      if (isMuscleUpExercise) {
+        const muscleUpRepFrameTracker = muscleUpPullupTrackerRef.current;
+        const muscleUpRepFrameHeadPoints = HEAD_LANDMARK_INDICES.map((index) => {
+          const point = pose?.keypoints?.[index];
+          return {
+            index,
+            x: point?.x ?? null,
+            y: point?.y ?? null,
+            confidence: point?.score ?? null,
+            fresh: isFreshMuscleUpPullupMeasurementPoint(point),
+          };
+        });
+        console.log(`[muscleup-rep-frame] ${JSON.stringify({
+          videoTimeSeconds: inputModeRef.current === 'video'
+            && Number.isFinite(video.currentTime)
+            ? video.currentTime
+            : null,
+          phaseBefore: muscleUpPullupPhaseBeforeUpdate,
+          phaseAfter: muscleUpRepFrameTracker.phase,
+          trackerCallAllowed: muscleUpPullupTrackerCallAllowed,
+          trackerGateBlockers: muscleUpAngleAndGateTraceForLog?.trackerGateBlockers ?? [],
+          angles: {
+            angleSentToTracker: muscleUpAngleAndGateTraceForLog?.angleSentToTracker ?? null,
+            elbows: muscleUpPullupExtremityReadings,
+          },
+          criteriaSignals: {
+            headOverWrists: muscleUpPullupHeadOverWrists,
+            noseAboveWrist: muscleUpPullupNoseAboveWrist,
+            elbowAboveWrist: muscleUpPullupElbowAboveWrist,
+            headAndElbowsAboveWrist: muscleUpPullupHeadOverWrists === null
+              ? null
+              : muscleUpPullupHeadOverWrists && muscleUpPullupElbowAboveWrist,
+            shoulderAboveWrist: muscleUpPullupShoulderAboveWrist,
+            allAboveWrist: muscleUpPullupAllAboveWrist,
+            topReached: muscleUpPullupTopReached,
+            elbowAtTop: muscleUpPullupExtremityValidation.atTop,
+            elbowAtBottom: muscleUpPullupExtremityValidation.atBottom,
+          },
+          pointsBySide: muscleUpPullupAboveWristBySide,
+          headPoints: muscleUpRepFrameHeadPoints,
+          counter: {
+            total: muscleUpRepFrameTracker.repetitions,
+            correctas: muscleUpRepFrameTracker.goodRepetitions,
+            incorrectas: muscleUpRepFrameTracker.incorrectRepetitions,
+            event: muscleUpRepFrameTracker.event,
+            topFrames: muscleUpRepFrameTracker.topFrames,
+          },
+        })}`);
+      }
       if (COMMAND_PULLUP_TRACE_ENABLED && isCommandPullup(selectedExerciseForFrame)) {
         const measuredSide = commandPullupMeasurementSideForFrame;
         const phaseAfter = pullupTrackerRef.current.phase;
