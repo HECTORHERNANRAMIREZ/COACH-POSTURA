@@ -484,30 +484,25 @@ export function advanceMuscleUpPullupTracker(
   };
   const isAtBottom = extremities.atBottom
     && isWithinMuscleUpPullupAngle(smoothedAngle, config.bottomMinAngle, config.bottomMaxAngle);
-  const isAtBottomByAngle = isWithinMuscleUpPullupAngle(
-    smoothedAngle,
+  const isAtBottomByRawAngle = isWithinMuscleUpPullupAngle(
+    rawAngle,
     config.bottomMinAngle,
     config.bottomMaxAngle,
   );
+  const hasConfirmedBottom = isAtBottom && isAtBottomByRawAngle;
   const hasStartedPull = recentMinimumRawAngle !== null
     && recentMinimumRawAngle <= config.pullActivationAngle;
   const hasReachedTop = topReached;
-  const hasTopEvidenceWhenSmoothingLags = hasReachedTop
-    || (
-      headOverWrists === true
-      && extremities.atTop
-      && rawAngle <= config.pullActivationAngle
-    );
   const isRising = tracker.lastAngle !== null
     && smoothedAngle < tracker.lastAngle - config.risingDeltaDeg;
   let completedMinimumAngle: number | null = null;
   let verdict: MuscleUpPullupRepVerdict | null = null;
-  if (isAtBottom) {
+  if (hasConfirmedBottom) {
     if (torsoLengthPx !== null && Number.isFinite(torsoLengthPx) && torsoLengthPx > 0) {
       nextTracker.lastHangingTorsoLengthPx = torsoLengthPx;
     }
   }
-  if (isAtBottom) nextTracker.suppressNextRepCountUntilBottom = false;
+  if (hasConfirmedBottom) nextTracker.suppressNextRepCountUntilBottom = false;
   if (tracker.phase !== 'subiendo') {
     nextTracker.topConfirmationHeadFramesEvaluated = 0;
     nextTracker.topConfirmationHeadFramesYes = 0;
@@ -594,26 +589,17 @@ export function advanceMuscleUpPullupTracker(
       nextTracker.topConfirmationHeadFramesYes = 0;
       nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
       completedMinimumAngle = nextTracker.minimumAngle;
-    } else if (isAtBottomByAngle) {
+    } else if (hasConfirmedBottom && nextTracker.topFrames === 0) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
       if (nextTracker.pendingRepHeadOverWrists === null) {
         if (noTopCountAllowed) {
           nextTracker.repetitions += 1;
-          if (hasTopEvidenceWhenSmoothingLags) {
-            nextTracker.goodRepetitions += 1;
-            nextTracker.currentRepCorrect = true;
-            nextTracker.event = 'valid';
-            nextTracker.lastIncorrectReason = null;
-          } else {
-            nextTracker.incorrectRepetitions += 1;
-            nextTracker.lastIncorrectReason = 'no-top';
-          }
+          nextTracker.incorrectRepetitions += 1;
         }
       }
-      if (!hasTopEvidenceWhenSmoothingLags || !noTopCountAllowed) {
-        nextTracker.currentRepCorrect = isAtBottom;
-      }
+      nextTracker.currentRepCorrect = false;
+      nextTracker.lastIncorrectReason = 'no-top';
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
       completedMinimumAngle = nextTracker.minimumAngle;
@@ -628,9 +614,9 @@ export function advanceMuscleUpPullupTracker(
       nextTracker.pendingRepHeadOverWrists =
         nextTracker.pendingRepHeadFramesYes > 0;
     }
-    if (isAtBottomByAngle) {
+    if (hasConfirmedBottom) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = isAtBottom;
+      nextTracker.currentRepCorrect = hasConfirmedBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (!topReached) {
       nextTracker.phase = 'bajando';
@@ -640,9 +626,9 @@ export function advanceMuscleUpPullupTracker(
     nextTracker.minimumAngle = nextTracker.minimumAngle === null
       ? smoothedAngle
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
-    if (isAtBottomByAngle) {
+    if (hasConfirmedBottom) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = isAtBottom;
+      nextTracker.currentRepCorrect = hasConfirmedBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isRising && smoothedAngle < config.noLockoutAngle) {
       nextTracker.phase = 'esperando abajo';
@@ -667,7 +653,7 @@ export function advanceMuscleUpPullupTracker(
     nextTracker.suppressNextRepCountUntilBottom = true;
   } else if (
     nextTracker.pendingRepHeadOverWrists !== null
-    && isAtBottom
+    && hasConfirmedBottom
   ) {
     const settled = settlePendingMuscleUpPullupRep(nextTracker, {
       bottomReached: true,
@@ -691,7 +677,7 @@ export function advanceMuscleUpPullupTracker(
   if (tracker.phase !== 'abajo' && nextTracker.phase === 'abajo') {
     nextTracker.repetitionCountLockedUntilBottom = false;
     nextTracker.positionalTopFrames = 0;
-    nextTracker.confirmedHangingPosition = headOverWrists === false && isAtBottom;
+    nextTracker.confirmedHangingPosition = headOverWrists === false && hasConfirmedBottom;
   }
   if (nextTracker.phase !== 'abajo') {
     nextTracker.positionalTopFrames = 0;

@@ -288,7 +288,6 @@ import {
   MUSCLE_UP_PULLUP_BOTTOM_MIN_ANGLE,
   MUSCLE_UP_PULLUP_BOTTOM_SHOULDER_MIN_ANGLE,
   MUSCLE_UP_PULLUP_BOTTOM_STABLE_FRAMES,
-  MUSCLE_UP_PULLUP_MIN_TOP_FRAMES,
   MUSCLE_UP_PULLUP_NO_LOCKOUT_ANGLE,
   MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_MIN_PX,
   MUSCLE_UP_PULLUP_POSITIONAL_MARGIN_RATIO,
@@ -15461,7 +15460,8 @@ function Home() {
         : { atBottom: false, atTop: false };
       const muscleUpPullupTopReached = isMuscleUpExercise
         && !muscleUpPullupMeasurementBlocked
-        && muscleUpPullupAllAboveWrist;
+        && muscleUpPullupAllAboveWrist
+        && muscleUpPullupExtremityValidation.atTop;
       const muscleUpPullupPositionalTopReached = isMuscleUpExercise
         && muscleUpPullupPositionallyAboveWrist
         && (
@@ -17116,35 +17116,6 @@ function Home() {
         event: null,
       };
       if (
-        positionalTopFrames >= MUSCLE_UP_PULLUP_MIN_TOP_FRAMES
-        && !trackerAfterPositionCheck.repetitionCountLockedUntilBottom
-        && !trackerAfterPositionCheck.suppressNextRepCountUntilBottom
-      ) {
-        muscleUpPullupTrackerBeforeUpdate = trackerBeforePositionUpdate;
-        muscleUpPullupCountedVia = 'positional';
-        muscleUpPullupUpdate = {
-          tracker: {
-            ...trackerAfterPositionCheck,
-            phase: 'arriba',
-            repetitions: trackerAfterPositionCheck.repetitions + 1,
-            event: trackerAfterPositionCheck.currentRepCorrect ? 'valid' : 'invalid',
-            repetitionCountLockedUntilBottom: true,
-            confirmedHangingPosition: false,
-            positionalTopFrames: 0,
-            topFrames: 0,
-            topConfirmationHeadFramesEvaluated: 0,
-            topConfirmationHeadFramesYes: 0,
-            pendingRepHeadOverWrists: true,
-            pendingRepHeadFramesEvaluated: positionalTopFrames,
-            pendingRepHeadFramesYes: positionalTopFrames,
-          },
-          smoothedAngle: trackerAfterPositionCheck.lastAngle ?? 0,
-          completedMinimumAngle: null,
-          isAtBottom: false,
-          hasReachedTop: true,
-          verdict: null,
-        };
-      } else if (
         muscleUpPullupCanTrackFrame
         && repetitionAngle !== null
         && !frameMeasurementBlocked
@@ -17380,9 +17351,7 @@ function Home() {
             + `faseAnterior=${phaseBeforeUpdate} faseNueva=${update.tracker.phase} `
             + `cuadrosConsecutivosAllAbove=${update.tracker.topFrames} `
             + `countedVia=${muscleUpPullupCountLog?.countedVia ?? '—'} `
-            + `ángulo=${muscleUpPullupCountedVia === 'positional'
-              ? 'no-disponible'
-              : `${update.smoothedAngle}°`} `
+            + `ángulo=${update.smoothedAngle}° `
             + `cabezaSobreMuñecas=${muscleUpPullupHeadOverWrists} `
             + `total=${update.tracker.repetitions} `
             + `correctas=${update.tracker.goodRepetitions} `
