@@ -18,36 +18,23 @@ function trackerReturningFromARep() {
   };
 }
 
-test('counts the five logged reps as correct when the head and elbow confirm the top', () => {
-  const loggedRepSignals = [
-    { angle: 119, topReached: true },
-    { angle: 72, topReached: false },
-    { angle: 76, topReached: false },
-    { angle: 89, topReached: false },
-    { angle: 79, topReached: false },
-  ];
+test('does not count head and elbow signals when topReached is false', () => {
+  const update = advanceMuscleUpPullupTracker(
+    trackerReturningFromARep(),
+    119,
+    false,
+    true,
+    { atBottom: true, atTop: true },
+    true,
+    MUSCLE_UP_PULLUP_TRACKER_CONFIG,
+    null,
+    false,
+    119,
+  );
 
-  for (const { angle, topReached } of loggedRepSignals) {
-    const update = advanceMuscleUpPullupTracker(
-      trackerReturningFromARep(),
-      angle,
-      topReached,
-      true,
-      { atBottom: false, atTop: true },
-      true,
-      MUSCLE_UP_PULLUP_TRACKER_CONFIG,
-      null,
-      false,
-      angle,
-      false,
-      false,
-      true,
-    );
-
-    assert.equal(update.tracker.repetitions, 1);
-    assert.equal(update.tracker.goodRepetitions, 1);
-    assert.equal(update.tracker.event, 'valid');
-  }
+  assert.equal(update.tracker.repetitions, 0);
+  assert.equal(update.tracker.goodRepetitions, 0);
+  assert.equal(update.tracker.event, 'no-top');
 });
 
 test('does not count a rep when the top evidence is missing', () => {
@@ -64,7 +51,6 @@ test('does not count a rep when the top evidence is missing', () => {
     72,
     false,
     false,
-    true,
   );
 
   assert.equal(update.tracker.repetitions, 0);

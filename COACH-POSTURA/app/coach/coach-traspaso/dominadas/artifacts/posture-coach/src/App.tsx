@@ -17156,7 +17156,6 @@ function Home() {
           muscleUpRawElbowMinimumAngle,
           muscleUpShoulderRoseThisFrame,
           muscleUpRearmBlockedForFrame,
-          muscleUpNoTopDiscardedReason === null,
         );
       } else if (isMuscleUpExercise) {
         muscleUpPullupTrackerRef.current = trackerAfterPositionCheck;
