@@ -2088,7 +2088,7 @@ function accumulateMuscleUpCycleFrame(
 
 function logMuscleUpCycleTelemetry(
   telemetry: MuscleUpCycleTelemetry | null,
-  result: 'no-top' | 'top-contado' | 'cerrado-por-logger',
+  result: 'no-top' | 'rep-validada' | 'cerrado-por-logger',
   endSeconds: number | null,
   fallbackStartReason: string,
   tracker?: 'sin-evento',
@@ -10327,8 +10327,6 @@ function Home() {
   const [muscleUpPullupSessionFinished, setMuscleUpPullupSessionFinished] = useState(false);
   const [muscleUpPullupRepetitions, setMuscleUpPullupRepetitions] = useState(0);
   const [muscleUpPullupGoodRepetitions, setMuscleUpPullupGoodRepetitions] = useState(0);
-  const [muscleUpPullupIncorrectRepetitions, setMuscleUpPullupIncorrectRepetitions] = useState(0);
-  const [muscleUpPullupPendingRepetitions, setMuscleUpPullupPendingRepetitions] = useState(0);
   const [muscleUpPullupPhase, setMuscleUpPullupPhase] =
     useState<MuscleUpPullupPhase>('esperando abajo');
   const [muscleUpPullupMinimumAngle, setMuscleUpPullupMinimumAngle] =
@@ -14163,8 +14161,6 @@ function Home() {
             setMuscleUpPullupSessionFinished(false);
             setMuscleUpPullupRepetitions(0);
             setMuscleUpPullupGoodRepetitions(0);
-            setMuscleUpPullupIncorrectRepetitions(0);
-            setMuscleUpPullupPendingRepetitions(0);
             setMuscleUpPullupPhase('esperando abajo');
             setMuscleUpPullupMinimumAngle(null);
             setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
@@ -14346,8 +14342,6 @@ function Home() {
           muscleUpPullupFinLoggedRef.current = false;
           setMuscleUpPullupRepetitions(0);
           setMuscleUpPullupGoodRepetitions(0);
-          setMuscleUpPullupIncorrectRepetitions(0);
-          setMuscleUpPullupPendingRepetitions(0);
           setMuscleUpPullupPhase('esperando abajo');
           setMuscleUpPullupMinimumAngle(null);
           exerciseStartedRef.current = true;
@@ -15579,8 +15573,6 @@ function Home() {
         muscleUpPullupTrackerRef.current = settled.tracker;
         setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
-        setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
           setMuscleUpPullupFeedback(
@@ -16815,7 +16807,7 @@ function Home() {
         }
       }
       let muscleUpPullupCountLog: {
-        camino: 'top' | 'no-top' | 'no-lockout';
+        camino: 'rep-validada' | 'no-top' | 'no-lockout';
         countedVia: 'normal' | 'positional';
         repetitionsAntes: number;
         repetitionsDespues: number;
@@ -17126,8 +17118,7 @@ function Home() {
           tracker: {
             ...trackerAfterPositionCheck,
             phase: 'arriba',
-            repetitions: trackerAfterPositionCheck.repetitions + 1,
-            event: trackerAfterPositionCheck.currentRepCorrect ? 'valid' : 'invalid',
+            event: null,
             repetitionCountLockedUntilBottom: true,
             confirmedHangingPosition: false,
             positionalTopFrames: 0,
@@ -17208,7 +17199,7 @@ function Home() {
           : update.tracker.event === 'no-top'
             ? 'no-top'
             : update.tracker.repetitions > trackerBeforeUpdate.repetitions
-              ? 'top-contado'
+              ? 'rep-validada'
               : null;
         if (muscleUpCycleResult !== null) {
           if (isMuscleUpExercise && inputModeRef.current === 'video') {
@@ -17237,11 +17228,9 @@ function Home() {
           muscleUpPullupRearmBlockedRef.current = true;
         }
         if (update.tracker.repetitions > trackerBeforeUpdate.repetitions) {
-          const camino = update.tracker.event === 'no-top'
-            ? 'no-top'
-            : update.tracker.event === 'no-lockout'
-              ? 'no-lockout'
-              : 'top';
+          const camino = update.tracker.event === 'no-lockout'
+            ? 'no-lockout'
+            : 'rep-validada';
           muscleUpPullupCountLog = {
             camino,
             countedVia: muscleUpPullupCountedVia ?? 'normal',
@@ -17330,10 +17319,6 @@ function Home() {
         }
         setMuscleUpPullupRepetitions(update.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(update.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(update.tracker.incorrectRepetitions);
-        setMuscleUpPullupPendingRepetitions(
-          update.tracker.pendingRepHeadOverWrists === null ? 0 : 1,
-        );
         setMuscleUpPullupPhase(update.tracker.phase);
         setMuscleUpPullupMinimumAngle(
           update.tracker.minimumAngle ?? update.completedMinimumAngle,
@@ -17352,19 +17337,13 @@ function Home() {
             detail: 'La cabeza quedó sobre las muñecas y el ángulo del codo confirmó la posición alta.',
           });
         } else if (
-          update.tracker.event === 'no-top'
-          && update.tracker.repetitions > trackerBeforeUpdate.repetitions
+          update.tracker.pendingRepHeadOverWrists !== null
+          && trackerBeforeUpdate.pendingRepHeadOverWrists === null
         ) {
           setMuscleUpPullupFeedback({
-            tone: 'warning',
-            message: `Repetición ${update.tracker.repetitions}: INCORRECTA · no-top`,
-            detail: 'La subida fue confirmada, pero no alcanzaste la posición alta antes de volver abajo.',
-          });
-        } else if (update.tracker.event === 'valid' || update.tracker.event === 'invalid') {
-          setMuscleUpPullupFeedback({
             tone: 'checking',
-            message: `Repetición ${update.tracker.repetitions}: en evaluación`,
-            detail: 'La posición alta se registró; el veredicto se confirma al regresar al fondo.',
+            message: 'Posición alta detectada',
+            detail: 'Regresa al fondo para sumar la repetición.',
           });
         }
         if (
@@ -17595,7 +17574,6 @@ function Home() {
           counter: {
             total: muscleUpRepFrameTracker.repetitions,
             correctas: muscleUpRepFrameTracker.goodRepetitions,
-            incorrectas: muscleUpRepFrameTracker.incorrectRepetitions,
             event: muscleUpRepFrameTracker.event,
             topFrames: muscleUpRepFrameTracker.topFrames,
           },
@@ -24187,8 +24165,6 @@ function Home() {
     setMuscleUpPullupSessionFinished(false);
     setMuscleUpPullupRepetitions(0);
     setMuscleUpPullupGoodRepetitions(0);
-    setMuscleUpPullupIncorrectRepetitions(0);
-    setMuscleUpPullupPendingRepetitions(0);
     setMuscleUpPullupPhase('esperando abajo');
     setMuscleUpPullupMinimumAngle(null);
     setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
@@ -24885,8 +24861,6 @@ function Home() {
         setMuscleUpPullupSessionFinished(true);
         setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
-        setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
           setMuscleUpPullupFeedback(
@@ -26133,8 +26107,6 @@ function Home() {
         setMuscleUpPullupSessionFinished(true);
         setMuscleUpPullupRepetitions(settled.tracker.repetitions);
         setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-        setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
-        setMuscleUpPullupPendingRepetitions(0);
         if (settled.verdict) {
           logMuscleUpPullupVerdict(settled.verdict);
           setMuscleUpPullupFeedback(
@@ -26222,8 +26194,6 @@ function Home() {
       muscleUpPullupTrackerRef.current = settled.tracker;
       setMuscleUpPullupRepetitions(settled.tracker.repetitions);
       setMuscleUpPullupGoodRepetitions(settled.tracker.goodRepetitions);
-      setMuscleUpPullupIncorrectRepetitions(settled.tracker.incorrectRepetitions);
-      setMuscleUpPullupPendingRepetitions(0);
       if (settled.verdict) {
         logMuscleUpPullupVerdict(settled.verdict);
         setMuscleUpPullupFeedback(
@@ -26280,8 +26250,6 @@ function Home() {
     setMuscleUpPullupSessionFinished(false);
     setMuscleUpPullupRepetitions(0);
     setMuscleUpPullupGoodRepetitions(0);
-    setMuscleUpPullupIncorrectRepetitions(0);
-    setMuscleUpPullupPendingRepetitions(0);
     setMuscleUpPullupPhase('esperando abajo');
     setMuscleUpPullupMinimumAngle(null);
     setMuscleUpPullupFeedback(muscleUpReferenceFeedback);
@@ -26698,9 +26666,7 @@ function Home() {
         0,
         evaluatedRepetitions - correctRepetitions - pullupPendingRepetitions,
       )
-    : selectedExercise === 'muscle-up'
-      ? muscleUpPullupIncorrectRepetitions
-      : Math.max(0, evaluatedRepetitions - correctRepetitions);
+    : Math.max(0, evaluatedRepetitions - correctRepetitions);
   const evaluationPhase = selectedExercise === 'sentadillas'
     ? squatPhaseLabel
     : isStandardOrSupinePullup(selectedExercise) || isCommandPullup(selectedExercise)
@@ -26710,7 +26676,7 @@ function Home() {
         : exerciseRepPhaseLabel;
   const evaluationLabel = selectedExercise === 'muscle-up'
     ? hasEvaluationCounter
-      ? `${correctRepetitions} / ${evaluatedRepetitions}`
+      ? `${correctRepetitions}`
       : 'Pendiente'
     : selectedExercise === 'plancha'
       ? 'Sostener posición'
@@ -27269,21 +27235,21 @@ function Home() {
                         : exerciseGoodRepetitions}
                     </strong>
                   </div>
-                  <div className="squat-summary-stat">
-                    <span>Total evaluadas</span>
-                    <strong>
-                      {selectedExercise === 'muscle-up'
-                        ? muscleUpPullupRepetitions
-                        : exerciseRepetitions}
-                    </strong>
-                  </div>
-                   <div className="squat-summary-stat">
-                     <span>Incorrectas</span>
-                     <strong>{incorrectRepetitions}</strong>
-                   </div>
+                  {selectedExercise !== 'muscle-up' && (
+                    <>
+                      <div className="squat-summary-stat">
+                        <span>Total evaluadas</span>
+                        <strong>{exerciseRepetitions}</strong>
+                      </div>
+                      <div className="squat-summary-stat">
+                        <span>Incorrectas</span>
+                        <strong>{incorrectRepetitions}</strong>
+                      </div>
+                    </>
+                  )}
                   <p>
                     {selectedExercise === 'muscle-up'
-                      ? `Se cuenta al alcanzar la parte alta y se evalúa al regresar al fondo. Es correcta si la cabeza pasa sobre ambas muñecas y se completa el rango de codo. Pendientes: ${muscleUpPullupPendingRepetitions}. Ángulo mínimo observado: ${
+                      ? `Solo se suma al confirmar la posición alta, pasar la cabeza sobre ambas muñecas y regresar al fondo con el rango de codo requerido. Los intentos que no cumplan no se suman. Ángulo mínimo observado: ${
                         muscleUpPullupMinimumAngle === null
                           ? '—'
                           : `${muscleUpPullupMinimumAngle.toFixed(1)}°`
@@ -28147,10 +28113,12 @@ function Home() {
                       <span>Correctas</span>
                       <strong>{correctRepetitions}</strong>
                     </div>
-                    <div className="rep-counter-stat rep-counter-stat--bad">
-                      <span>Incorrectas</span>
-                      <strong>{incorrectRepetitions}</strong>
-                    </div>
+                    {selectedExercise !== 'muscle-up' && (
+                      <div className="rep-counter-stat rep-counter-stat--bad">
+                        <span>Incorrectas</span>
+                        <strong>{incorrectRepetitions}</strong>
+                      </div>
+                    )}
                   </div>
                 )}
                   {selectedExercise !== 'fondos'
@@ -28419,14 +28387,18 @@ function Home() {
                         <dt>Correctas</dt>
                         <dd className="diagnostic-value diagnostic-value--success">{exerciseGoodRepetitions}</dd>
                       </div>
-                      <div className="diagnostic-row">
-                        <dt>Total evaluadas</dt>
-                        <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
-                      </div>
-                      <div className="diagnostic-row">
-                        <dt>Incorrectas</dt>
-                        <dd className="diagnostic-value diagnostic-value--warning">{incorrectRepetitions}</dd>
-                      </div>
+                      {selectedExercise !== 'muscle-up' && (
+                        <>
+                          <div className="diagnostic-row">
+                            <dt>Total evaluadas</dt>
+                            <dd className="diagnostic-value diagnostic-value--accent">{exerciseRepetitions}</dd>
+                          </div>
+                          <div className="diagnostic-row">
+                            <dt>Incorrectas</dt>
+                            <dd className="diagnostic-value diagnostic-value--warning">{incorrectRepetitions}</dd>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                   <div className="diagnostic-row">

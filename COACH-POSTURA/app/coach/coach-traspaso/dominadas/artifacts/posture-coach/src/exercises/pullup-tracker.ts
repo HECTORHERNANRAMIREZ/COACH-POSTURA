@@ -364,9 +364,7 @@ export function logMuscleUpPullupVerdict(verdict: MuscleUpPullupRepVerdict) {
     + `cabezaSobreMuñecas=${verdict.headOverWrists ? 'sí' : 'no'} `
     + `cuadrosCabezaEvaluados=${verdict.headFramesEvaluated} `
     + `cuadrosCabezaSi=${verdict.headFramesYes} `
-    + `bajoAlFondo=${verdict.bottomReached ? 'sí' : 'no'} `
-    + `veredicto=${verdict.correct ? 'correcta' : 'incorrecta'} `
-    + `motivo=${verdict.reason}`,
+    + 'veredicto=correcta',
   );
 }
 
@@ -374,19 +372,9 @@ export function getMuscleUpPullupVerdictFeedback(
   verdict: MuscleUpPullupRepVerdict,
 ): TechniqueFeedback {
   return {
-    tone: verdict.correct ? 'success' : 'warning',
-    message: `Repetición ${verdict.repetition}: ${
-      verdict.correct ? 'BIEN ✓' : 'EVALUADA'
-    }`,
-    detail: verdict.reason === 'no-top-cabeza'
-      ? 'La repetición no alcanzó la posición alta con la cabeza sobre las muñecas.'
-      : verdict.reason === 'no-fondo'
-        ? 'La repetición terminó sin regresar al fondo antes de soltar la barra.'
-        : verdict.reason === 'no-lockout'
-          ? 'La repetición no alcanzó el rango alto de los codos.'
-          : verdict.correct
-            ? 'Recorrido completo: posición alta validada y regreso al fondo.'
-            : 'El recorrido se evaluó como incorrecto.',
+    tone: 'success',
+    message: `Repetición ${verdict.repetition}: BIEN ✓`,
+    detail: 'Recorrido completo: posición alta validada y regreso al fondo.',
   };
 }
 
@@ -395,8 +383,6 @@ export function logMuscleUpPullupFinish(tracker: MuscleUpPullupTracker) {
     `[fin] ejercicio=muscle-up fase=${tracker.phase}`
     + ` | total=${tracker.repetitions}`
     + ` | correctas=${tracker.goodRepetitions}`
-    + ` | incorrectas=${tracker.incorrectRepetitions}`
-    + ` | motivo=${tracker.lastIncorrectReason ?? '—'}`
     + ` | pendientes=${tracker.pendingRepHeadOverWrists === null ? 0 : 1}`,
   );
 }

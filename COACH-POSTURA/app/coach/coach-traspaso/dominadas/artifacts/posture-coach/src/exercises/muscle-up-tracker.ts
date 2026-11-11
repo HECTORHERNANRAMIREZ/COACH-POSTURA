@@ -28,14 +28,11 @@ export function createMuscleUpPullupTracker(): MuscleUpPullupTracker {
     phase: 'esperando abajo',
     repetitions: 0,
     goodRepetitions: 0,
-    incorrectRepetitions: 0,
-    lastIncorrectReason: null,
     minimumAngle: null,
     samples: [],
     event: null,
     lastAngle: null,
     topFrames: 0,
-    currentRepCorrect: false,
     bottomReadyFrames: 0,
     isArmed: false,
     pendingRepHeadOverWrists: null,
@@ -412,40 +409,28 @@ export function settlePendingMuscleUpPullupRep(
   const headFramesEvaluated = tracker.pendingRepHeadFramesEvaluated;
   const headFramesYes = tracker.pendingRepHeadFramesYes;
   const headOverWrists = headFramesYes > 0;
-  const correct = !options.noLockout
+  const qualifies = !options.noLockout
     && headOverWrists
     && options.bottomReached;
-  const reason = options.noLockout
-    ? 'no-lockout'
-    : !headOverWrists
-      ? 'no-top-cabeza'
-      : options.bottomReached
-        ? 'ok'
-        : 'no-fondo';
   const nextTracker: MuscleUpPullupTracker = {
     ...tracker,
     pendingRepHeadOverWrists: null,
     pendingRepHeadFramesEvaluated: 0,
     pendingRepHeadFramesYes: 0,
-    currentRepCorrect: correct,
-    goodRepetitions: tracker.goodRepetitions + (correct ? 1 : 0),
-    incorrectRepetitions: tracker.incorrectRepetitions + (correct ? 0 : 1),
-    event: options.noLockout ? 'no-lockout' : correct ? 'valid' : 'invalid',
+    repetitions: tracker.repetitions + (qualifies ? 1 : 0),
+    goodRepetitions: tracker.goodRepetitions + (qualifies ? 1 : 0),
+    event: qualifies ? 'valid' : options.noLockout ? 'no-lockout' : null,
   };
-  if (!correct && reason !== 'ok') {
-    nextTracker.lastIncorrectReason = reason;
-  }
   return {
     tracker: nextTracker,
-    verdict: {
-      repetition: tracker.repetitions,
-      headOverWrists,
-      headFramesEvaluated,
-      headFramesYes,
-      bottomReached: options.bottomReached,
-      correct,
-      reason,
-    },
+    verdict: qualifies
+      ? {
+        repetition: nextTracker.repetitions,
+        headOverWrists,
+        headFramesEvaluated,
+        headFramesYes,
+      }
+      : null,
   };
 }
 
@@ -520,7 +505,6 @@ export function advanceMuscleUpPullupTracker(
       nextTracker.isArmed = true;
       nextTracker.bottomReadyFrames = 0;
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = true;
       nextTracker.minimumAngle = null;
       nextTracker.confirmedHangingPosition = headOverWrists === false;
     }
@@ -536,11 +520,9 @@ export function advanceMuscleUpPullupTracker(
   if (nextTracker.phase === 'esperando abajo') {
     if (isAtBottom) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = true;
     }
   } else if (nextTracker.phase === 'abajo') {
     if (isAtBottom) {
-      nextTracker.currentRepCorrect = true;
       if (headOverWrists === false) {
         nextTracker.confirmedHangingPosition = true;
       }
@@ -568,14 +550,10 @@ export function advanceMuscleUpPullupTracker(
     }
     if (nextTracker.topFrames >= config.topConfirmationFrames) {
       nextTracker.phase = 'arriba';
-      nextTracker.currentRepCorrect = nextTracker.currentRepCorrect
-        && hasReachedTop
-        && topReached;
       if (
         !nextTracker.suppressNextRepCountUntilBottom
         && !nextTracker.repetitionCountLockedUntilBottom
       ) {
-        nextTracker.repetitions += 1;
         nextTracker.repetitionCountLockedUntilBottom = true;
         nextTracker.confirmedHangingPosition = false;
         nextTracker.pendingRepHeadFramesEvaluated =
@@ -585,34 +563,23 @@ export function advanceMuscleUpPullupTracker(
         nextTracker.pendingRepHeadOverWrists =
           nextTracker.pendingRepHeadFramesYes > 0;
       } else {
-        nextTracker.currentRepCorrect = false;
         nextTracker.pendingRepHeadOverWrists = null;
         nextTracker.pendingRepHeadFramesEvaluated = 0;
         nextTracker.pendingRepHeadFramesYes = 0;
       }
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
-      nextTracker.event = nextTracker.currentRepCorrect ? 'valid' : 'invalid';
+      nextTracker.event = null;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
       nextTracker.event = 'no-top';
       if (nextTracker.pendingRepHeadOverWrists === null) {
-        if (noTopCountAllowed) {
+        if (noTopCountAllowed && hasTopEvidenceWhenSmoothingLags) {
           nextTracker.repetitions += 1;
-          if (hasTopEvidenceWhenSmoothingLags) {
-            nextTracker.goodRepetitions += 1;
-            nextTracker.currentRepCorrect = true;
-            nextTracker.event = 'valid';
-            nextTracker.lastIncorrectReason = null;
-          } else {
-            nextTracker.incorrectRepetitions += 1;
-            nextTracker.lastIncorrectReason = 'no-top';
-          }
+          nextTracker.goodRepetitions += 1;
+          nextTracker.event = 'valid';
         }
-      }
-      if (!hasTopEvidenceWhenSmoothingLags || !noTopCountAllowed) {
-        nextTracker.currentRepCorrect = isAtBottom;
       }
       nextTracker.topConfirmationHeadFramesEvaluated = 0;
       nextTracker.topConfirmationHeadFramesYes = 0;
@@ -630,7 +597,6 @@ export function advanceMuscleUpPullupTracker(
     }
     if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (!topReached) {
       nextTracker.phase = 'bajando';
@@ -642,7 +608,6 @@ export function advanceMuscleUpPullupTracker(
       : Math.min(nextTracker.minimumAngle, smoothedAngle);
     if (isAtBottomByAngle) {
       nextTracker.phase = 'abajo';
-      nextTracker.currentRepCorrect = isAtBottom;
       completedMinimumAngle = nextTracker.minimumAngle;
     } else if (isRising && smoothedAngle < config.noLockoutAngle) {
       nextTracker.phase = 'esperando abajo';
@@ -650,7 +615,6 @@ export function advanceMuscleUpPullupTracker(
       if (nextTracker.pendingRepHeadOverWrists !== null) {
         nextTracker.suppressNextRepCountUntilBottom = true;
       }
-      nextTracker.currentRepCorrect = false;
       completedMinimumAngle = nextTracker.minimumAngle;
     }
   }

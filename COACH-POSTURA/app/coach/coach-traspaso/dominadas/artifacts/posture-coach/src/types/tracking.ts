@@ -87,19 +87,16 @@ export type PullupTracker = {
   pendingAngleJumpFrame: PullupPendingAngleJumpFrame | null;
 };
 export type MuscleUpPullupPhase = 'esperando abajo' | 'abajo' | 'subiendo' | 'arriba' | 'bajando';
-export type MuscleUpPullupRepEvent = 'valid' | 'invalid' | 'no-top' | 'no-lockout' | null;
+export type MuscleUpPullupRepEvent = 'valid' | 'no-top' | 'no-lockout' | null;
 export type MuscleUpPullupTracker = {
   phase: MuscleUpPullupPhase;
   repetitions: number;
   goodRepetitions: number;
-  incorrectRepetitions: number;
-  lastIncorrectReason: 'no-top' | 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | null;
   minimumAngle: number | null;
   samples: number[];
   event: MuscleUpPullupRepEvent;
   lastAngle: number | null;
   topFrames: number;
-  currentRepCorrect: boolean;
   bottomReadyFrames: number;
   isArmed: boolean;
   pendingRepHeadOverWrists: boolean | null;
@@ -135,9 +132,6 @@ export type MuscleUpPullupRepVerdict = {
   headOverWrists: boolean;
   headFramesEvaluated: number;
   headFramesYes: number;
-  bottomReached: boolean;
-  correct: boolean;
-  reason: 'no-top-cabeza' | 'no-fondo' | 'no-lockout' | 'ok';
 };
 export type MuscleUpPullupTrackerUpdate = {
   tracker: MuscleUpPullupTracker;
