@@ -1,1 +1,1 @@
-- [Separación del tracker de muscle-up](muscle-up-tracker-boundaries.md) — contar correctas solo con cima confirmada; evaluar incorrectas por separado.
+- [Separación del tracker de muscle-up](muscle-up-tracker-boundaries.md) — cabeza sobre codo y muñeca con margen; evaluar incorrectas por separado.

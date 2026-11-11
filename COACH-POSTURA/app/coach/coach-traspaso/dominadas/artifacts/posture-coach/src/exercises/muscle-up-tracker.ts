@@ -61,6 +61,32 @@ export function isWithinMuscleUpPullupAngle(
   );
 }
 
+export function isMuscleUpHeadAboveElbowAndWristWithMargin({
+  headY,
+  elbowY,
+  wristY,
+  marginPx,
+}: {
+  headY: number | null;
+  elbowY: number | null;
+  wristY: number | null;
+  marginPx: number | null;
+}) {
+  if (
+    headY === null
+    || elbowY === null
+    || wristY === null
+    || marginPx === null
+    || !Number.isFinite(headY)
+    || !Number.isFinite(elbowY)
+    || !Number.isFinite(wristY)
+    || !Number.isFinite(marginPx)
+  ) {
+    return false;
+  }
+  return headY < elbowY && headY <= wristY - marginPx;
+}
+
 export function isRetainedLowScoreMuscleUpWristPoint(point: PosePoint | undefined) {
   return Boolean(
     point

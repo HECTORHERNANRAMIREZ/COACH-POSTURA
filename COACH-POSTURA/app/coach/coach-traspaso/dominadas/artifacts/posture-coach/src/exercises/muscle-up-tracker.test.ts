@@ -5,6 +5,7 @@ import type { MuscleUpPullupTracker } from '@/types/tracking';
 import {
   advanceMuscleUpPullupTracker,
   createMuscleUpPullupTracker,
+  isMuscleUpHeadAboveElbowAndWristWithMargin,
   settlePendingMuscleUpPullupRep,
 } from './muscle-up-tracker';
 
@@ -35,6 +36,22 @@ test('does not count head and elbow signals when topReached is false', () => {
   assert.equal(update.tracker.repetitions, 0);
   assert.equal(update.tracker.goodRepetitions, 0);
   assert.equal(update.tracker.event, 'no-top');
+});
+
+test('accepts the head margin in the good log and rejects the earlier false positive', () => {
+  assert.equal(isMuscleUpHeadAboveElbowAndWristWithMargin({
+    headY: 215.7358,
+    elbowY: 276.7681,
+    wristY: 240.0931,
+    marginPx: 17.5708,
+  }), true);
+
+  assert.equal(isMuscleUpHeadAboveElbowAndWristWithMargin({
+    headY: 713.1289,
+    elbowY: 1050.2914,
+    wristY: 792.7756,
+    marginPx: 90.7778,
+  }), false);
 });
 
 test('does not count a rep when the top evidence is missing', () => {

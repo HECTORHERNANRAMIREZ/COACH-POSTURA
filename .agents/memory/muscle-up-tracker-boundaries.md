@@ -3,8 +3,8 @@ name: Separación del tracker de muscle-up
 description: Regla del proyecto para mantener independientes la detección de repeticiones correctas e incorrectas.
 ---
 
-El contador de repeticiones correctas de muscle-up debe exigir que la posición alta quede confirmada durante los cuadros configurados y que la repetición regrese al fondo. No añadir una vía alternativa que acepte señales parciales de cabeza, codo o ángulo cuando `topReached` sea falso. Las condiciones para identificar repeticiones incorrectas deben implementarse aparte.
+El contador de repeticiones correctas de muscle-up debe usar la posición de la cabeza: la cabeza debe superar el codo y la muñeca, con un margen proporcional al torso respecto a la muñeca. Basta un cuadro claro de esa posición; la repetición se cuenta al regresar al fondo. Las condiciones para identificar repeticiones incorrectas deben implementarse aparte.
 
-**Why:** Los registros del usuario mostraron cuatro repeticiones incorrectas sumadas como correctas por una vía alternativa de “suavizado”; el usuario pidió evitar que esa regla choque con el futuro tracker de incorrectas.
+**Why:** Exigir que cabeza, hombros y codos superen las muñecas no cuenta algunos muscle-ups correctos. En cambio, aceptar solo una señal simple de cabeza sobre muñecas también cuenta repeticiones incorrectas; un margen proporcional distingue los ejemplos compartidos por el usuario.
 
-**How to apply:** Al modificar el muscle-up, conservar la validación estricta de correctas y añadir cualquier clasificación de incorrectas como lógica independiente, usando ejemplos del usuario.
+**How to apply:** Mantener el criterio de cabeza sobre codo y muñeca con margen del torso, contar solo al terminar el regreso al fondo, y añadir cualquier clasificación de incorrectas como lógica independiente.
