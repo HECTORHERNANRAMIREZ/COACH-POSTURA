@@ -17027,11 +17027,9 @@ function Home() {
         ? muscleUpCycleState.cycle.startSeconds !== null
         : muscleUpCycleState.loggerClosedCycleAwaitingNoTop === true
           && muscleUpCycleState.loggerClosedCycleStartValid === true;
-      const muscleUpNoTopDiscardedReason = !muscleUpCycleHasValidStartForNoTop
-        ? 'sin-inicio'
-        : muscleUpPullupHeadOverWrists !== true
-          ? 'sin-pico-arriba'
-          : null;
+      const muscleUpNoTopDiscardedReason = muscleUpCycleHasValidStartForNoTop
+        ? null
+        : 'sin-inicio';
       const previousMuscleUpCycleElbowAngle = muscleUpCycleState.previousElbowAngle;
       const muscleUpCycleHasMeasuredElbow = Boolean(
         isMuscleUpExercise
