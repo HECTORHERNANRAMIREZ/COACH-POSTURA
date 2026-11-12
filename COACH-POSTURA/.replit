@@ -1,0 +1,33 @@
+modules = ["nodejs-20", "python-base-3.13"]
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
+localPort = 5173
+externalPort = 80
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Posture Coach preview"
+
+[[workflows.workflow]]
+name = "Posture Coach preview"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd COACH-POSTURA/COACH-POSTURA/app/coach/coach-traspaso/coach && PORT=5000 BASE_PATH=/ pnpm --filter @workspace/posture-coach run dev -- --port 5000"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"

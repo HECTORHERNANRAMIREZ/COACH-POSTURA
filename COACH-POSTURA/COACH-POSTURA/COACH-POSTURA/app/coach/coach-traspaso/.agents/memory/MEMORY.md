@@ -1,0 +1,1 @@
+- [Pull-up shadow boundary](pullup-shadow-boundary.md) — Keep diagnostic-only work separate from existing repetition counting and its frozen rules.
