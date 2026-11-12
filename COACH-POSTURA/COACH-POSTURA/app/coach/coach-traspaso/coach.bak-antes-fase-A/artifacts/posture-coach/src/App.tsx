@@ -342,6 +342,12 @@ import {
   createExerciseRepTracker,
 } from '@/exercises/rep-tracker';
 import {
+  advanceIncompletePushupAttemptTracker,
+  createIncompletePushupAttemptTracker,
+  finishIncompletePushupAttempt,
+  getUploadedPushupPreflightHoldMs,
+} from '@/exercises/incomplete-pushup-tracker';
+import {
   createMuscleUpPullupTracker,
   calculateMuscleUpPullupElbowAngles,
   getFreshMuscleUpPullupTorsoLengthPx,
@@ -10407,6 +10413,9 @@ function Home() {
   const muscleUpPullupFinLoggedRef = useRef(false);
   const muscleUpPullupPreviousPhaseRef = useRef<MuscleUpPullupPhase | null>(null);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const uploadedPushupPartialAttemptTrackerRef = useRef(
+    createIncompletePushupAttemptTracker(),
+  );
   // TEMP-DIAGNOSTICO: datos de observación aislados del tracker compartido.
   const uploadedDeclinedPushupDiagnosticsRef = useRef<DeclinedPushupVideoDiagnosticState>(
     createDeclinedPushupVideoDiagnosticState(),
@@ -12682,6 +12691,9 @@ function Home() {
       ) {
         const uploadedPushupPreflight = inputModeRef.current === 'video'
           && uploadedPushupPreflightRef.current;
+        const calibrationHoldMs = uploadedPushupPreflight
+          ? getUploadedPushupPreflightHoldMs(video.duration)
+          : PUSHUP_BODY_DETECTION_HOLD_MS;
         const calibrationPoints = getPushupCalibrationPoints(
           pose?.keypoints,
           measurementSide,
@@ -12788,7 +12800,8 @@ function Home() {
                 console.log(
                   `[flexiones-video] t=${videoTime.toFixed(2)}s hueco tolerado `
                   + `duración=${gapDurationSeconds.toFixed(2)}s `
-                  + `segundosVálidos=${(uploadedPushupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/5.00 `
+                  + `segundosVálidos=${(uploadedPushupLastCalibrationAccumulatedMsRef.current / 1000).toFixed(2)}/`
+                  + `${(calibrationHoldMs / 1000).toFixed(2)} `
                   + `motivo=${closedSearchGap.invalidReason}`,
                 );
               }
@@ -12810,13 +12823,18 @@ function Home() {
               (videoTime - (runStartVideoTime ?? videoTime)) * 1000,
             );
             uploadedPushupLastCalibrationAccumulatedMsRef.current = calibrationElapsed;
-            updateUploadedPushupSearchOverlayProgress(videoTime, calibrationElapsed);
+            updateUploadedPushupSearchOverlayProgress(
+              videoTime,
+              calibrationElapsed,
+              calibrationHoldMs,
+            );
             const searchSecond = Math.floor(videoTime);
             if (uploadedPushupSearchLastLoggedSecondRef.current !== searchSecond) {
               uploadedPushupSearchLastLoggedSecondRef.current = searchSecond;
               console.log(
                 `[flexiones-video] t=${videoTime.toFixed(2)}s búsqueda `
-                + `segundosVálidos=${(calibrationElapsed / 1000).toFixed(2)}/5.00 `
+                + `segundosVálidos=${(calibrationElapsed / 1000).toFixed(2)}/`
+                + `${(calibrationHoldMs / 1000).toFixed(2)} `
                 + `cuadroVálido=true muñecaRetenidaAceptada=${uploadedPushupCalibrationWristHeldAccepted} `
                 + `lado=${measurementSide ?? 'ninguno'} `
                 + `tracker=bloqueado (preflight=${uploadedPushupPreflightRef.current}, `
@@ -12831,13 +12849,13 @@ function Home() {
           updatePushupPreparationCountdown(
             Math.max(
               1,
-              Math.ceil((PUSHUP_BODY_DETECTION_HOLD_MS - calibrationElapsed) / 1000),
+              Math.ceil((calibrationHoldMs - calibrationElapsed) / 1000),
             ),
           );
-          if (calibrationElapsed >= PUSHUP_BODY_DETECTION_HOLD_MS) {
+          if (calibrationElapsed >= calibrationHoldMs) {
             const uploadedDetectionStartVideoTime = uploadedPushupPreflight
               ? pushupCalibrationReadyVideoTimeRef.current
-                ?? video.currentTime - (PUSHUP_BODY_DETECTION_HOLD_MS / 1000)
+                ?? video.currentTime - (calibrationHoldMs / 1000)
               : null;
             pushupCalibrationSuccessfulRef.current = true;
             pushupCalibrationReadySinceRef.current = null;
@@ -12849,7 +12867,7 @@ function Home() {
               hideUploadedPushupSearchOverlay(calibrationElapsed);
               console.log(
                 `[flexiones-video] t=${video.currentTime.toFixed(2)}s reinicio de cuenta `
-                + `motivo=5 segundos continuos completados `
+                + `motivo=${(calibrationHoldMs / 1000).toFixed(2)} segundos válidos completados `
                 + `segundosVálidosAntes=${(calibrationElapsed / 1000).toFixed(2)} `
                 + `segundosVálidosDespués=0.00`,
               );
@@ -12903,7 +12921,7 @@ function Home() {
             updatePushupCalibrationStatus('ready');
             if (uploadedPushupPreflight) {
               const detectionStartVideoTime = uploadedDetectionStartVideoTime
-                ?? video.currentTime - (PUSHUP_BODY_DETECTION_HOLD_MS / 1000);
+                ?? video.currentTime - (calibrationHoldMs / 1000);
               uploadedPushupDetectionStartVideoTimeRef.current = detectionStartVideoTime;
               uploadedPushupAnalysisStartingRef.current = true;
               const trackerCountsBeforeReset = {
@@ -12972,7 +12990,8 @@ function Home() {
               uploadedPushupSearchLastLoggedSecondRef.current = searchSecond;
               console.log(
                 `[flexiones-video] t=${failedFrameVideoTime.toFixed(2)}s búsqueda `
-                + `segundosVálidos=${(accumulatedBeforeInvalidFrameMs / 1000).toFixed(2)}/5.00 `
+                + `segundosVálidos=${(accumulatedBeforeInvalidFrameMs / 1000).toFixed(2)}/`
+                + `${(calibrationHoldMs / 1000).toFixed(2)} `
                 + `cuadroVálido=false muñecaRetenidaAceptada=${uploadedPushupCalibrationWristHeldAccepted} `
                 + `motivo=${invalidReasons.join('; ') || 'condición de calibración no satisfecha'}`,
               );
@@ -13037,6 +13056,7 @@ function Home() {
             updateUploadedPushupSearchOverlayProgress(
               failedFrameVideoTime,
               uploadedPushupLastCalibrationAccumulatedMsRef.current,
+              calibrationHoldMs,
             );
           }
           pushupCalibrationReadySinceRef.current = null;
@@ -19430,6 +19450,28 @@ function Home() {
             })}`);
           }
         }
+        let uploadedPushupPartialIncorrectAttempts = 0;
+        if (
+          inputModeRef.current === 'video'
+          && selectedExerciseForFrame === 'flexiones'
+        ) {
+          const primaryRepCompleted = exerciseRepUpdate.tracker.repetitions
+            > previousExerciseRepTracker.repetitions;
+          if (primaryRepCompleted) {
+            uploadedPushupPartialAttemptTrackerRef.current
+              = createIncompletePushupAttemptTracker();
+          } else {
+            const partialAttemptUpdate = advanceIncompletePushupAttemptTracker(
+              uploadedPushupPartialAttemptTrackerRef.current,
+              repetitionAngle!,
+              video.currentTime,
+            );
+            uploadedPushupPartialAttemptTrackerRef.current
+              = partialAttemptUpdate.tracker;
+            uploadedPushupPartialIncorrectAttempts
+              = partialAttemptUpdate.completedIncorrectAttempts;
+          }
+        }
         uploadedPushupTrackerWasCalled = true;
         exerciseRepTrackerRef.current = exerciseRepUpdate.tracker;
         if (
@@ -19453,7 +19495,19 @@ function Home() {
             + ` | fondo detectado=${repetitionAngle! >= 70 && repetitionAngle! <= 105}`,
           );
         }
-        setExerciseRepetitions(exerciseRepUpdate.tracker.repetitions);
+        if (uploadedPushupPartialIncorrectAttempts > 0) {
+          exerciseRepTrackerRef.current = {
+            ...exerciseRepTrackerRef.current,
+            repetitions: exerciseRepTrackerRef.current.repetitions
+              + uploadedPushupPartialIncorrectAttempts,
+          };
+          console.log(
+            `[rep-incorrecta-parcial] video=${video.currentTime.toFixed(3)}s `
+            + `conteo=${uploadedPushupPartialIncorrectAttempts} `
+            + `motivo=regreso incompleto antes de extender arriba`,
+          );
+        }
+        setExerciseRepetitions(exerciseRepTrackerRef.current.repetitions);
         setExerciseGoodRepetitions(exerciseRepUpdate.tracker.goodRepetitions);
         setExerciseRepPhase(exerciseRepUpdate.tracker.phase);
         setExerciseMinimumAngle(
@@ -22817,6 +22871,8 @@ function Home() {
         stabilityFramesRef.current = 0;
         uploadedPushupPostSeekFilterStageRef.current = 'awaiting-stable-frames';
         const initialTracker = createExerciseRepTracker();
+        uploadedPushupPartialAttemptTrackerRef.current
+          = createIncompletePushupAttemptTracker();
         if (uploadedPushupStartsAtBottomRef.current) {
           initialTracker.phase = 'final';
           initialTracker.endpointAngle = PUSHUP_REP_END_MIN_ANGLE;
@@ -22895,7 +22951,9 @@ function Home() {
       if (generation !== uploadedPushupAnalysisGenerationRef.current) return;
       uploadedPushupTransitionPauseRef.current = true;
       setUploadedPushupTransitionPaused(true);
-      showUploadedPushupSearchOverlay();
+      showUploadedPushupSearchOverlay(
+        getUploadedPushupPreflightHoldMs(video.duration),
+      );
       console.log(
         `[flexiones-video] transición: pausa iniciada t=0.00s `
         + `ventanaDeteccionInicio=${detectedStartVideoTime?.toFixed(2) ?? 'no disponible'}s `
@@ -23567,6 +23625,8 @@ function Home() {
         }
       : null;
     if (isUploadedPushupVideo) {
+      uploadedPushupPartialAttemptTrackerRef.current
+        = createIncompletePushupAttemptTracker();
       uploadedPushupSearchLastLoggedSecondRef.current = null;
       uploadedPushupResetLastLoggedSecondRef.current = null;
       uploadedPushupTrackerBlockedLastLoggedSecondRef.current = null;
@@ -24094,6 +24154,15 @@ function Home() {
         video.src = sourceUrl;
         video.load();
         await metadataLoaded;
+        if (isUploadedPushupVideo) {
+          const preflightHoldMs = getUploadedPushupPreflightHoldMs(video.duration);
+          showUploadedPushupSearchOverlay(preflightHoldMs);
+          console.log(
+            `[flexiones-video] objetivo-preflight=${(preflightHoldMs / 1000).toFixed(2)}s `
+            + `duraciónVideo=${video.duration.toFixed(2)}s `
+            + `resolución=${video.videoWidth}x${video.videoHeight}`,
+          );
+        }
         if (isUploadedDipVideo) {
           // TEMP-DIAGNOSTICO: registra la disponibilidad de duración y dimensiones del video.
           logUploadedDipStartupStageOnce(
@@ -25087,6 +25156,27 @@ function Home() {
       const lastRawAngle = rawAngleFrames.length
         ? rawAngleFrames[rawAngleFrames.length - 1].measurements.repetitionAngle
         : null;
+      if (!waitTimedOut && exerciseStartedRef.current) {
+        const partialAttempt = finishIncompletePushupAttempt(
+          uploadedPushupPartialAttemptTrackerRef.current,
+        );
+        uploadedPushupPartialAttemptTrackerRef.current = partialAttempt.tracker;
+        if (partialAttempt.completedIncorrectAttempts > 0) {
+          const trackerWithPartialIncorrect = {
+            ...exerciseRepTrackerRef.current,
+            repetitions: exerciseRepTrackerRef.current.repetitions
+              + partialAttempt.completedIncorrectAttempts,
+          };
+          exerciseRepTrackerRef.current = trackerWithPartialIncorrect;
+          setExerciseRepetitions(trackerWithPartialIncorrect.repetitions);
+          setExerciseGoodRepetitions(trackerWithPartialIncorrect.goodRepetitions);
+          console.log(
+            `[rep-incorrecta-parcial] video=${video?.currentTime.toFixed(3) ?? '—'}s `
+            + `conteo=${partialAttempt.completedIncorrectAttempts} `
+            + `motivo=el video terminó antes de completar el ascenso`,
+          );
+        }
+      }
       const tracker = exerciseRepTrackerRef.current;
       console.log(
         `[fin] fase=${tracker.phase}`
@@ -25110,12 +25200,6 @@ function Home() {
             repetitionWasCorrect: lastCompletedRep.wasCorrect,
           })}`,
         );
-        const reclassifiedTracker = {
-          ...tracker,
-          goodRepetitions: tracker.goodRepetitions + 1,
-        };
-        exerciseRepTrackerRef.current = reclassifiedTracker;
-        setExerciseGoodRepetitions(reclassifiedTracker.goodRepetitions);
       }
       uploadedPushupLastCompletedRepRef.current = null;
     }
