@@ -1,0 +1,15 @@
+ETAPA 6 — SOLO 'press-banca' (id exacto). No toques ningún otro ejercicio.
+ANTES: cp artifacts/posture-coach/src/App.tsx /tmp/App.tsx.PB6
+Sé económico: busca por nombre de símbolo, no releas el archivo completo.
+
+PROBLEMA: en video, press-banca no cuenta repeticiones. El ángulo del hombro mostrado en pantalla sí cruza los umbrales (arriba ≥70°, abajo ≤35°) y el ejercicio se hace correctamente, pero la puerta del tracker (puertaAbierta en [press-banca-puerta]) no se abre, así que nunca sale [press-banca-conteo].
+
+OBJETIVO: que el conteo dependa SOLO de lo que se ve en pantalla: el ángulo del hombro de los lados evaluados. Una repetición = arriba (≥70°) → abajo (≤35°) → arriba (≥70°). Toda repetición completada cuenta como correcta.
+
+1) DIAGNÓSTICO: busca cuál condición de la puerta (exerciseStarted, hasFreshPose, countFrameReady, repetitionConfig, repetitionAngle !== null, repetitionTechniqueReady, !frameMeasurementBlocked) está en false mientras exerciseStarted=true, e identifica de dónde sale. Respóndeme en 3 líneas antes de editar.
+2) CAMBIO: en la lógica propia de press-banca (pressBenchCountFrameReady y la rama de conteo bilateral), quita cualquier condición que no se vea en pantalla (guía de cámara, estabilidad, bloqueo de medición), de modo que en press-banca la puerta se abra con: exerciseStarted, pose fresca, al menos un lado evaluado y repetitionAngle !== null. Si para eso hay que modificar el `if` compartido del tracker o cualquier línea compartida, PARA y pregúntame con el cambio exacto, sin editar.
+3) LOG: en [press-banca-puerta] añade el nombre de la primera condición que sea false (primeraCondicionFalsa) y, en [press-banca-conteo], cada cambio de estado con el ángulo del hombro.
+
+REGLAS: protegido con === 'press-banca'; 0 líneas quitadas de otros ejercicios; no tocar advanceExerciseRepTracker, flexiones, cruces ni pica. NO inventes valores. NO ejecutes typecheck, build ni simulaciones; solo sintaxis.
+
+REPORTA SOLO: (a) rangos de líneas, (b) líneas quitadas (0 de otros ejercicios), (c) el código exacto cambiado y la respuesta del punto 1.
