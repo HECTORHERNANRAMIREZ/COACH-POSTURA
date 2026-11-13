@@ -43,6 +43,8 @@ export type PosePoint = {
   y: number;
   z?: number;
   score?: number;
+  visibility?: number;
+  presence?: number;
   world?: WorldCoordinate;
   held?: boolean;
   heldFrames?: number;
@@ -108,6 +110,10 @@ function toPoint(
     y: (landmark?.y ?? 0) * height,
     z: landmark?.z,
     score: landmark ? landmarkScore(landmark) : 0,
+    visibility: landmark?.visibility,
+    presence: landmark
+      ? (landmark as NormalizedLandmark & { presence?: number }).presence
+      : undefined,
     world,
   };
 }
