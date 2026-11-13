@@ -1404,6 +1404,7 @@ const COMMAND_PULLUP_TRACKER_CONFIG: PullupTrackerConfig = {
 const COMMAND_PULLUP_TRACE_ENABLED = true;
 const PULLUP_SHADOW_LOG_ENABLED = true;
 const PUSHUP_BODY_DETECTION_HOLD_MS = 5000;
+const UPLOADED_PUSHUP_SIDE_SELECTION_SAMPLE_COUNT = 5;
 const PUSHUP_PREPARATION_COUNTDOWN_MS = 5000;
 const CRUCES_BODY_DETECTION_HOLD_MS = 5000;
 const CRUCES_PREPARATION_COUNTDOWN_MS = 5000;
@@ -9765,6 +9766,22 @@ function logPicaRangosFinal(
   } catch {}
 }
 
+type UploadedPushupSideConfidence = {
+  sampleCount: number;
+  selectedSide: PoseSide | null;
+  left: { scoreSum: number; scoreCount: number };
+  right: { scoreSum: number; scoreCount: number };
+};
+
+function createUploadedPushupSideConfidence(): UploadedPushupSideConfidence {
+  return {
+    sampleCount: 0,
+    selectedSide: null,
+    left: { scoreSum: 0, scoreCount: 0 },
+    right: { scoreSum: 0, scoreCount: 0 },
+  };
+}
+
 function createUploadedLandmarkConfidenceStats() {
   const createJointStats = () => ({
     scoreSum: 0,
@@ -10499,6 +10516,9 @@ function Home() {
   const uploadedPushupStartsAtBottomRef = useRef(false);
   const uploadedPushupInitialPositionDecidedRef = useRef(false);
   const pushupLockedMeasurementSideRef = useRef<PoseSide | null>(null);
+  const uploadedPushupSideConfidenceRef = useRef(
+    createUploadedPushupSideConfidence(),
+  );
   const uploadedPushupPostSeekFilterStageRef = useRef<
     'awaiting-seek' | 'awaiting-stable-frames' | null
   >(null);
@@ -12073,8 +12093,59 @@ function Home() {
         : selectedExerciseForFrame === 'flexiones-declinadas'
           ? getDeclinedPushupDominantSide(pose?.keypoints, previousSideRef.current)
           : getDominantSide(pose?.keypoints, previousSideRef.current);
+      const uploadedPushupSideConfidence = uploadedPushupSideConfidenceRef.current;
+      const isUploadedStandardPushupFrame = inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones';
+      if (
+        isUploadedStandardPushupFrame
+        && uploadedPushupSideConfidence.selectedSide === null
+        && uploadedPushupSideConfidence.sampleCount
+          < UPLOADED_PUSHUP_SIDE_SELECTION_SAMPLE_COUNT
+        && detectedPose
+      ) {
+        let hasConfidenceSample = false;
+        (['left', 'right'] as const).forEach((side) => {
+          (['shoulder', 'elbow', 'wrist'] as const).forEach((joint) => {
+            const score = detectedPose.keypoints[sideKeypoints[side][joint]]?.score;
+            if (typeof score !== 'number' || !Number.isFinite(score)) return;
+            uploadedPushupSideConfidence[side].scoreSum += score;
+            uploadedPushupSideConfidence[side].scoreCount += 1;
+            hasConfidenceSample = true;
+          });
+        });
+        if (hasConfidenceSample) {
+          uploadedPushupSideConfidence.sampleCount += 1;
+        }
+      }
+      if (
+        isUploadedStandardPushupFrame
+        && uploadedPushupSideConfidence.selectedSide === null
+        && uploadedPushupSideConfidence.sampleCount
+          >= UPLOADED_PUSHUP_SIDE_SELECTION_SAMPLE_COUNT
+      ) {
+        const leftAverage = uploadedPushupSideConfidence.left.scoreCount > 0
+          ? uploadedPushupSideConfidence.left.scoreSum
+            / uploadedPushupSideConfidence.left.scoreCount
+          : null;
+        const rightAverage = uploadedPushupSideConfidence.right.scoreCount > 0
+          ? uploadedPushupSideConfidence.right.scoreSum
+            / uploadedPushupSideConfidence.right.scoreCount
+          : null;
+        uploadedPushupSideConfidence.selectedSide = leftAverage === null
+          ? 'right'
+          : rightAverage === null
+            ? 'left'
+            : leftAverage === rightAverage
+              ? detectedDominantSideResult?.side ?? previousSideRef.current ?? 'left'
+              : leftAverage > rightAverage
+                ? 'left'
+                : 'right';
+      }
+      const confidenceSelectedPushupSide = isUploadedStandardPushupFrame
+        ? uploadedPushupSideConfidence.selectedSide
+        : null;
       const lockedPushupSide = selectedExerciseForFrame === 'flexiones'
-        ? pushupLockedMeasurementSideRef.current
+        ? confidenceSelectedPushupSide ?? pushupLockedMeasurementSideRef.current
         : null;
       const lockedPushupSideScores = lockedPushupSide && pose?.keypoints
         ? Object.values(sideKeypoints[lockedPushupSide]).map(
@@ -24329,6 +24400,10 @@ function Home() {
       setUploadedPikePushupPreflightReady(false);
     }
     uploadedPullupPreflightRef.current = isUploadedPullupSearchVideo;
+    if (isUploadedPushupVideo) {
+      uploadedPushupSideConfidenceRef.current
+        = createUploadedPushupSideConfidence();
+    }
     uploadedPullupSearchPausedRef.current = false;
     setUploadedPullupPreflightActive(isUploadedPullupSearchVideo);
     setUploadedPullupSearchPaused(false);
