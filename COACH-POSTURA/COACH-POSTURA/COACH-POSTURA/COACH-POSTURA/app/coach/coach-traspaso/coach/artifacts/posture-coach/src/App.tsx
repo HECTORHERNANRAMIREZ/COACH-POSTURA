@@ -12499,90 +12499,15 @@ function Home() {
           uploadedLandmarkDebugLastLogVideoTimeRef.current = debugVideoTime;
           const trackerSide = measurementSide ?? previousSideRef.current;
           const trackerIndexes = trackerSide ? sideKeypoints[trackerSide] : null;
-          const calibrationPending = (
-            isPullupExercise && !pullupCalibrationSuccessfulRef.current
-          ) || (
-            isMuscleUpExercise && !muscleUpCalibrationSuccessfulRef.current
-          ) || (
-            selectedExerciseForFrame === 'flexiones'
-            && !pushupCalibrationSuccessfulRef.current
-          ) || (
-            selectedExerciseForFrame === 'flexiones-pica'
-            && uploadedPikePushupPreflightStageRef.current === 'searching'
-          ) || (
-            selectedExerciseForFrame === 'cruces-polea-baja-alta'
-            && !crossoverCalibrationSuccessfulRef.current
-          ) || (
-            isPressBenchExercise(selectedExerciseForFrame)
-            && !pressBenchCalibrationSuccessfulRef.current
-          );
           const formatLandmarkValue = (
             value: number | undefined,
             decimals = 3,
           ) => typeof value === 'number' && Number.isFinite(value)
             ? value.toFixed(decimals)
             : '—';
-          const debugLandmarks = [
-            { label: 'codo', joint: 'elbow' },
-            { label: 'muñeca', joint: 'wrist' },
-            { label: 'hombro', joint: 'shoulder' },
-            { label: 'cadera', joint: 'hip' },
-            { label: 'tobillo', joint: 'ankle' },
-          ] as const;
-          const landmarkResults = debugLandmarks.map(({ label, joint }) => {
-            const landmarkIndex = trackerIndexes?.[joint];
-            const rawPoint = landmarkIndex === undefined
-              ? undefined
-              : detectedPose?.keypoints[landmarkIndex];
-            const sideAssignedPoint = landmarkIndex === undefined
-              ? undefined
-              : sideConsistentPose?.keypoints[landmarkIndex];
-            const constrainedPoint = landmarkIndex === undefined
-              ? undefined
-              : constrainedPose?.keypoints[landmarkIndex];
-            const filteredPoint = landmarkIndex === undefined
-              ? undefined
-              : pose?.keypoints[landmarkIndex];
-            const pointForLog = rawPoint
-              ?? filteredPoint
-              ?? constrainedPoint
-              ?? sideAssignedPoint;
-            let discardReason: string | null = null;
-            if (!trackerSide) {
-              discardReason = 'filtro de pose: sin lado del tracker';
-            } else if (
-              filteredPoint?.held
-              || (filteredPoint?.heldFrames ?? 0) > 0
-            ) {
-              discardReason = `retenido${filteredPoint?.heldReason
-                ? `:${filteredPoint?.heldReason}`
-                : ''}`;
-            } else if (
-              !rawPoint
-              || (rawPoint.score ?? 0) < CAMERA_POINT_MIN_SCORE
-            ) {
-              discardReason = 'umbral del detector';
-            } else if (
-              !sideAssignedPoint
-              || !constrainedPoint
-              || !filteredPoint
-            ) {
-              discardReason = 'filtro de pose';
-            } else if (calibrationPending) {
-              discardReason = 'calibración';
-            }
-            return {
-              label,
-              pointForLog,
-              discardReason,
-              line: `${label}: ${formatLandmarkValue(pointForLog?.x, 1)},`
-                + `${formatLandmarkValue(pointForLog?.y, 1)},`
-                + `${formatLandmarkValue(pointForLog?.visibility)},`
-                + `${formatLandmarkValue(pointForLog?.presence)},`
-                + `${discardReason ? `descartado (${discardReason})` : 'aceptado'}`,
-            };
-          });
-          const getDebugPoint = (joint: 'shoulder' | 'elbow' | 'wrist') => {
+          const getDebugPoint = (
+            joint: 'shoulder' | 'elbow' | 'wrist',
+          ) => {
             const landmarkIndex = trackerIndexes?.[joint];
             if (landmarkIndex === undefined) return undefined;
             return detectedPose?.keypoints[landmarkIndex]
@@ -12597,32 +12522,129 @@ function Home() {
                 getDebugPoint('wrist'),
               )
             : null;
-          const discardReasons = [
-            ...landmarkResults.flatMap(({ label, discardReason }) => (
-              discardReason ? [`${label}: ${discardReason}`] : []
-            )),
-            !frameCameraReady
-              ? `guía no lista: ${rawCameraGuidance.message.replace(/[\r\n|]+/g, ' ')}`
-              : null,
-            frameMeasurementBlocked && frameCameraReady
-              && !landmarkResults.some(({ discardReason }) => discardReason)
-              ? 'filtro de pose: medición bloqueada'
-              : null,
-          ].filter((reason): reason is string => reason !== null);
-          const discardReasonText = discardReasons.length
-            ? [...new Set(discardReasons)].join('; ')
-            : 'ninguno';
-          const trackerSideLabel = trackerSide === 'left'
-            ? 'izquierdo'
-            : trackerSide === 'right'
-              ? 'derecho'
-              : 'no disponible';
-          const landmarkLine = `[landmarks] ${debugVideoTime.toFixed(3)}s`
-            + ` | lado: ${trackerSideLabel}`
-            + ` | ${landmarkResults.map(({ line }) => line).join(' | ')}`
-            + ` | ángulo codo: ${formatLandmarkValue(elbowAngle ?? undefined)}°`
-            + ` | motivo de descarte: ${discardReasonText}`;
-          console.log(landmarkLine);
+          if (!pose) {
+            console.log(
+              `[landmarks] ${debugVideoTime.toFixed(3)}s | sin pose`
+              + (elbowAngle === null
+                ? ''
+                : ` | ángulo codo: ${formatLandmarkValue(elbowAngle)}°`),
+            );
+          } else {
+            const calibrationPending = (
+              isPullupExercise && !pullupCalibrationSuccessfulRef.current
+            ) || (
+              isMuscleUpExercise && !muscleUpCalibrationSuccessfulRef.current
+            ) || (
+              selectedExerciseForFrame === 'flexiones'
+              && !pushupCalibrationSuccessfulRef.current
+            ) || (
+              selectedExerciseForFrame === 'flexiones-pica'
+              && uploadedPikePushupPreflightStageRef.current === 'searching'
+            ) || (
+              selectedExerciseForFrame === 'cruces-polea-baja-alta'
+              && !crossoverCalibrationSuccessfulRef.current
+            ) || (
+              isPressBenchExercise(selectedExerciseForFrame)
+              && !pressBenchCalibrationSuccessfulRef.current
+            );
+            const debugLandmarks = [
+              { label: 'hombro', joint: 'shoulder' },
+              { label: 'codo', joint: 'elbow' },
+              { label: 'muñeca', joint: 'wrist' },
+              { label: 'cadera', joint: 'hip' },
+              { label: 'rodilla', joint: 'knee' },
+              { label: 'tobillo', joint: 'ankle' },
+            ] as const;
+            const landmarkResults = debugLandmarks.map(({ label, joint }) => {
+              const landmarkIndex = trackerIndexes?.[joint];
+              const rawPoint = landmarkIndex === undefined
+                ? undefined
+                : detectedPose?.keypoints[landmarkIndex];
+              const sideAssignedPoint = landmarkIndex === undefined
+                ? undefined
+                : sideConsistentPose?.keypoints[landmarkIndex];
+              const constrainedPoint = landmarkIndex === undefined
+                ? undefined
+                : constrainedPose?.keypoints[landmarkIndex];
+              const filteredPoint = landmarkIndex === undefined
+                ? undefined
+                : pose?.keypoints[landmarkIndex];
+              const pointForLog = rawPoint
+                ?? filteredPoint
+                ?? constrainedPoint
+                ?? sideAssignedPoint;
+              let status: 'aceptado' | 'descartado' | 'ausente' = 'aceptado';
+              let discardReason: string | null = null;
+              if (!pointForLog) {
+                status = 'ausente';
+                discardReason = trackerSide
+                  ? 'sin punto disponible'
+                  : 'lado del tracker no disponible';
+              } else if (
+                filteredPoint?.held
+                || (filteredPoint?.heldFrames ?? 0) > 0
+              ) {
+                status = 'descartado';
+                discardReason = `retenido${filteredPoint?.heldReason
+                  ? `:${filteredPoint?.heldReason}`
+                  : ''}`;
+              } else if (!trackerSide) {
+                status = 'descartado';
+                discardReason = 'filtro de pose: sin lado del tracker';
+              } else if (
+                !rawPoint
+                || (rawPoint.score ?? 0) < CAMERA_POINT_MIN_SCORE
+              ) {
+                status = 'descartado';
+                discardReason = 'umbral del detector';
+              } else if (
+                !sideAssignedPoint
+                || !constrainedPoint
+                || !filteredPoint
+              ) {
+                status = 'descartado';
+                discardReason = 'filtro de pose';
+              } else if (calibrationPending) {
+                status = 'descartado';
+                discardReason = 'calibración';
+              }
+              return {
+                label,
+                status,
+                discardReason,
+                line: `${label}: ${formatLandmarkValue(pointForLog?.x, 1)}, `
+                  + `${formatLandmarkValue(pointForLog?.y, 1)}, `
+                  + `${formatLandmarkValue(pointForLog?.score)}, `
+                  + `${status}${discardReason ? ` (${discardReason})` : ' (ninguno)'}`,
+              };
+            });
+            const discardReasons = [
+              ...landmarkResults.flatMap(({ label, discardReason }) => (
+                discardReason ? [`${label}: ${discardReason}`] : []
+              )),
+              !frameCameraReady
+                ? `guía no lista: ${rawCameraGuidance.message.replace(/[\r\n|]+/g, ' ')}`
+                : null,
+              frameMeasurementBlocked && frameCameraReady
+                && !landmarkResults.some(({ discardReason }) => discardReason)
+                ? 'filtro de pose: medición bloqueada'
+                : null,
+            ].filter((reason): reason is string => reason !== null);
+            const discardReasonText = discardReasons.length
+              ? [...new Set(discardReasons)].join('; ')
+              : 'ninguno';
+            const trackerSideLabel = trackerSide === 'left'
+              ? 'izquierdo'
+              : trackerSide === 'right'
+                ? 'derecho'
+                : 'no disponible';
+            const landmarkLine = `[landmarks] ${debugVideoTime.toFixed(3)}s`
+              + ` | lado: ${trackerSideLabel}`
+              + ` | ${landmarkResults.map(({ line }) => line).join(' | ')}`
+              + ` | ángulo codo: ${formatLandmarkValue(elbowAngle ?? undefined)}°`
+              + ` | motivo de descarte: ${discardReasonText}`;
+            console.log(landmarkLine);
+          }
         }
       }
       const pullupHeadOverWrists = isPullupExercise
@@ -25191,6 +25213,11 @@ function Home() {
       setVideoExportStatus('Elige un archivo de video compatible.');
       return;
     }
+    uploadedLandmarkDebugLastLogVideoTimeRef.current = null;
+    const uploadedLandmarkDebugEnabled =
+      (window as Window & { __uploadedLandmarksDebug?: boolean })
+        .__uploadedLandmarksDebug === true;
+    console.log(`[landmarks-init] bandera=${uploadedLandmarkDebugEnabled}`);
     if (exercise === 'muscle-up') {
       muscleUpExtremityVisibilityStatsRef.current
         = createMuscleUpExtremityVisibilityStats();
