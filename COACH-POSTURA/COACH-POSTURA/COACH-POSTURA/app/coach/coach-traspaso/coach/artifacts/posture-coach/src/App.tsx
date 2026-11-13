@@ -352,6 +352,12 @@ import {
   getUploadedPushupPreflightHoldMs,
 } from '@/exercises/incomplete-pushup-tracker';
 import {
+  finishPushupDebugSession,
+  recordPushupDebugFrame,
+  startPushupDebugSession,
+} from '@/exercises/pushup-debug';
+import type { PushupDebugSession } from '@/exercises/pushup-debug';
+import {
   createMuscleUpPullupTracker,
   calculateMuscleUpPullupElbowAngles,
   getFreshMuscleUpPullupTorsoLengthPx,
@@ -9758,6 +9764,12 @@ function logPicaRangosFinal(
 }
 
 function Home() {
+  const pushupDiagnosticWindow = window as Window & {
+    __flexionesDiagnostico?: boolean;
+  };
+  if (typeof pushupDiagnosticWindow.__flexionesDiagnostico !== 'boolean') {
+    pushupDiagnosticWindow.__flexionesDiagnostico = false;
+  }
   const diagnosticWindow = window as Window & {
     __dominadasContarDescartadas?: boolean;
   };
@@ -10419,6 +10431,7 @@ function Home() {
   const muscleUpPullupFinLoggedRef = useRef(false);
   const muscleUpPullupPreviousPhaseRef = useRef<MuscleUpPullupPhase | null>(null);
   const exerciseRepTrackerRef = useRef<ExerciseRepTracker>(createExerciseRepTracker());
+  const pushupDebugSessionRef = useRef<PushupDebugSession | null>(null);
   const uploadedPushupPartialAttemptTrackerRef = useRef(
     createIncompletePushupAttemptTracker(),
   );
@@ -14326,6 +14339,14 @@ function Home() {
             : undefined,
         )
         : null;
+      const pushupDebugEnabledForFrame = selectedExerciseForFrame === 'flexiones'
+        && (window as Window & { __flexionesDiagnostico?: boolean })
+          .__flexionesDiagnostico === true;
+      const pushupDebugTrackerBeforeFrame = pushupDebugEnabledForFrame
+        ? { ...exerciseRepTrackerRef.current }
+        : null;
+      let pushupDebugSmoothedAngleForFrame: number | null = null;
+      let uploadedPushupDebugPartialIncorrectAttemptsForFrame = 0;
       const isUploadedDipVideo = inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'fondos';
       // TEMP-DIAGNOSTICO: ángulo 2D MediaPipe original, previo a filtros y retención.
@@ -18204,6 +18225,9 @@ function Home() {
                 : true,
           uploadedDipRawPhaseRescue,
         );
+        if (pushupDebugEnabledForFrame) {
+          pushupDebugSmoothedAngleForFrame = exerciseRepUpdate.smoothedAngle;
+        }
         if (uploadedPikePushupVideoTrackerFrame && repetitionAngle !== null) {
           const picaTechniqueValid = pushupTechniqueValidForTracker;
           const picaActivationReached =
@@ -19552,6 +19576,10 @@ function Home() {
               = partialAttemptUpdate.tracker;
             uploadedPushupPartialIncorrectAttempts
               = partialAttemptUpdate.completedIncorrectAttempts;
+            if (pushupDebugEnabledForFrame) {
+              uploadedPushupDebugPartialIncorrectAttemptsForFrame
+                = uploadedPushupPartialIncorrectAttempts;
+            }
           }
         }
         uploadedPushupTrackerWasCalled = true;
@@ -20896,6 +20924,61 @@ function Home() {
             }
           : null,
       };
+      if (pushupDebugEnabledForFrame) {
+        let debugSession = pushupDebugSessionRef.current;
+        if (!debugSession || debugSession.finished) {
+          debugSession = startPushupDebugSession({
+            mode: inputModeRef.current === 'video' ? 'video' : 'camera',
+            startedAtMs: now,
+            videoDurationSeconds: inputModeRef.current === 'video'
+              && Number.isFinite(video.duration)
+              ? video.duration
+              : null,
+          });
+          pushupDebugSessionRef.current = debugSession;
+        }
+        const measurementEnableReason = uploadedPushupTrackerGatePassed
+          ? countFrameReady
+            ? `cuadros_estables_${stabilityFramesRef.current}`
+            : uploadedPushupWristHeldException
+              ? 'excepcion_muneca'
+              : inputModeRef.current === 'video'
+                ? 'ruta_video_fondo'
+                : 'otra_condicion_tracker'
+          : null;
+        recordPushupDebugFrame(debugSession, {
+          nowMs: now,
+          videoTimeSeconds: inputModeRef.current === 'video' ? video.currentTime : null,
+          rawAngle: repetitionAngle,
+          diagnosticRawAngle: rawAngle,
+          smoothedAngle: uploadedPushupTrackerWasCalled
+            ? pushupDebugSmoothedAngleForFrame
+            : null,
+          trackerPhase: exerciseRepTrackerRef.current.phase,
+          previousTrackerPhase: pushupDebugTrackerBeforeFrame?.phase
+            ?? exerciseRepTrackerRef.current.phase,
+          repetitions: exerciseRepTrackerRef.current.repetitions,
+          previousRepetitions: pushupDebugTrackerBeforeFrame?.repetitions
+            ?? exerciseRepTrackerRef.current.repetitions,
+          goodRepetitions: exerciseRepTrackerRef.current.goodRepetitions,
+          previousGoodRepetitions: pushupDebugTrackerBeforeFrame?.goodRepetitions
+            ?? exerciseRepTrackerRef.current.goodRepetitions,
+          elbowTorsoAngle: pushupTechniqueAnglesForFrame.elbowTorsoAngle,
+          bodyLineAngle: pushupTechniqueAnglesForFrame.bodyLineAngle,
+          measurementEnabled: uploadedPushupTrackerGatePassed,
+          measurementEnableReason,
+          bodyDetected: hasFreshPose && visiblePoints >= 5,
+          videoStage: inputModeRef.current === 'video'
+            ? uploadedPushupPreflightRef.current
+              ? 'preflight_busca_cuerpo'
+              : 'analizando_conteo'
+            : null,
+          bottomMaxAngle: inputModeRef.current === 'video'
+            ? UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE
+            : PUSHUP_REP_END_MAX_ANGLE,
+          partialIncorrectAttempts: uploadedPushupDebugPartialIncorrectAttemptsForFrame,
+        });
+      }
       if (
         inputModeRef.current === 'video'
         && selectedExerciseForFrame === 'flexiones-pica'
@@ -23671,6 +23754,21 @@ function Home() {
       busyRef.current = false;
       return;
     }
+    const previousPushupDebugSession = pushupDebugSessionRef.current;
+    if (previousPushupDebugSession && !previousPushupDebugSession.finished) {
+      const previousTracker = exerciseRepTrackerRef.current;
+      finishPushupDebugSession(previousPushupDebugSession, {
+        nowMs: performance.now(),
+        videoTimeSeconds: null,
+        reason: 'inicio_de_nueva_sesion',
+        repetitions: previousTracker.repetitions,
+        goodRepetitions: previousTracker.goodRepetitions,
+        trackerPhase: previousTracker.phase,
+        bottomMaxAngle: previousPushupDebugSession.mode === 'video'
+          ? UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE
+          : PUSHUP_REP_END_MAX_ANGLE,
+      });
+    }
     const isUploadedPushupVideo = Boolean(videoFile && activeExercise === 'flexiones');
     const isUploadedPikePushupVideo = Boolean(
       videoFile && activeExercise === 'flexiones-pica',
@@ -24601,6 +24699,26 @@ function Home() {
           logMuscleUpPullupFinish(settled.tracker);
         }
       }
+      if (
+        selectedExerciseRef.current === 'flexiones'
+        && pushupDebugSessionRef.current
+      ) {
+        const debugVideo = videoRef.current;
+        const tracker = exerciseRepTrackerRef.current;
+        finishPushupDebugSession(pushupDebugSessionRef.current, {
+          nowMs: performance.now(),
+          videoTimeSeconds: inputModeRef.current === 'video'
+            ? debugVideo?.currentTime ?? null
+            : null,
+          reason: 'detencion_manual',
+          repetitions: tracker.repetitions,
+          goodRepetitions: tracker.goodRepetitions,
+          trackerPhase: tracker.phase,
+          bottomMaxAngle: inputModeRef.current === 'video'
+            ? UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE
+            : PUSHUP_REP_END_MAX_ANGLE,
+        });
+      }
       exerciseStartedRef.current = false;
       setExerciseStarted(false);
       if (inputModeRef.current === 'video') {
@@ -25258,6 +25376,16 @@ function Home() {
           );
         }
       }
+      const pushupDebugTrackerAtEnd = exerciseRepTrackerRef.current;
+      finishPushupDebugSession(pushupDebugSessionRef.current, {
+        nowMs: performance.now(),
+        videoTimeSeconds: video?.currentTime ?? null,
+        reason: waitTimedOut ? 'fin_video_espera_timeout' : 'fin_video',
+        repetitions: pushupDebugTrackerAtEnd.repetitions,
+        goodRepetitions: pushupDebugTrackerAtEnd.goodRepetitions,
+        trackerPhase: pushupDebugTrackerAtEnd.phase,
+        bottomMaxAngle: UPLOADED_PUSHUP_VIDEO_REP_END_MAX_ANGLE,
+      });
       const tracker = exerciseRepTrackerRef.current;
       console.log(
         `[fin] fase=${tracker.phase}`
