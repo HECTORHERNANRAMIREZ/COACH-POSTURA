@@ -341,7 +341,11 @@ import {
   createPullupAttemptShadowState,
   updatePullupAttemptShadow,
 } from '@/exercises/pullup-attempt-shadow';
-import { observeUploadedPushupAttemptFrame } from '@/exercises/pushup-attempt-observer';
+import {
+  observeUploadedPushupAttemptFrame,
+  recordUploadedPushupRepCount,
+  resetUploadedPushupAttemptObserver,
+} from '@/exercises/pushup-attempt-observer';
 import {
   advanceExerciseRepTracker,
   createExerciseRepTracker,
@@ -10348,6 +10352,10 @@ function Home() {
     useState<TechniqueFeedback>(muscleUpReferenceFeedback);
   const [exerciseRepetitions, setExerciseRepetitions] = useState(0);
   const [exerciseGoodRepetitions, setExerciseGoodRepetitions] = useState(0);
+  const [
+    uploadedPushupIncompleteAssociatedCount,
+    setUploadedPushupIncompleteAssociatedCount,
+  ] = useState(0);
   const [exerciseRepPhase, setExerciseRepPhase] = useState<ExerciseRepPhase>('esperando inicio');
   const [exerciseMinimumAngle, setExerciseMinimumAngle] = useState<number | null>(null);
   const [dipLiveNoDepthNotice, setDipLiveNoDepthNotice] = useState(false);
@@ -14638,7 +14646,11 @@ function Home() {
         && !uploadedPushupPreflightRef.current
         && video
       ) {
-        observeUploadedPushupAttemptFrame(video, repetitionAngle);
+        observeUploadedPushupAttemptFrame(
+          video,
+          repetitionAngle,
+          setUploadedPushupIncompleteAssociatedCount,
+        );
       }
       const pushupDebugEnabledForFrame = selectedExerciseForFrame === 'flexiones'
         && (window as Window & { __flexionesDiagnostico?: boolean })
@@ -19435,8 +19447,14 @@ function Home() {
         }
         if (
           isUploadedStandardPushup
+          && !uploadedPushupPreflightRef.current
           && exerciseRepUpdate.tracker.repetitions > previousExerciseRepTracker.repetitions
         ) {
+          recordUploadedPushupRepCount(
+            video,
+            exerciseRepUpdate.tracker.repetitions,
+            Number(video.currentTime.toFixed(3)),
+          );
           const activationSample = uploadedPushupTechniqueActivationSampleRef.current;
           const returnTechniqueAngles = calculatePushupTechniqueAngles(
             pose?.keypoints,
@@ -23329,6 +23347,10 @@ function Home() {
       video.controls = true;
       const playbackStartTime = 0;
       const resetUploadedPushupAfterSeek = (seekedEventFired: boolean) => {
+        resetUploadedPushupAttemptObserver(
+          video,
+          setUploadedPushupIncompleteAssociatedCount,
+        );
         poseFilterRef.current.reset();
         poseFilterRef.current.setPersistentHold(false);
         poseFilterRef.current.setTemporalJumpGuard(false);
@@ -24554,6 +24576,12 @@ function Home() {
           correctas: exerciseRepTrackerRef.current.goodRepetitions,
         }
       : null;
+    if (isUploadedPushupVideo) {
+      resetUploadedPushupAttemptObserver(
+        videoRef.current,
+        setUploadedPushupIncompleteAssociatedCount,
+      );
+    }
     exerciseRepTrackerRef.current = createExerciseRepTracker();
     dipLiveRawElbowMinimumRef.current = null;
     setDipLiveNoDepthNotice(false);
@@ -26875,12 +26903,16 @@ function Home() {
       : selectedExercise === 'muscle-up'
         ? muscleUpPullupRepetitions
         : exerciseRepetitions;
+  const isUploadedPushupCountDisplay = inputMode === 'video'
+    && selectedExercise === 'flexiones';
   const correctRepetitions = selectedExercise === 'sentadillas'
     ? squatGoodRepetitions
     : isStandardOrSupinePullup(selectedExercise) || isCommandPullup(selectedExercise)
       ? pullupGoodRepetitions
       : selectedExercise === 'muscle-up'
         ? muscleUpPullupGoodRepetitions
+        : isUploadedPushupCountDisplay
+          ? exerciseGoodRepetitions - uploadedPushupIncompleteAssociatedCount
         : exerciseGoodRepetitions;
   const incorrectRepetitions = (
     isStandardOrSupinePullup(selectedExercise)
@@ -26892,6 +26924,8 @@ function Home() {
       )
     : selectedExercise === 'muscle-up'
       ? muscleUpPullupIncorrectRepetitions
+      : isUploadedPushupCountDisplay
+        ? evaluatedRepetitions - correctRepetitions
       : Math.max(0, evaluatedRepetitions - correctRepetitions);
   const evaluationPhase = selectedExercise === 'sentadillas'
     ? squatPhaseLabel
@@ -27458,7 +27492,7 @@ function Home() {
                     <strong>
                       {selectedExercise === 'muscle-up'
                         ? muscleUpPullupGoodRepetitions
-                        : exerciseGoodRepetitions}
+                        : correctRepetitions}
                     </strong>
                   </div>
                   <div className="squat-summary-stat">
@@ -28609,7 +28643,7 @@ function Home() {
                     <>
                       <div className="diagnostic-row">
                         <dt>Correctas</dt>
-                        <dd className="diagnostic-value diagnostic-value--success">{exerciseGoodRepetitions}</dd>
+                        <dd className="diagnostic-value diagnostic-value--success">{correctRepetitions}</dd>
                       </div>
                       <div className="diagnostic-row">
                         <dt>Total evaluadas</dt>
