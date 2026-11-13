@@ -378,6 +378,8 @@ import {
   settlePendingMuscleUpPullupRep,
 } from '@/exercises/muscle-up-tracker';
 
+console.log("[build] logger-landmarks v1");
+
 const queryClient = new QueryClient();
 
 const pullupScrollFrames = [
