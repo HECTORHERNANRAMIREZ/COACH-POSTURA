@@ -341,6 +341,7 @@ import {
   createPullupAttemptShadowState,
   updatePullupAttemptShadow,
 } from '@/exercises/pullup-attempt-shadow';
+import { observeUploadedPushupAttemptFrame } from '@/exercises/pushup-attempt-observer';
 import {
   advanceExerciseRepTracker,
   createExerciseRepTracker,
@@ -14630,6 +14631,15 @@ function Home() {
             : undefined,
         )
         : null;
+      if (
+        inputModeRef.current === 'video'
+        && selectedExerciseForFrame === 'flexiones'
+        && exerciseStartedRef.current
+        && !uploadedPushupPreflightRef.current
+        && video
+      ) {
+        observeUploadedPushupAttemptFrame(video, repetitionAngle);
+      }
       const pushupDebugEnabledForFrame = selectedExerciseForFrame === 'flexiones'
         && (window as Window & { __flexionesDiagnostico?: boolean })
           .__flexionesDiagnostico === true;
