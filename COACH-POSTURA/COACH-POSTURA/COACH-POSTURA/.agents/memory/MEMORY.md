@@ -1,0 +1,1 @@
+- [Muscle-up counter isolation](muscle-up-counter-isolation.md) — preserve correct-rep criteria while tuning incorrect-rep classification.

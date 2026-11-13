@@ -1,0 +1,28 @@
+ETAPA 3 — SOLO 'press-banca' (id exacto). No toques ningún otro ejercicio.
+ANTES: cp artifacts/posture-coach/src/App.tsx /tmp/App.tsx.PB3
+Sé económico: no releas el archivo completo; busca por nombre de símbolo.
+
+OBJETIVO: que press-banca cuente repeticiones y muestre el HUD "Correctas / Incorrectas" (el mismo de cruces y flexiones), en video subido y en cámara en vivo. SIN reglas de técnica: toda repetición completada cuenta como correcta; Incorrectas se queda en 0.
+
+IMPORTANTE: cópialo de cómo se implementó cruces: su entrada en repetitionConfigs (busca 'cruces-polea-baja-alta') y su rama de conteo bilateral antes del tracker (busca CRUCES_TOLERANCIA_GRADOS). NO modifiques advanceExerciseRepTracker ni getRepetitionConfig. Si hace falta cambiar una línea compartida, PARA y pregúntame mostrando el cambio exacto, sin editar. Permiso explícito para añadir una rama nueva solo de press-banca y una entrada nueva en repetitionConfigs.
+
+MEDIDA: ángulo del hombro (cadera-hombro-codo) de cada lado de pressBenchDetectionDecisionRef.current.evaluatedSides (lo decide createPressBenchDetectionDecision).
+CONSTANTES NUEVAS: PRESS_BANCA_TOLERANCIA_GRADOS = 15; base ARRIBA = 85, base ABAJO = 20.
+- ARRIBA: hombro ≥ 85 − 15 = 70°. ABAJO: hombro ≤ 20 + 15 = 35°.
+- El video empieza ARRIBA. Máquina: arriba → abajo → arriba. Se cuenta 1 repetición al VOLVER a arriba (≥70°) después de haber llegado a abajo (≤35°). Para contar otra debe volver a bajar (≤35°).
+- Dos lados evaluados: cada lado cumple por separado y ambos deben cumplir para cambiar de estado. Un lado: solo ese.
+- Umbral de activación = umbral de arriba (sin hueco), como en cruces, para que el tracker compartido no se reinicie. countOnReturn: true, countOnlyWhenCorrect: false.
+
+ÁNGULO DEL TRACKER (crítico): calculateRepetitionAngle no tiene caso para 'press-banca' y cae en el cálculo genérico final (hombro-codo-muñeca del `side`). En el video solo se ve el lado izquierdo y measurementSide llega como 'right', así que repetitionAngle quedaría null todo el video. El `if` que abre el tracker (el que exige exerciseStartedRef, hasFreshPose, countFrameReady y repetitionAngle !== null, justo antes de llamar a advanceExerciseRepTracker) no se abriría nunca y el contador no correría. Por eso: añade en calculateRepetitionAngle un caso solo para 'press-banca' (como el de cruces) que devuelva el ángulo del hombro de los evaluatedSides: un lado → ese; dos → promedio; null si no hay lados o falta algún punto. Si necesitas pasarle evaluatedSides, usa un 4.º parámetro opcional con valor por defecto, para que las demás llamadas queden idénticas. Si hay que cambiar la línea `const repetitionAngle = ...` u otra línea compartida, PARA y pregúntame.
+
+LOG [press-banca-conteo] en cada cambio de estado y en cada repetición: {estado, ladosEvaluados, hombroPorLadoDeg, correctas, incorrectas, tVideoS (null en vivo), modo}.
+
+LOG [press-banca-puerta]: justo ANTES del `if` que abre el tracker, solo si selectedExerciseForFrame === 'press-banca', console.log('[press-banca-puerta]', JSON.stringify({...})) con el valor real de cada condición de ese if (exerciseStarted, hasFreshPose, countFrameReady, uploadedPushupAnalysisStarting, repetitionConfigPresente, repetitionAngle, repetitionTechniqueReady, frameMeasurementBlocked), más measurementSide, ladosEvaluados, puertaAbierta, tVideoS (null en vivo), modo. Imprímelo cuando cambie el resultado de cualquier condición y, como mínimo, 1 vez por segundo. Sin modificar ninguna línea existente.
+
+HUD: debe verse desde que empieza el análisis (video y vivo), con Correctas 0 / Incorrectas 0.
+
+TAMBIÉN (solo líneas de press-banca): en [press-banca-medidas], haz que measurementSide sea el primer lado de ladosEvaluados (hoy dice 'right' aunque se evalúa el izquierdo).
+
+REGLAS: protegido con === 'press-banca'; 0 líneas quitadas de otros ejercicios; no tocar flexiones, cruces ni pica. NO inventes ejemplos de logs ni valores. NO ejecutes typecheck, build ni simulaciones; solo sintaxis.
+
+REPORTA SOLO: (a) rangos de líneas añadidas/cambiadas, (b) líneas quitadas de otros ejercicios (0), (c) el código exacto de la entrada de repetitionConfigs, de la rama de conteo, del caso nuevo en calculateRepetitionAngle y del log [press-banca-puerta].
